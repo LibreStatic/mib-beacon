@@ -1,5 +1,7 @@
 // Validated on-device (spike S3). Compiled by Metro in apps/mobile.
-import * as FileSystem from 'expo-file-system';
+// SDK 54 moved the string-path API to the /legacy entry (the new File/Directory
+// API lands with the MIB cache work in plan 03).
+import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import QuickCrypto from 'react-native-quick-crypto';
 import type { CryptoProvider, FileStore, SecretStore, HttpClient } from '../types.js';

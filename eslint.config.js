@@ -49,6 +49,21 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // Plain-JS files that run in the Node/RN CommonJS or bundler-entry context.
+    files: ['**/*.cjs', '**/shims/**/*.js', 'apps/*/index.js'],
+    languageOptions: {
+      globals: {
+        module: 'readonly',
+        require: 'readonly',
+        __dirname: 'readonly',
+        process: 'readonly',
+        global: 'readonly',
+        console: 'readonly',
+        exports: 'writable',
+      },
+    },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     plugins: { import: importPlugin },
     languageOptions: {

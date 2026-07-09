@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "types": ["react"],
+    "moduleResolution": "bundler",
+    // Expo packages ship TS source as their entry point (Metro transpiles them),
+    // so these strict-emit flags would flag THEIR code, not ours. Relaxed for the
+    // app program only; the shared packages keep the strict settings.
+    "verbatimModuleSyntax": false,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["App.tsx", "index.js", "src/**/*.ts", "src/**/*.tsx"]
+}
