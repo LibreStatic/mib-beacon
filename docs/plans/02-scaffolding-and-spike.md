@@ -1,6 +1,6 @@
 # 02 — Scaffolding & Feasibility Spike
 
-Status: not-started
+Status: done (see docs/plans/SPIKE-RESULTS.md — verdict GO; S3 on-device pending Android hardware)
 Depends on: 01 (contracts)
 **GATING PHASE**: the spike at the end is the go/no-go for the whole stack. Do the spike tasks (S1–S5) FIRST with throwaway code if that's faster, then scaffold properly — or scaffold first and spike inside it; either order is fine, but do not proceed to plans 03+ until every spike exit criterion is recorded in `docs/plans/SPIKE-RESULTS.md`.
 
@@ -74,3 +74,19 @@ Test agent for S1–S3: `snmpd` in Docker on the dev machine (v2c community `pub
 
 ## Out of scope
 Real MIB parsing (plan 03), styling/theming beyond defaults, packaging/installers (plan 10), iOS (validate in plan 10 at the latest; Android is the representative mobile target until then).
+
+## Deviations
+- **SQLite backend**: used Node's built-in `node:sqlite` instead of better-sqlite3 (native
+  addon fails to build against Node 26's V8). Requires **Electron ≥ 37** (Node 22+); pinned
+  `electron@^37`. `packages/transport/src/{node,react-native}/storage.ts`.
+- **Tamagui deferred to plan 09.** Spike UI uses React Native primitives + a minimal theme
+  (`packages/ui`) to keep the gating phase focused on the SNMP stack. Plan 09 introduces
+  Tamagui + semantic tokens as planned.
+- **`@omc/core/client` subpath added** (not in plan 01's original surface) to give the
+  renderer a net-snmp-free import surface (EventBus/OmcError/types). Keeps the SNMP engine
+  out of the browser bundle. Worth folding into plan 01's contract when next revised.
+- **S3 (on-device Android) not executed** — no Android SDK/emulator in the build
+  environment. Mitigated: full RN transport + App typecheck against real libs. See
+  SPIKE-RESULTS.md for the exact on-hardware run steps; re-run before relying on mobile.
+- **DES finding**: available on Electron/BoringSSL, absent on plain-Node/OpenSSL-3 by
+  default — better than the plan anticipated for desktop. Recorded in SPIKE-RESULTS.md.

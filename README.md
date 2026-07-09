@@ -41,6 +41,42 @@ packages/app     Shared screens, navigation, state
 docs/plans       Implementation plan documents (execution order inside)
 ```
 
+## Development
+
+Prerequisites: Node ≥ 20 (22+ recommended), [pnpm](https://pnpm.io) 10, and — for the
+SNMP spike/tests against a real agent — Docker.
+
+```bash
+pnpm install                 # install the workspace
+pnpm -r typecheck            # typecheck every package
+pnpm lint
+pnpm test                    # unit tests (transport + core)
+```
+
+Run a real SNMP test agent (snmpd in Docker), then the engine feasibility spike:
+
+```bash
+docker compose -f dev/snmpd/docker-compose.yml up -d --build
+pnpm --filter @omc/core spike        # v2c/v3 Get, trap receive, streaming walk
+```
+
+Desktop app (Electron + react-native-web) — needs a graphical session:
+
+```bash
+pnpm dev:desktop             # opens the app window
+```
+
+Mobile app (Expo dev build) — needs the Android SDK / Xcode and a device or emulator
+(Expo Go is **not** supported — the app needs native UDP/TCP/crypto modules):
+
+```bash
+pnpm --filter @omc/mobile prebuild   # generate the native project (first time)
+pnpm dev:mobile                      # = expo run:android
+```
+
+See [`docs/plans/SPIKE-RESULTS.md`](docs/plans/SPIKE-RESULTS.md) for validated runtime
+findings (crypto/DES support per runtime, required Electron version, etc.).
+
 ## Contributing
 
 The project is being built plan-by-plan from [`docs/plans/`](docs/plans/). Read [`docs/plans/README.md`](docs/plans/README.md) first — it defines execution order, conventions, and the definition of done for each phase.
