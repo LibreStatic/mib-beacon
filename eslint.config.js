@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import importPlugin from 'eslint-plugin-import';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 /**
  * Dependency-direction enforcement (see docs/plans/README.md):
@@ -56,6 +57,9 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
+      // Ambient module decls (e.g. net-snmp) are pulled in via path references so
+      // that consumers of the compiled source pick them up.
+      '@typescript-eslint/triple-slash-reference': ['error', { path: 'always', types: 'prefer-import' }],
       'import/no-duplicates': 'error',
     },
   },
@@ -74,6 +78,15 @@ export default tseslint.config(
         },
       ],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
+    },
+  },
+  {
+    // React components (UI + app).
+    files: ['packages/ui/**/*.tsx', 'packages/app/**/*.tsx'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
     },
   },
   {

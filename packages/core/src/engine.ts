@@ -1,4 +1,4 @@
-import { createRequire } from 'node:module';
+import netSnmpPkg from 'net-snmp/package.json';
 import type { Transport, StorageAdapter } from '@omc/transport';
 import { EventBus } from './events.js';
 import { OmcError } from './errors.js';
@@ -6,8 +6,6 @@ import { SnmpSession } from './snmp/session.js';
 import { TrapReceiver, type TrapRecord } from './snmp/receiver.js';
 import { runMigrations } from './db/migrate.js';
 import type { EngineAPI, EngineInfo, StubDomain } from './api/engine-api.js';
-
-const require = createRequire(import.meta.url);
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/omc.db. Pass ':memory:' for tests. */
@@ -22,11 +20,7 @@ function stub(plannedIn: string): StubDomain {
 }
 
 function netSnmpVersion(): string {
-  try {
-    return (require('net-snmp/package.json') as { version: string }).version;
-  } catch {
-    return 'unknown';
-  }
+  return (netSnmpPkg as { version?: string }).version ?? 'unknown';
 }
 
 export function createEngine(transport: Transport, opts: EngineOptions = {}): EngineAPI {

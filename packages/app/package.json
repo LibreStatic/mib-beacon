@@ -1,0 +1,22 @@
+{
+  "name": "@omc/app",
+  "version": "0.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@omc/ui": "workspace:*",
+    "zustand": "^5.0.3"
+  },
+  "peerDependencies": {
+    "@omc/core": "workspace:*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

@@ -1,3 +1,4 @@
+/// <reference path="../net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Varbind, Session, V3User } from 'net-snmp';
 import { mapSnmpError, OmcError } from '../errors.js';

@@ -1,3 +1,4 @@
+/// <reference path="../net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Receiver, Notification } from 'net-snmp';
 import { mapSnmpError } from '../errors.js';
