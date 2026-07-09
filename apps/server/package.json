@@ -1,0 +1,30 @@
+{
+  "name": "@omc/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "description": "Open MIB Catalog — LAN server (headless engine + web UI)",
+  "type": "module",
+  "scripts": {
+    "build:web": "vite build",
+    "start": "node --import tsx src/server.ts",
+    "dev": "vite build && node --import tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "@omc/app": "workspace:*",
+    "@omc/core": "workspace:*",
+    "@omc/transport": "workspace:*",
+    "@omc/ui": "workspace:*",
+    "net-snmp": "^3.26.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native-web": "^0.21.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "vite": "^6.0.7"
+  }
+}

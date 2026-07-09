@@ -1,10 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
-export interface BridgeResult {
-  ok: boolean;
-  value?: unknown;
-  error?: { code: string; message: string; hint?: string };
-}
+import type { BridgeResult } from '@omc/core/client';
 
 /**
  * The only surface crossing the sandbox. The renderer builds a typed EngineAPI

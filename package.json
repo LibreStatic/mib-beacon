@@ -15,6 +15,7 @@
   "scripts": {
     "dev:desktop": "pnpm --filter @omc/desktop dev",
     "dev:mobile": "pnpm --filter @omc/mobile android",
+    "dev:server": "pnpm --filter @omc/server dev",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "test": "vitest run",

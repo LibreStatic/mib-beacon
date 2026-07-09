@@ -30,3 +30,8 @@ export type {
   DecodedVarbind,
 } from './snmp/types';
 export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver';
+export {
+  createEngineProxy,
+  type ProxyAdapter,
+  type BridgeResult,
+} from './proxy';

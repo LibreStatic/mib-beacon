@@ -4,7 +4,26 @@ Status: done (reference document — no code tasks; the interfaces below are imp
 
 ## Overview
 
-One TypeScript monorepo, one React codebase, two hosts:
+One TypeScript monorepo, one React codebase, three hosts (desktop, mobile, and an
+optional LAN server). The engine always runs in a native/backend layer — browsers can't
+do UDP — and the UI reaches it through the `EngineAPI` seam. The shared pieces live in
+`@omc/core`:
+
+- **`@omc/core/proxy` (via `@omc/core/client`)** — `createEngineProxy(adapter)` builds the
+  client-side `EngineAPI` over any transport adapter (`invoke` + `subscribe`). Desktop uses
+  an IPC adapter (`window.omcBridge`); the LAN server uses a WebSocket adapter. Renderer-safe
+  (no net-snmp).
+- **`@omc/core/bridge`** — host-side dispatch: `ENGINE_METHODS`, `ENGINE_EVENT_CHANNELS`,
+  `dispatchEngineCall(engine, method, args)`. Used by the Electron main IPC bridge and the
+  LAN server's WebSocket handler alike, so the method list lives in one place.
+
+**Optional LAN server (`apps/server`)**: a Node HTTP+WebSocket server that runs the engine
+(Node transport) on a host on the management network and serves the react-native-web UI to
+any browser/phone on the LAN. SNMP is sent from the server host. No authentication by design
+(LAN-only). This is the self-hostable mode; it doubles as the future team/NOC deployment
+path. Run with `pnpm dev:server`.
+
+Original two hosts:
 
 ```
 ┌─────────────────────────── packages/app + packages/ui (React Native) ───────────────────────────┐

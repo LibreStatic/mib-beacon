@@ -32,6 +32,7 @@ One React Native codebase:
 ```
 apps/mobile      Expo app (Android/iOS)
 apps/desktop     Electron shell (Linux/Windows/macOS)
+apps/server      Optional LAN server: headless engine + web UI over WebSocket
 packages/core    Platform-agnostic engine: sessions, MIB store, trap store, resolver orchestration
 packages/smi     MIB parsing layer (lenient mode + diagnostics)
 packages/transport  UDP/TCP/FS/crypto/storage abstraction (Node vs React Native backends)
@@ -73,6 +74,17 @@ Mobile app (Expo dev build) — needs the Android SDK / Xcode and a device or em
 pnpm --filter @omc/mobile prebuild   # generate the native project (first time)
 pnpm dev:mobile                      # = expo run:android
 ```
+
+Optional LAN server — run the engine on one host (on the management network) and use the
+UI from any browser or phone on the LAN. The engine runs on the server; SNMP is sent from
+that host. **No authentication** — intended for trusted LANs.
+
+```bash
+pnpm dev:server              # builds the web bundle + starts the server (default :8899)
+# then open http://<that-host-ip>:8899 from any device on the network
+```
+
+Configure with `OMC_SERVER_PORT`, `OMC_SERVER_HOST`, `OMC_SERVER_DATA`.
 
 See [`docs/plans/SPIKE-RESULTS.md`](docs/plans/SPIKE-RESULTS.md) for validated runtime
 findings (crypto/DES support per runtime, required Electron version, etc.).

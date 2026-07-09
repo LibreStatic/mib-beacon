@@ -27,6 +27,7 @@
       "@omc/resolver": ["packages/resolver/src/index.ts"],
       "@omc/core": ["packages/core/src/index.ts"],
       "@omc/core/client": ["packages/core/src/client.ts"],
+      "@omc/core/bridge": ["packages/core/src/bridge.ts"],
       "@omc/ui": ["packages/ui/src/index.ts"],
       "@omc/app": ["packages/app/src/index.ts"]
     }

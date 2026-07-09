@@ -1,0 +1,39 @@
+- generic [ref=e4]:
+  - generic [ref=e5]: Open MIB Catalog — Spike
+  - generic [ref=e6]: "node · net-snmp 3.26.3 · ciphers: DES ✗ · AES-128 ✓ · AES-256 ✓"
+  - generic [ref=e7]:
+    - generic [ref=e8]: Agent
+    - generic [ref=e9]:
+      - generic [ref=e10]: Host
+      - textbox [ref=e11]: 127.0.0.1
+    - generic [ref=e12]:
+      - generic [ref=e13]: Port
+      - textbox [ref=e14]: "1611"
+    - generic [ref=e15]:
+      - generic [ref=e16]: Community
+      - textbox [ref=e17]: public
+    - generic [ref=e18]:
+      - generic [ref=e19]: OID
+      - textbox [ref=e20]: 1.3.6.1.2.1.1.1.0
+    - generic [ref=e21]:
+      - button "Get" [ref=e22] [cursor=pointer]:
+        - generic [ref=e23]: Get
+      - button "Walk 1.3.6.1.2.1" [ref=e24] [cursor=pointer]:
+        - generic [ref=e25]: Walk 1.3.6.1.2.1
+  - generic [ref=e26]:
+    - generic [ref=e27]: Get result
+    - generic [ref=e43]: 1.3.6.1.2.1.1.1.0 = [OctetString] "Open MIB Catalog spike test agent"
+  - generic [ref=e29]:
+    - generic [ref=e30]: Walk progress
+    - generic [ref=e31]: 0 varbinds · 0 batches · 0 ms
+  - generic [ref=e32]:
+    - generic [ref=e33]: Trap receiver
+    - generic [ref=e34]:
+      - generic [ref=e35]: Listen port
+      - textbox [ref=e36]: "1162"
+    - generic [ref=e37]:
+      - button "Start receiver" [ref=e38] [cursor=pointer]:
+        - generic [ref=e39]: Start receiver
+      - button "Clear" [ref=e40] [cursor=pointer]:
+        - generic [ref=e41]: Clear
+    - generic [ref=e42]: No traps received.
