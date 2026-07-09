@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import type { EngineAPI } from '@omc/core';
+import type { EngineAPI } from '@omc/core/client';
 
 const EngineContext = createContext<EngineAPI | null>(null);
 

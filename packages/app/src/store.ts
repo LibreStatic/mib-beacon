@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DecodedVarbind, TrapRecord } from '@omc/core';
+import type { DecodedVarbind, TrapRecord } from '@omc/core/client';
 
 export interface WalkProgress {
   running: boolean;

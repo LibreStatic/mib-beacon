@@ -10,7 +10,7 @@
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "unrs-resolver"]
+    "onlyBuiltDependencies": ["esbuild", "unrs-resolver", "electron"]
   },
   "scripts": {
     "dev:desktop": "pnpm --filter @omc/desktop dev",
