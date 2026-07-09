@@ -1,0 +1,22 @@
+{
+  "name": "@omc/core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "spike": "node --import tsx src/spike/run-spike.ts"
+  },
+  "dependencies": {
+    "@omc/transport": "workspace:*",
+    "net-snmp": "^3.26.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2"
+  }
+}

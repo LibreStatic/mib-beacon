@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "sourceMap": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@omc/transport": ["packages/transport/src/index.ts"],
+      "@omc/transport/node": ["packages/transport/src/node/index.ts"],
+      "@omc/transport/react-native": ["packages/transport/src/react-native/index.ts"],
+      "@omc/smi": ["packages/smi/src/index.ts"],
+      "@omc/resolver": ["packages/resolver/src/index.ts"],
+      "@omc/core": ["packages/core/src/index.ts"],
+      "@omc/ui": ["packages/ui/src/index.ts"],
+      "@omc/app": ["packages/app/src/index.ts"]
+    }
+  }
+}

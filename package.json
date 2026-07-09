@@ -1,0 +1,35 @@
+{
+  "name": "openmibcatalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source cross-platform SNMP toolkit",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "unrs-resolver"]
+  },
+  "scripts": {
+    "dev:desktop": "pnpm --filter @omc/desktop dev",
+    "dev:mobile": "pnpm --filter @omc/mobile android",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "spike:engine": "pnpm --filter @omc/core spike",
+    "corpus": "echo 'corpus harness lands in plan 03'"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^22.10.5",
+    "eslint": "^9.18.0",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^3.0.2"
+  }
+}

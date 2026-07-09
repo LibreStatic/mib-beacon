@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+.expo/
+web-build/
+
+# native
+android/
+ios/
+!apps/mobile/android/app/src
+*.keystore
+
+# electron
+apps/desktop/out/
+apps/desktop/dist/
+
+# test / coverage
+coverage/
+*.log
+
+# corpus (fetched, not committed — see plan 03)
+dev/corpus/
+
+# local env / secrets
+.env
+.env.local
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.idea/
+.vscode/*
+!.vscode/extensions.json

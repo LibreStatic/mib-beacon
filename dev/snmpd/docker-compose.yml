@@ -1,0 +1,9 @@
+# Spike test agent. Start with:  docker compose -f dev/snmpd/docker-compose.yml up -d --build
+# Exposes snmpd on host 127.0.0.1:1611 (v2c community "public").
+services:
+  snmpd:
+    build: .
+    container_name: omc-spike-snmpd
+    ports:
+      - '127.0.0.1:1611:161/udp'
+    restart: unless-stopped
