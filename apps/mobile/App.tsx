@@ -3,7 +3,7 @@ import { SafeAreaView, StatusBar, useColorScheme } from 'react-native';
 import { createReactNativeTransport } from '@omc/transport/react-native';
 import { createEngine } from '@omc/core';
 import type { AgentSpec } from '@omc/core/client';
-import { EngineProvider, SpikeScreen } from '@omc/app';
+import { EngineProvider, AppRoot } from '@omc/app';
 
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
 const SPIKE_HOST = '10.0.2.2';
@@ -50,7 +50,7 @@ export default function App() {
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0e1116' : '#f6f7f9' }}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <EngineProvider engine={engine}>
-        <SpikeScreen />
+        <AppRoot />
       </EngineProvider>
     </SafeAreaView>
   );

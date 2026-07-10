@@ -1,5 +1,5 @@
 import { AppRegistry } from 'react-native';
-import { EngineProvider, SpikeScreen } from '@omc/app';
+import { EngineProvider, AppRoot } from '@omc/app';
 import { makeEngineProxy } from './engine-proxy';
 
 const engine = makeEngineProxy();
@@ -7,7 +7,7 @@ const engine = makeEngineProxy();
 function Root() {
   return (
     <EngineProvider engine={engine}>
-      <SpikeScreen />
+      <AppRoot />
     </EngineProvider>
   );
 }

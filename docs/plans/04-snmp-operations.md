@@ -1,6 +1,15 @@
 # 04 — Agent Profiles, Query Operations & Table View
 
-Status: not-started
+Status: in-progress (query slice landed early with the UI overhaul)
+
+> **Landed early** (engine `ops` + Query UI): Get / GetNext / streaming Walk with the
+> full v3 form (version/level/auth/priv chips incl. per-host DES availability), live
+> OID→name resolve hint, cancellable walks, and MIB-resolved result names. Basic trap
+> receiver + decoded list (with resolved trap names) also present (plan 05 slice).
+> **Still remaining here:** agent profile manager + credential storage, Set with
+> type-aware editors, Table View (RowStatus row create/delete), multi-agent groups,
+> bookmarks, raw-PDU debug view, and CSV/walk-snapshot export.
+
 Depends on: 02, 03
 
 ## Objective

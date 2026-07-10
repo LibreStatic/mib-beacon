@@ -1,6 +1,18 @@
 # 03 — MIB Catalog & Parser
 
-Status: not-started
+Status: in-progress (core slice landed early with the UI overhaul)
+
+> **Landed early** (`@omc/smi` + engine `mibs` domain + Browse/MIBs UI): text-based
+> MIB parsing on every platform (`MibStore.importTexts`, no fs — base modules bundled
+> in `packages/smi/src/base-mibs.generated.ts` and loaded via `ParseModule` so React
+> Native works), an OID tree index (`OidIndex`: children/node/resolve/search with node
+> kinds and syntax formatting), URL + paste import with a soft-200/`DEFINITIONS ::= BEGIN`
+> content validator, persistence in the `mib_modules` table, and MIB-resolved names on
+> all query results + traps. Verified on web (playwright) and Android (emulator).
+> **Still remaining here:** lenient-recovery catalogue + structured diagnostics UI, the
+> pathological-MIB corpus harness, file/folder pickers, and the DISPLAY-HINT / table-info
+> (INDEX/AUGMENTS) audit for Table View.
+
 Depends on: 02
 
 ## Objective
