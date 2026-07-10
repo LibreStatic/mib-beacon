@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { join } from 'node:path';
 import { createNodeTransport } from '@omc/transport/node';
 import { createEngine } from '@omc/core';
-import { registerEngineBridge } from './bridge.js';
+import { registerEngineBridge } from './bridge';
 
 const isProbe = process.argv.includes('--probe-crypto');
 

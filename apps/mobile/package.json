@@ -17,6 +17,7 @@
     "@omc/core": "workspace:*",
     "@omc/transport": "workspace:*",
     "@omc/ui": "workspace:*",
+    "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "events": "^3.3.0",
     "expo": "~54.0.0",
@@ -31,7 +32,8 @@
     "react-native-tcp-socket": "^6.2.0",
     "react-native-udp": "^4.1.7",
     "readable-stream": "^4.5.2",
-    "stream-browserify": "^3.0.0"
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5"
   },
   "devDependencies": {
     "@types/react": "^19.1.8"

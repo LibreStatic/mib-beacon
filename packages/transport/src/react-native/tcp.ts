@@ -2,7 +2,7 @@
 // local interface matching react-native-tcp-socket's documented runtime API.
 import TcpSockets from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
-import type { TcpSocket, TcpSocketFactory } from '../types.js';
+import type { TcpSocket, TcpSocketFactory } from '../types';
 
 type Listener = (...args: unknown[]) => void;
 interface RnTcp {

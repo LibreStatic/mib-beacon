@@ -3,7 +3,7 @@
 // library's documented EventEmitter-based runtime API.
 import dgram from 'react-native-udp';
 import { Buffer } from 'buffer';
-import type { UdpFamily, UdpSocket, UdpSocketFactory, UdpMessage } from '../types.js';
+import type { UdpFamily, UdpSocket, UdpSocketFactory, UdpMessage } from '../types';
 
 type Listener = (...args: unknown[]) => void;
 interface RnDatagram {

@@ -1,8 +1,8 @@
 /// <reference path="../net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Varbind, Session, V3User } from 'net-snmp';
-import { mapSnmpError, OmcError } from '../errors.js';
-import type { AgentSpec, DecodedVarbind } from './types.js';
+import { mapSnmpError, OmcError } from '../errors';
+import type { AgentSpec, DecodedVarbind } from './types';
 
 function versionConst(v: AgentSpec['version']): number {
   return v === 'v1' ? snmp.Version1 : v === 'v2c' ? snmp.Version2c : snmp.Version3;

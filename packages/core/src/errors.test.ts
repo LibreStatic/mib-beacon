@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OmcError, mapSnmpError } from './errors.js';
+import { OmcError, mapSnmpError } from './errors';
 
 describe('mapSnmpError', () => {
   it('passes through an existing OmcError', () => {

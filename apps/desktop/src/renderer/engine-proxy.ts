@@ -1,5 +1,5 @@
 import { EventBus, OmcError, type EngineAPI } from '@omc/core/client';
-import type { OmcBridge, BridgeResult } from '../preload/index.js';
+import type { OmcBridge, BridgeResult } from '../preload/index';
 
 declare global {
   interface Window {

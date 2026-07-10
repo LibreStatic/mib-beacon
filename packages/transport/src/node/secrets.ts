@@ -1,4 +1,4 @@
-import type { SecretStore } from '../types.js';
+import type { SecretStore } from '../types';
 
 /**
  * A codec the host injects to actually encrypt secrets at rest.

@@ -1,5 +1,5 @@
-import type { HttpClient, HttpRequest, HttpResponse } from '../types.js';
-import { USER_AGENT } from '../types.js';
+import type { HttpClient, HttpRequest, HttpResponse } from '../types';
+import { USER_AGENT } from '../types';
 
 const DEFAULT_TIMEOUT = 15_000;
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;

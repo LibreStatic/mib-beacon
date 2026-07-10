@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import snmp from 'net-snmp';
-import { decodeVarbind } from './session.js';
+import { decodeVarbind } from './session';
 
 describe('decodeVarbind', () => {
   it('decodes a printable OCTET STRING as text', () => {

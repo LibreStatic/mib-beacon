@@ -1,9 +1,9 @@
 /// <reference path="../net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Receiver, Notification } from 'net-snmp';
-import { mapSnmpError } from '../errors.js';
-import { decodeVarbind } from './session.js';
-import type { DecodedVarbind } from './types.js';
+import { mapSnmpError } from '../errors';
+import { decodeVarbind } from './session';
+import type { DecodedVarbind } from './types';
 
 export interface TrapRecord {
   id: string;

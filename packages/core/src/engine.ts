@@ -1,11 +1,11 @@
 import netSnmpPkg from 'net-snmp/package.json';
 import type { Transport, StorageAdapter } from '@omc/transport';
-import { EventBus } from './events.js';
-import { OmcError } from './errors.js';
-import { SnmpSession } from './snmp/session.js';
-import { TrapReceiver, type TrapRecord } from './snmp/receiver.js';
-import { runMigrations } from './db/migrate.js';
-import type { EngineAPI, EngineInfo, StubDomain } from './api/engine-api.js';
+import { EventBus } from './events';
+import { OmcError } from './errors';
+import { SnmpSession } from './snmp/session';
+import { TrapReceiver, type TrapRecord } from './snmp/receiver';
+import { runMigrations } from './db/migrate';
+import type { EngineAPI, EngineInfo, StubDomain } from './api/engine-api';
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/omc.db. Pass ':memory:' for tests. */

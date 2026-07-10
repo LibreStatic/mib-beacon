@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nodeStorageFactory } from '@omc/transport/node';
-import { runMigrations, getSetting, setSetting, MIGRATIONS } from './migrate.js';
+import { runMigrations, getSetting, setSetting, MIGRATIONS } from './migrate';
 
 describe('runMigrations', () => {
   it('applies the initial migration and is idempotent', () => {

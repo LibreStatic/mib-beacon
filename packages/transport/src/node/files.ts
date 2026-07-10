@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { FileStore } from '../types.js';
+import type { FileStore } from '../types';
 
 export function createNodeFileStore(dataDir?: string): FileStore {
   const base = dataDir ?? path.join(os.homedir(), '.openmibcatalog');

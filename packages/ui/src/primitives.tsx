@@ -8,7 +8,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { useTheme } from './theme.js';
+import { useTheme } from './theme';
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   const t = useTheme();

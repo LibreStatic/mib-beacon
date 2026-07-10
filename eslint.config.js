@@ -62,6 +62,9 @@ export default tseslint.config(
         exports: 'writable',
       },
     },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   },
   {
     files: ['**/*.{ts,tsx}'],

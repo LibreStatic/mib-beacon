@@ -4,8 +4,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import QuickCrypto from 'react-native-quick-crypto';
-import type { CryptoProvider, FileStore, SecretStore, HttpClient } from '../types.js';
-import { nodeHttpClient } from '../node/http.js';
+import type { CryptoProvider, FileStore, SecretStore, HttpClient } from '../types';
+import { nodeHttpClient } from '../node/http';
 
 export const rnCrypto: CryptoProvider = {
   randomBytes: (n) => new Uint8Array(QuickCrypto.randomBytes(n)),

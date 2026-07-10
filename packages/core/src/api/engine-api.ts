@@ -1,6 +1,6 @@
-import type { EngineEventChannel, EngineEventListener, Unsubscribe } from '../events.js';
-import type { AgentSpec, DecodedVarbind } from '../snmp/types.js';
-import type { TrapReceiverConfig, TrapRecord } from '../snmp/receiver.js';
+import type { EngineEventChannel, EngineEventListener, Unsubscribe } from '../events';
+import type { AgentSpec, DecodedVarbind } from '../snmp/types';
+import type { TrapReceiverConfig, TrapRecord } from '../snmp/receiver';
 
 /**
  * The single seam between UI and engine (docs/plans/01). This is the SPIKE-scope

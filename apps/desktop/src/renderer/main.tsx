@@ -1,6 +1,6 @@
 import { AppRegistry } from 'react-native';
 import { EngineProvider, SpikeScreen } from '@omc/app';
-import { makeEngineProxy } from './engine-proxy.js';
+import { makeEngineProxy } from './engine-proxy';
 
 const engine = makeEngineProxy();
 

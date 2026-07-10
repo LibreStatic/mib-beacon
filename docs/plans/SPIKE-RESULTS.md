@@ -1,13 +1,13 @@
 # Plan 02 — Spike Results
 
-Date: 2026-07-09 · Verdict: **GO** (stack validated; one hardware-bound item pending)
+Date: 2026-07-09 · Verdict: **GO** (all criteria validated, incl. on-device Android)
 
 The feasibility spike set out to prove the SNMP engine (node-net-snmp) works across
 the desktop (Electron) and mobile (React Native) runtimes through the `EngineAPI`
-seam. It does. The engine-level criteria (S1/S2/S4/S5) pass on both the plain-Node
-and Electron runtimes; the on-device mobile run (S3) could not be executed in this
-headless environment (no Android SDK / no display) but is type-validated and has a
-documented run path.
+seam. It does. S1/S2/S4/S5 pass on both the plain-Node and Electron runtimes, and
+**S3 passed on an Android emulator** — v2c and SNMPv3 (SHA-256/AES-128) Gets succeed
+on device through react-native-udp + react-native-quick-crypto, after a few shims
+(documented under S3).
 
 ## Environment
 
@@ -44,17 +44,41 @@ Evidence: `CRYPTO_PROBE {"...","openssl":"0.0.0","desCbc":true,...}` from
 (accepted, documented gap). Actionable v3 errors verified (wrong-priv → `V3_DECRYPT_FAILED`
 hint, not a bare timeout).
 
-### S3 — mobile (Android) Get — ⏳ NOT RUN (hardware-bound) · type-validated
-Could not execute: this environment has no Android SDK/emulator and no display.
-**De-risked at the type level**: the entire React Native transport (react-native-udp,
-react-native-tcp-socket, react-native-quick-crypto, expo-sqlite, expo-file-system/legacy)
-and the in-process `App.tsx` engine wiring **typecheck against the real library types**
-(`pnpm --filter @omc/mobile typecheck` green). Metro aliasing + Buffer/process polyfills
-are configured. Shim mismatches already found and fixed at type level: expo-file-system
-SDK-54 API moved to `/legacy`; react-native-udp/tcp event & Buffer typings.
-**To finish on hardware** (see README): `pnpm --filter @omc/mobile prebuild` then
-`pnpm dev:mobile` (= `expo run:android`) with a device on the snmpd host's network, or
-point the Spike screen at a reachable agent. Record shim surprises here.
+### S3 — mobile (Android) Get — ✅ PASS (on emulator)
+Ran on a Pixel_9_Pro emulator (Android, Expo SDK 54 dev build, `expo run:android`).
+The app bundles (908 modules), the shared Spike screen renders, and an on-mount
+self-test in `App.tsx` performed real SNMP against the host snmpd (via `10.0.2.2:1611`):
+
+```
+S3_SELFTEST v2c: OK value="Open MIB Catalog spike test agent"
+S3_SELFTEST v3-sha256-aes128: OK value="Open MIB Catalog spike test agent"
+```
+
+So node-net-snmp runs on React Native end-to-end: **react-native-udp** (datagrams),
+**react-native-quick-crypto** (v3 SHA-256 auth + AES-128 priv), expo-sqlite,
+expo-file-system/legacy, Buffer/assert/util/events/stream polyfills. The engine's
+`system.info()` on-device reported `ciphers: DES ✓ · AES-128 ✓ · AES-256 ✓`.
+
+**Shim work required to get there** (all committed):
+1. **`.js` import extensions removed** across shared packages — Metro (unlike Vite/tsc's
+   bundler resolution) does not remap `./x.js` → `./x.tsx`, so extensionful relative
+   imports broke the bundle.
+2. **`dgram` auto-bind shim** (`apps/mobile/shims/dgram.js`) — react-native-udp throws
+   `ERR_SOCKET_BAD_PORT` on `send()` from an *unbound* socket, whereas Node dgram
+   auto-binds; net-snmp only binds when a sourcePort is set. The shim auto-binds to an
+   ephemeral port on first send (queuing until bound), leaving the receiver's explicit
+   bind intact.
+3. **Node-core polyfills** added for net-snmp's deps: `assert`, `util` (plus the
+   buffer/stream/events already present); `fs`/`path` → empty shim (MIB reader unused here).
+4. **`react-native-quick-crypto` removed from the Expo `plugins` array** (v0.7 has no
+   config plugin; it autolinks as a native module).
+5. expo-file-system SDK-54 API moved to `/legacy`; RN socket event/Buffer typings — fixed
+   during the type-level pass.
+
+Reproduce: boot an AVD, `pnpm --filter @omc/mobile prebuild`, `pnpm dev:mobile`; point the
+app at the snmpd host (emulator: `10.0.2.2:1611`). Not yet exercised on device: streaming
+walk (S5) and trap receive (S4) — the code paths are shared with the validated desktop
+engine, but re-confirm on hardware when convenient. iOS not yet built (plan 10).
 
 ### S4 — trap receive — ✅ PASS
 Receiver decodes a v2c trap (`snmptrap` CLI) → `1 in store, first varbinds=3`.
@@ -86,9 +110,8 @@ display; run `pnpm dev:desktop` on a desktop session to see the Spike screen.
 
 ## Go / no-go
 
-**GO.** node-net-snmp is the right engine on both runtimes; the architecture (engine in
-Electron main / in-process on RN, UI over `EngineAPI`) holds. The only unproven item is the
-literal on-device Android run (S3), which is hardware-bound, not a design risk — the same
-engine code runs on Electron's Node and the RN transport typechecks against real libs.
-Proceed to plans 03+. Re-run S3 on Android hardware at the next opportunity and update this
-file.
+**GO.** node-net-snmp is the right engine on all three runtimes (plain Node, Electron,
+React Native); the architecture (engine in Electron main / in-process on RN, UI over
+`EngineAPI`) holds and is proven on device. Proceed to plans 03+. Remaining on-device
+follow-ups (non-blocking): exercise walk (S5) and trap receive (S4) on Android, and build
+for iOS (plan 10).

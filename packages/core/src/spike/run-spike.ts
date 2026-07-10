@@ -12,8 +12,8 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createNodeTransport } from '@omc/transport/node';
-import { createEngine } from '../index.js';
-import type { AgentSpec, AuthProtocol, PrivProtocol } from '../snmp/types.js';
+import { createEngine } from '../index';
+import type { AgentSpec, AuthProtocol, PrivProtocol } from '../snmp/types';
 
 const HOST = process.env.OMC_SPIKE_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.OMC_SPIKE_PORT ?? 1611);

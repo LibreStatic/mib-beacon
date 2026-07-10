@@ -14,14 +14,6 @@
       "bundleIdentifier": "org.openmibcatalog.app",
       "supportsTablet": true
     },
-    "plugins": [
-      "expo-dev-client",
-      "expo-sqlite",
-      "expo-secure-store",
-      [
-        "react-native-quick-crypto",
-        { "sodiumEnabled": false }
-      ]
-    ]
+    "plugins": ["expo-dev-client", "expo-sqlite", "expo-secure-store"]
   }
 }

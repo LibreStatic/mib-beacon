@@ -1,15 +1,15 @@
 // React Native transport backend. Compiled by Metro in apps/mobile; validated
 // on-device (spike S3). Excluded from the Node-side package typecheck.
-import type { Transport } from '../types.js';
-import { rnUdpFactory } from './udp.js';
-import { rnTcpFactory } from './tcp.js';
-import { rnStorageFactory } from './storage.js';
-import { rnCrypto, createRnFileStore, rnSecretStore, rnHttpClient } from './misc.js';
+import type { Transport } from '../types';
+import { rnUdpFactory } from './udp';
+import { rnTcpFactory } from './tcp';
+import { rnStorageFactory } from './storage';
+import { rnCrypto, createRnFileStore, rnSecretStore, rnHttpClient } from './misc';
 
-export { rnUdpFactory } from './udp.js';
-export { rnTcpFactory } from './tcp.js';
-export { rnStorageFactory } from './storage.js';
-export { rnCrypto, createRnFileStore, rnSecretStore, rnHttpClient } from './misc.js';
+export { rnUdpFactory } from './udp';
+export { rnTcpFactory } from './tcp';
+export { rnStorageFactory } from './storage';
+export { rnCrypto, createRnFileStore, rnSecretStore, rnHttpClient } from './misc';
 
 export function createReactNativeTransport(): Transport {
   return {

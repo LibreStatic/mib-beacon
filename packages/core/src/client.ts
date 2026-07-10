@@ -10,8 +10,8 @@ export {
   type EngineEventChannel,
   type EngineEventListener,
   type Unsubscribe,
-} from './events.js';
-export { OmcError, type OmcErrorCode } from './errors.js';
+} from './events';
+export { OmcError, type OmcErrorCode } from './errors';
 export type {
   EngineAPI,
   EngineInfo,
@@ -19,7 +19,7 @@ export type {
   WalkRequest,
   OperationHandle,
   TrapReceiverStatus,
-} from './api/engine-api.js';
+} from './api/engine-api';
 export type {
   AgentSpec,
   V3Credentials,
@@ -28,5 +28,5 @@ export type {
   AuthProtocol,
   PrivProtocol,
   DecodedVarbind,
-} from './snmp/types.js';
-export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver.js';
+} from './snmp/types';
+export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver';

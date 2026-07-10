@@ -1,4 +1,4 @@
-export { createEngine, type EngineOptions } from './engine.js';
+export { createEngine, type EngineOptions } from './engine';
 export type {
   EngineAPI,
   EngineInfo,
@@ -6,15 +6,15 @@ export type {
   WalkRequest,
   OperationHandle,
   TrapReceiverStatus,
-} from './api/engine-api.js';
-export { OmcError, mapSnmpError, type OmcErrorCode } from './errors.js';
+} from './api/engine-api';
+export { OmcError, mapSnmpError, type OmcErrorCode } from './errors';
 export {
   EventBus,
   type EngineEvent,
   type EngineEventChannel,
   type EngineEventListener,
   type Unsubscribe,
-} from './events.js';
+} from './events';
 export type {
   AgentSpec,
   V3Credentials,
@@ -23,6 +23,6 @@ export type {
   AuthProtocol,
   PrivProtocol,
   DecodedVarbind,
-} from './snmp/types.js';
-export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver.js';
-export { runMigrations, MIGRATIONS, getSetting, setSetting } from './db/migrate.js';
+} from './snmp/types';
+export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver';
+export { runMigrations, MIGRATIONS, getSetting, setSetting } from './db/migrate';

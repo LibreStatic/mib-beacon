@@ -1,6 +1,6 @@
 // Validated on-device (spike S3). Compiled by Metro in apps/mobile.
 import * as SQLite from 'expo-sqlite';
-import type { StorageAdapter, StorageFactory, SqlValue } from '../types.js';
+import type { StorageAdapter, StorageFactory, SqlValue } from '../types';
 
 class ExpoSqliteAdapter implements StorageAdapter {
   private db: SQLite.SQLiteDatabase;

@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nodeUdpFactory } from './udp.js';
-import { nodeStorageFactory } from './storage.js';
-import { nodeHttpClient } from './http.js';
-import { createNodeFileStore } from './files.js';
+import { nodeUdpFactory } from './udp';
+import { nodeStorageFactory } from './storage';
+import { nodeHttpClient } from './http';
+import { createNodeFileStore } from './files';
 
 describe('nodeUdpFactory', () => {
   it('round-trips a datagram between two sockets', async () => {

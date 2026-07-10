@@ -1,6 +1,6 @@
 import net from 'node:net';
 import tls from 'node:tls';
-import type { TcpSocket, TcpSocketFactory } from '../types.js';
+import type { TcpSocket, TcpSocketFactory } from '../types';
 
 class NodeTcpSocket implements TcpSocket {
   private sock: net.Socket | null = null;

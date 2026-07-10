@@ -1,5 +1,5 @@
 import dgram from 'node:dgram';
-import type { UdpFamily, UdpSocket, UdpSocketFactory, UdpMessage } from '../types.js';
+import type { UdpFamily, UdpSocket, UdpSocketFactory, UdpMessage } from '../types';
 
 class NodeUdpSocket implements UdpSocket {
   private sock: dgram.Socket;

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { CryptoProvider } from '../types.js';
+import type { CryptoProvider } from '../types';
 
 export const nodeCrypto: CryptoProvider = {
   randomBytes: (n) => new Uint8Array(crypto.randomBytes(n)),

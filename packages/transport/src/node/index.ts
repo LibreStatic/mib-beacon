@@ -1,20 +1,20 @@
-import type { Transport, SecretStore } from '../types.js';
-import { nodeUdpFactory } from './udp.js';
-import { nodeTcpFactory } from './tcp.js';
-import { nodeCrypto } from './crypto.js';
-import { createNodeFileStore } from './files.js';
-import { nodeStorageFactory } from './storage.js';
-import { createInMemorySecretStore } from './secrets.js';
-import { nodeHttpClient } from './http.js';
+import type { Transport, SecretStore } from '../types';
+import { nodeUdpFactory } from './udp';
+import { nodeTcpFactory } from './tcp';
+import { nodeCrypto } from './crypto';
+import { createNodeFileStore } from './files';
+import { nodeStorageFactory } from './storage';
+import { createInMemorySecretStore } from './secrets';
+import { nodeHttpClient } from './http';
 
-export { nodeUdpFactory } from './udp.js';
-export { nodeTcpFactory } from './tcp.js';
-export { nodeCrypto } from './crypto.js';
-export { createNodeFileStore } from './files.js';
-export { nodeStorageFactory } from './storage.js';
-export { createInMemorySecretStore } from './secrets.js';
-export type { SecretCodec } from './secrets.js';
-export { nodeHttpClient } from './http.js';
+export { nodeUdpFactory } from './udp';
+export { nodeTcpFactory } from './tcp';
+export { nodeCrypto } from './crypto';
+export { createNodeFileStore } from './files';
+export { nodeStorageFactory } from './storage';
+export { createInMemorySecretStore } from './secrets';
+export type { SecretCodec } from './secrets';
+export { nodeHttpClient } from './http';
 
 export interface NodeTransportOptions {
   dataDir?: string;

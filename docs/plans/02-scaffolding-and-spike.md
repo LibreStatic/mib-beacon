@@ -1,6 +1,6 @@
 # 02 — Scaffolding & Feasibility Spike
 
-Status: done (see docs/plans/SPIKE-RESULTS.md — verdict GO; S3 on-device pending Android hardware)
+Status: done (see docs/plans/SPIKE-RESULTS.md — verdict GO; all S1–S5 validated incl. S3 on Android emulator)
 Depends on: 01 (contracts)
 **GATING PHASE**: the spike at the end is the go/no-go for the whole stack. Do the spike tasks (S1–S5) FIRST with throwaway code if that's faster, then scaffold properly — or scaffold first and spike inside it; either order is fine, but do not proceed to plans 03+ until every spike exit criterion is recorded in `docs/plans/SPIKE-RESULTS.md`.
 
@@ -85,8 +85,9 @@ Real MIB parsing (plan 03), styling/theming beyond defaults, packaging/installer
 - **`@omc/core/client` subpath added** (not in plan 01's original surface) to give the
   renderer a net-snmp-free import surface (EventBus/OmcError/types). Keeps the SNMP engine
   out of the browser bundle. Worth folding into plan 01's contract when next revised.
-- **S3 (on-device Android) not executed** — no Android SDK/emulator in the build
-  environment. Mitigated: full RN transport + App typecheck against real libs. See
-  SPIKE-RESULTS.md for the exact on-hardware run steps; re-run before relying on mobile.
+- **S3 (on-device Android) passed** on a Pixel_9_Pro emulator. Required shims (all
+  committed, documented in SPIKE-RESULTS): removed `.js` import extensions (Metro doesn't
+  remap them), a `dgram` auto-bind shim for react-native-udp (`apps/mobile/shims/dgram.js`),
+  `assert`/`util` polyfills, and dropping quick-crypto from the Expo plugins array.
 - **DES finding**: available on Electron/BoringSSL, absent on plain-Node/OpenSSL-3 by
   default — better than the plan anticipated for desktop. Recorded in SPIKE-RESULTS.md.

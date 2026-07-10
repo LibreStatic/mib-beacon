@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { StorageAdapter, StorageFactory, SqlValue } from '../types.js';
+import type { StorageAdapter, StorageFactory, SqlValue } from '../types';
 
 /**
  * Backed by Node's built-in `node:sqlite` (stable since Node 22, bundled in

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { Section, Field, Button, Mono, Label, useTheme } from '@omc/ui';
 import type { EngineInfo, AgentSpec, EngineEvent, DecodedVarbind, TrapRecord } from '@omc/core/client';
-import { useEngine } from './engine-context.js';
-import { useSpikeStore } from './store.js';
+import { useEngine } from './engine-context';
+import { useSpikeStore } from './store';
 
 /**
  * The feasibility-spike screen (docs/plans/02 T4). Shared verbatim by desktop
