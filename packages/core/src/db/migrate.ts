@@ -26,6 +26,17 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 2,
+    name: 'mib_modules',
+    up: `
+      CREATE TABLE IF NOT EXISTS mib_modules (
+        name TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        loaded_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 /** Apply any migrations newer than the recorded version. Idempotent. */

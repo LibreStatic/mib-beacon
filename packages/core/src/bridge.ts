@@ -14,7 +14,16 @@ type Handler = (engine: EngineAPI, ...args: unknown[]) => unknown;
 
 export const ENGINE_METHODS: Record<string, Handler> = {
   'system.info': (e) => e.system.info(),
+  'mibs.importTexts': (e, files) => e.mibs.importTexts(files as never),
+  'mibs.importUrl': (e, url) => e.mibs.importUrl(url as string),
+  'mibs.list': (e) => e.mibs.list(),
+  'mibs.unload': (e, name) => e.mibs.unload(name as string),
+  'mibs.tree': (e, oid) => e.mibs.tree(oid as string | undefined),
+  'mibs.node': (e, oidOrName) => e.mibs.node(oidOrName as string),
+  'mibs.search': (e, query, limit) => e.mibs.search(query as string, limit as number | undefined),
+  'mibs.resolve': (e, oid) => e.mibs.resolve(oid as string),
   'ops.get': (e, req) => e.ops.get(req as never),
+  'ops.getNext': (e, req) => e.ops.getNext(req as never),
   'ops.startWalk': (e, req) => e.ops.startWalk(req as never),
   'ops.cancel': (e, id) => e.ops.cancel(id as string),
   'traps.startReceiver': (e, cfg) => e.traps.startReceiver(cfg as never),

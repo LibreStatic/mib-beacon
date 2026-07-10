@@ -44,13 +44,14 @@ export default tseslint.config(
       '**/*.config.cjs',
       '**/metro.config.*',
       '**/babel.config.*',
+      '**/*.generated.ts',
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     // Plain-JS files that run in the Node/RN CommonJS or bundler-entry context.
-    files: ['**/*.cjs', '**/shims/**/*.js', 'apps/*/index.js'],
+    files: ['**/*.cjs', '**/*.mjs', '**/shims/**/*.js', 'apps/*/index.js'],
     languageOptions: {
       globals: {
         module: 'readonly',

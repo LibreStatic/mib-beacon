@@ -6,7 +6,17 @@ export type {
   WalkRequest,
   OperationHandle,
   TrapReceiverStatus,
+  MibsAPI,
 } from './api/engine-api';
+export type {
+  MibNodeKind,
+  MibNodeSummary,
+  MibNodeDetail,
+  ModuleInfo,
+  ImportResult,
+  MibSearchHit,
+  ResolvedName,
+} from '@omc/smi';
 export { OmcError, mapSnmpError, type OmcErrorCode } from './errors';
 export {
   EventBus,

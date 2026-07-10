@@ -1,4 +1,4 @@
-/// <reference path="../net-snmp.d.ts" />
+/// <reference path="../../../smi/src/net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Receiver, Notification } from 'net-snmp';
 import { mapSnmpError } from '../errors';
@@ -16,6 +16,8 @@ export interface TrapRecord {
   varbinds: DecodedVarbind[];
   /** best-effort snmpTrapOID (v2c) — first varbind value after sysUpTime, if present */
   trapOid?: string;
+  /** MIB-resolved name of trapOid (decorated by the engine). */
+  trapName?: string;
   parseError?: string;
 }
 

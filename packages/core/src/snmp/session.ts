@@ -1,4 +1,4 @@
-/// <reference path="../net-snmp.d.ts" />
+/// <reference path="../../../smi/src/net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Varbind, Session, V3User } from 'net-snmp';
 import { mapSnmpError, OmcError } from '../errors';
@@ -76,6 +76,15 @@ export class SnmpSession {
   get(oids: string[]): Promise<DecodedVarbind[]> {
     return new Promise((resolve, reject) => {
       this.session.get(oids, (error, varbinds) => {
+        if (error) return reject(mapSnmpError(error));
+        resolve(varbinds.map(decodeVarbind));
+      });
+    });
+  }
+
+  getNext(oids: string[]): Promise<DecodedVarbind[]> {
+    return new Promise((resolve, reject) => {
+      this.session.getNext(oids, (error, varbinds) => {
         if (error) return reject(mapSnmpError(error));
         resolve(varbinds.map(decodeVarbind));
       });

@@ -1,12 +1,19 @@
 import type { EngineEventChannel, EngineEventListener, Unsubscribe } from '../events';
 import type { AgentSpec, DecodedVarbind } from '../snmp/types';
 import type { TrapReceiverConfig, TrapRecord } from '../snmp/receiver';
+import type {
+  ImportResult,
+  MibNodeDetail,
+  MibNodeSummary,
+  MibSearchHit,
+  ModuleInfo,
+  ResolvedName,
+} from '@omc/smi';
 
 /**
- * The single seam between UI and engine (docs/plans/01). This is the SPIKE-scope
- * surface: the browse/query/table/resolver domains are stubbed here and fleshed
- * out per-domain in plans 03–08. Everything is async and structured-clone-safe
- * so it proxies over Electron IPC unchanged.
+ * The single seam between UI and engine (docs/plans/01). Everything is async
+ * and structured-clone-safe so it proxies over Electron IPC / WebSocket
+ * unchanged. Domains still pending their phase are stubbed.
  */
 
 export interface EngineInfo {
@@ -38,17 +45,35 @@ export interface TrapReceiverStatus {
   count: number;
 }
 
-/** Domains not yet implemented in the spike (see the referenced plan). */
+/** Domains not yet implemented (see the referenced plan). */
 export interface StubDomain {
   readonly plannedIn: string;
+}
+
+export interface MibsAPI {
+  /** Parse MIB files given as raw text (works on every platform). */
+  importTexts(files: { name: string; content: string }[]): Promise<ImportResult>;
+  /** Fetch a MIB from a user-supplied URL and import it (user-initiated only). */
+  importUrl(url: string): Promise<ImportResult>;
+  list(): Promise<ModuleInfo[]>;
+  unload(moduleName: string): Promise<void>;
+  /** Children of an OID; omit for the tree roots. */
+  tree(oid?: string): Promise<MibNodeSummary[]>;
+  /** Detail for a numeric OID or symbol name. */
+  node(oidOrName: string): Promise<MibNodeDetail | null>;
+  search(query: string, limit?: number): Promise<MibSearchHit[]>;
+  /** Longest-prefix name resolution for (instance) OIDs. */
+  resolve(oid: string): Promise<ResolvedName | null>;
 }
 
 export interface EngineAPI {
   system: {
     info(): Promise<EngineInfo>;
   };
+  mibs: MibsAPI;
   ops: {
     get(req: GetRequest): Promise<DecodedVarbind[]>;
+    getNext(req: GetRequest): Promise<DecodedVarbind[]>;
     /** Streams `ops` events ({kind: 'batch'|'done'|'error', handleId}). */
     startWalk(req: WalkRequest): Promise<OperationHandle>;
     cancel(handleId: string): Promise<void>;
@@ -57,15 +82,14 @@ export interface EngineAPI {
     startReceiver(cfg: TrapReceiverConfig): Promise<TrapReceiverStatus>;
     stopReceiver(): Promise<void>;
     status(): Promise<TrapReceiverStatus>;
-    /** In-memory list for the spike; SQLite-backed store lands in plan 05. */
+    /** In-memory list for now; SQLite-backed store lands in plan 05. */
     list(): Promise<TrapRecord[]>;
     clear(): Promise<void>;
   };
   events: {
     subscribe(channel: EngineEventChannel, listener: EngineEventListener): Unsubscribe;
   };
-  // --- stubbed domains (throw NOT_IMPLEMENTED until their phase) ---
-  mibs: StubDomain;
+  // --- stubbed domains (implemented in their phase) ---
   agents: StubDomain;
   resolver: StubDomain;
   tools: StubDomain;

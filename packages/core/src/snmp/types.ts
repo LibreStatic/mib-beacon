@@ -34,4 +34,6 @@ export interface DecodedVarbind {
   value: string | number;
   isError: boolean;
   errorText?: string;
+  /** MIB-resolved display name (e.g. ifOperStatus.3), when a module matches. */
+  name?: string;
 }

@@ -43,8 +43,19 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
 
   return {
     system: { info: () => call('system.info') },
+    mibs: {
+      importTexts: (files) => call('mibs.importTexts', files),
+      importUrl: (url) => call('mibs.importUrl', url),
+      list: () => call('mibs.list'),
+      unload: (name) => call('mibs.unload', name),
+      tree: (oid) => call('mibs.tree', oid),
+      node: (oidOrName) => call('mibs.node', oidOrName),
+      search: (query, limit) => call('mibs.search', query, limit),
+      resolve: (oid) => call('mibs.resolve', oid),
+    },
     ops: {
       get: (req) => call('ops.get', req),
+      getNext: (req) => call('ops.getNext', req),
       startWalk: (req) => call('ops.startWalk', req),
       cancel: (id) => call('ops.cancel', id),
     },
@@ -56,7 +67,6 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
       clear: () => call('traps.clear'),
     },
     events: { subscribe: (channel, listener) => bus.subscribe(channel, listener) },
-    mibs: stub('plan 03'),
     agents: stub('plan 04'),
     resolver: stub('plan 06'),
     tools: stub('plan 08'),

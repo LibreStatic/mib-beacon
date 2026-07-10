@@ -19,7 +19,17 @@ export type {
   WalkRequest,
   OperationHandle,
   TrapReceiverStatus,
+  MibsAPI,
 } from './api/engine-api';
+export type {
+  MibNodeKind,
+  MibNodeSummary,
+  MibNodeDetail,
+  ModuleInfo,
+  ImportResult,
+  MibSearchHit,
+  ResolvedName,
+} from '@omc/smi';
 export type {
   AgentSpec,
   V3Credentials,
