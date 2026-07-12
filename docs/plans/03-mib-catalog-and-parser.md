@@ -10,8 +10,19 @@ Status: in-progress (core slice landed early with the UI overhaul)
 > content validator, persistence in the `mib_modules` table, and MIB-resolved names on
 > all query results + traps. Verified on web (playwright) and Android (emulator).
 > **Still remaining here:** lenient-recovery catalogue + structured diagnostics UI, the
-> pathological-MIB corpus harness, file/folder pickers, and the DISPLAY-HINT / table-info
+> pathological-MIB corpus harness, and the DISPLAY-HINT / table-info
 > (INDEX/AUGMENTS) audit for Table View.
+>
+> **Interactive module focus landed:** loaded-module rows now open a sparse, lazy OID
+> projection containing that module's definitions, imported symbols, and connector
+> ancestors. Rows are tagged `this MIB`, `dependency`, or `parent`.
+>
+> **File import landed:** web/Electron support multi-file selection, folder selection,
+> and recursive drag/drop; Android supports documents plus Storage Access Framework
+> folders; iOS uses multi-file/ZIP fallback. ZIP expansion and local structural review
+> happen before confirmation, selected LAN-browser content is not uploaded before the
+> review action, and batch parsing/replacement is transactional across the catalog,
+> resolver cache, and SQLite persistence.
 
 Depends on: 02
 

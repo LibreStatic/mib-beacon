@@ -1,6 +1,6 @@
 # 06 — Online MIB Auto-Resolution
 
-Status: not-started
+Status: implemented (2026-07-10)
 Depends on: 03 (consumes its `MIB_MISSING_IMPORTS` contract)
 
 ## Objective
@@ -101,3 +101,10 @@ For a numeric OID with no loaded MIB match (from results table, trap console, or
 
 ## Out of scope
 Custom user sources UI (plan 07 — but the source abstraction here is what they implement), auto-resolution without prompt (never — by design), bundling vendor MIB packs in releases (licensing care needed; post-v1 discussion).
+
+## Implementation notes
+
+- Missing-import resolution is a cancellable, event-streamed operation. Cache is always tried first; external access uses a consent prompt whose “Ask me again next time” choice controls whether consent is remembered.
+- Unknown-OID lookup remains explicitly user-triggered and combines loaded/cache, IANA, oid-base, oidref, and evidence-backed source-index candidates.
+- The resolver persists source indexes, ETags, content-addressed MIB bodies, bounded history, and lookup results. Invalid or hostile source content is rejected before it reaches the catalog.
+- The live DOCS-BPI2EXT-MIB smoke test resolved its four direct dependencies plus transitive IANAifType-MIB and INET-ADDRESS-MIB from the pysnmp source, then retried the exact original text successfully.

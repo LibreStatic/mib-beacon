@@ -1,6 +1,6 @@
 # 07 — Custom Resolver Sources
 
-Status: not-started
+Status: implemented (2026-07-10)
 Depends on: 06
 
 ## Objective
@@ -63,3 +63,10 @@ For HTTP services exposing a catalog document instead of predictable paths.
 
 ## Out of scope
 SFTP/SCP sources (post-v1 if demanded), FTP directory browsing UI, WebDAV, source health monitoring/dashboards.
+
+## Implementation notes
+
+- HTTP template, passive FTP, explicit FTPS on Node, JSON catalog, and GitHub tree sources share validation, caching, cancellation, rate limiting, and source attribution.
+- React Native explicit FTPS is deliberately rejected because the current socket library cannot guarantee certificate and hostname verification; plain FTP remains available and Node FTPS remains supported.
+- Credential-bearing sources require an encrypted SecretStore. Electron uses persistent `safeStorage`; hosts without encrypted storage reject credential drafts instead of persisting unusable or plaintext secrets.
+- JSON catalog preview is consent-gated and evaluates an unsaved draft without persisting its configuration or secrets. JSONPath support is intentionally restricted to the safe catalog-selection subset used by the editor.

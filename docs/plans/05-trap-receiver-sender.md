@@ -1,7 +1,11 @@
 # 05 — Trap Receiver & Sender
 
-Status: not-started
+Status: in-progress (receiver + sender slices landed early)
 Depends on: 02, 03
+
+> **Landed early:** Receive/Send workspace with v1/v2c/v3 traps, v2c/v3 informs,
+> typed multi-varbind payloads, NOTIFICATION-TYPE prefill, acknowledgement/error
+> feedback, and session replay history. Persistence, filters, presets, and rules remain.
 
 ## Objective
 
