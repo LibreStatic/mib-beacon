@@ -1,6 +1,6 @@
 /// <reference path="../../../smi/src/net-snmp.d.ts" />
 import snmp from 'net-snmp';
-import type { Receiver, Notification } from 'net-snmp';
+import type { Pdu, Receiver, Notification } from 'net-snmp';
 import { mapSnmpError } from '../errors';
 import { decodeVarbind } from './session';
 import type { DecodedVarbind } from './types';
@@ -40,6 +40,19 @@ export interface TrapReceiverConfig {
 }
 
 const SNMP_TRAP_OID = '1.3.6.1.6.3.1.1.4.1.0';
+
+export function trapOidFromPdu(pdu: Pdu): string | undefined {
+  if (typeof pdu.generic === 'number') {
+    if (pdu.generic >= 0 && pdu.generic <= 5) {
+      return `1.3.6.1.6.3.1.1.5.${pdu.generic + 1}`;
+    }
+    if (pdu.generic === 6 && pdu.enterprise && pdu.specific !== undefined) {
+      return `${pdu.enterprise}.0.${pdu.specific}`;
+    }
+  }
+  const raw = pdu.varbinds?.find((varbind) => varbind.oid === SNMP_TRAP_OID)?.value;
+  return raw === undefined ? undefined : String(raw);
+}
 
 /**
  * Thin wrapper over node-net-snmp's Receiver. Decodes each notification into a
@@ -85,7 +98,7 @@ export class TrapReceiver {
 
   private decode(n: Notification): TrapRecord {
     const varbinds = (n.pdu.varbinds ?? []).map(decodeVarbind);
-    const trapOidVb = varbinds.find((v) => v.oid === SNMP_TRAP_OID);
+    const trapOid = trapOidFromPdu(n.pdu);
     return {
       id: `trap-${Date.now()}-${this.seq++}`,
       receivedAt: Date.now(),
@@ -95,7 +108,7 @@ export class TrapReceiver {
       community: n.pdu.community,
       pduType: n.pdu.type,
       varbinds,
-      trapOid: trapOidVb ? String(trapOidVb.value) : undefined,
+      trapOid,
     };
   }
 

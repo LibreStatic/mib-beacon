@@ -37,3 +37,44 @@ export interface DecodedVarbind {
   /** MIB-resolved display name (e.g. ifOperStatus.3), when a module matches. */
   name?: string;
 }
+
+export type SnmpWireType =
+  | 'Integer'
+  | 'OctetString'
+  | 'ObjectIdentifier'
+  | 'IpAddress'
+  | 'Counter'
+  | 'Gauge'
+  | 'TimeTicks'
+  | 'Opaque'
+  | 'Counter64';
+
+/** Structured-clone-safe typed value accepted by Set and notification sending. */
+export interface SnmpVarbindInput {
+  oid: string;
+  type: SnmpWireType;
+  value: string;
+  encoding?: 'text' | 'hex';
+}
+
+export type NotificationKind = 'trap' | 'inform';
+
+export interface NotificationPayload {
+  kind: NotificationKind;
+  trapOid: string;
+  varbinds: SnmpVarbindInput[];
+  upTime?: number;
+  /** v1 agent-addr field; ignored by v2c/v3. */
+  agentAddress?: string;
+}
+
+export interface NotificationSendRequest extends NotificationPayload {
+  target: AgentSpec;
+}
+
+export interface NotificationSendResult {
+  kind: NotificationKind;
+  sentAt: number;
+  acknowledged: boolean;
+  responseVarbinds?: DecodedVarbind[];
+}

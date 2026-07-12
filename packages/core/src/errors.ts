@@ -111,5 +111,17 @@ export function mapSnmpError(err: unknown): OmcError {
       cause: err,
     });
   }
+  if (/notwritable|not writable|readonly|read-only/i.test(msg)) {
+    return new OmcError('SET_NOT_WRITABLE', 'The agent reports that this object is not writable', {
+      hint: 'Choose an object whose MIB access is read-write/read-create and verify the agent write community or VACM view.',
+      cause: err,
+    });
+  }
+  if (/wrongtype|wrong type|bad value|wrongvalue|wrong value/i.test(msg)) {
+    return new OmcError('SET_WRONG_TYPE', 'The agent rejected the Set value or wire type', {
+      hint: 'Check the object syntax, enum/range constraints, instance suffix, and selected wire type.',
+      cause: err,
+    });
+  }
   return new OmcError('REQ_FAILED', msg || 'SNMP request failed', { cause: err });
 }

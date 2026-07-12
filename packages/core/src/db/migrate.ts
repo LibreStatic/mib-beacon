@@ -37,6 +37,43 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 3,
+    name: 'resolver',
+    up: `
+      CREATE TABLE IF NOT EXISTS resolver_sources (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
+        enabled INTEGER NOT NULL, priority INTEGER NOT NULL,
+        built_in INTEGER NOT NULL DEFAULT 0, config_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS resolver_cache (
+        module TEXT PRIMARY KEY, content_key TEXT NOT NULL,
+        source_id TEXT NOT NULL, location TEXT NOT NULL,
+        warnings_json TEXT NOT NULL, size_bytes INTEGER NOT NULL,
+        etag TEXT, stored_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS resolver_source_indexes (
+        source_id TEXT NOT NULL, index_key TEXT NOT NULL,
+        value_json TEXT NOT NULL, etag TEXT, updated_at INTEGER NOT NULL,
+        PRIMARY KEY(source_id, index_key)
+      );
+      CREATE TABLE IF NOT EXISTS resolver_lookup_cache (
+        kind TEXT NOT NULL, lookup_key TEXT NOT NULL, value_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL, stored_at INTEGER NOT NULL,
+        PRIMARY KEY(kind, lookup_key)
+      );
+      CREATE TABLE IF NOT EXISTS resolver_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, handle_id TEXT NOT NULL,
+        status TEXT NOT NULL, requested_json TEXT NOT NULL,
+        result_json TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS resolver_cooldowns (
+        source_id TEXT PRIMARY KEY, http_status INTEGER NOT NULL,
+        until_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 /** Apply any migrations newer than the recorded version. Idempotent. */

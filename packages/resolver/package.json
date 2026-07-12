@@ -1,0 +1,16 @@
+{
+  "name": "@omc/resolver",
+  "version": "0.0.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@omc/smi": "workspace:*",
+    "@omc/transport": "workspace:*"
+  }
+}

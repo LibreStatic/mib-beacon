@@ -2,13 +2,24 @@
 import snmp from 'net-snmp';
 import type { Varbind, Session, V3User } from 'net-snmp';
 import { mapSnmpError, OmcError } from '../errors';
-import type { AgentSpec, DecodedVarbind } from './types';
+import type {
+  AgentSpec,
+  DecodedVarbind,
+  NotificationPayload,
+  NotificationSendResult,
+  SnmpVarbindInput,
+} from './types';
+import { encodeVarbindInput } from './varbind-input';
 
 function versionConst(v: AgentSpec['version']): number {
   return v === 'v1' ? snmp.Version1 : v === 'v2c' ? snmp.Version2c : snmp.Version3;
 }
 
-function num(map: Record<string, number | string>, key: string | undefined, fallback: number): number {
+function num(
+  map: Record<string, number | string>,
+  key: string | undefined,
+  fallback: number,
+): number {
   if (!key) return fallback;
   const v = map[key];
   return typeof v === 'number' ? v : fallback;
@@ -48,10 +59,14 @@ export function decodeVarbind(vb: Varbind): DecodedVarbind {
 
 export class SnmpSession {
   private session: Session;
+  private readonly version: AgentSpec['version'];
 
   constructor(spec: AgentSpec) {
+    this.version = spec.version;
     const options = {
       port: spec.port ?? 161,
+      // node-net-snmp routes trap() and inform() through trapPort, not port.
+      trapPort: spec.port ?? 162,
       version: versionConst(spec.version),
       timeout: spec.timeoutMs ?? 5000,
       retries: spec.retries ?? 1,
@@ -88,6 +103,82 @@ export class SnmpSession {
         if (error) return reject(mapSnmpError(error));
         resolve(varbinds.map(decodeVarbind));
       });
+    });
+  }
+
+  set(inputs: SnmpVarbindInput[]): Promise<DecodedVarbind[]> {
+    const encoded = inputs.map(encodeVarbindInput);
+    return new Promise((resolve, reject) => {
+      this.session.set(encoded, (error, varbinds) => {
+        if (error) return reject(mapSnmpError(error));
+        resolve(varbinds.map(decodeVarbind));
+      });
+    });
+  }
+
+  sendNotification(input: NotificationPayload): Promise<NotificationSendResult> {
+    if (!/^\d+(?:\.\d+)+$/.test(input.trapOid.trim())) {
+      return Promise.reject(new OmcError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'));
+    }
+    if (input.kind === 'inform' && this.version === 'v1') {
+      return Promise.reject(new OmcError('REQ_FAILED', 'SNMP informs require v2c or v3.'));
+    }
+    if (
+      input.upTime !== undefined &&
+      (!Number.isInteger(input.upTime) || input.upTime < 0 || input.upTime > 4_294_967_295)
+    ) {
+      return Promise.reject(
+        new OmcError('REQ_FAILED', 'Notification uptime must be an unsigned 32-bit integer.'),
+      );
+    }
+    if (this.version === 'v1' && input.agentAddress) {
+      const octets = input.agentAddress.split('.');
+      if (
+        octets.length !== 4 ||
+        octets.some((octet) => !/^\d+$/.test(octet) || Number(octet) > 255)
+      ) {
+        return Promise.reject(
+          new OmcError('REQ_FAILED', 'The v1 agent address must be a valid IPv4 address.'),
+        );
+      }
+    }
+    const oid = input.trapOid.trim();
+    const standardV1 = [
+      'ColdStart',
+      'WarmStart',
+      'LinkDown',
+      'LinkUp',
+      'AuthenticationFailure',
+      'EgpNeighborLoss',
+    ];
+    const standardMatch = /^1\.3\.6\.1\.6\.3\.1\.1\.5\.([1-6])$/.exec(oid);
+    const typeOrOid =
+      this.version === 'v1' && standardMatch
+        ? snmp.TrapType[standardV1[Number(standardMatch[1]) - 1]!]!
+        : oid;
+    const varbinds = input.varbinds.map(encodeVarbindInput);
+    const options = {
+      ...(input.upTime !== undefined ? { upTime: input.upTime } : {}),
+      ...(input.agentAddress ? { agentAddr: input.agentAddress } : {}),
+    };
+    const sentAt = Date.now();
+    return new Promise((resolve, reject) => {
+      if (input.kind === 'inform') {
+        this.session.inform(oid, varbinds, options, (error, response) => {
+          if (error) return reject(mapSnmpError(error));
+          resolve({
+            kind: 'inform',
+            sentAt,
+            acknowledged: true,
+            responseVarbinds: response.map(decodeVarbind),
+          });
+        });
+      } else {
+        this.session.trap(typeOrOid, varbinds, options, (error: Error | null) => {
+          if (error) return reject(mapSnmpError(error));
+          resolve({ kind: 'trap', sentAt, acknowledged: false });
+        });
+      }
     });
   }
 

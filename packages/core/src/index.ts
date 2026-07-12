@@ -3,21 +3,48 @@ export type {
   EngineAPI,
   EngineInfo,
   GetRequest,
+  SetRequest,
   WalkRequest,
   OperationHandle,
   TrapReceiverStatus,
   MibsAPI,
+  MibStartImportRequest,
+  ResolverAPI,
+  ResolverOperationState,
+  ResolverOperationStatus,
+  ResolverConsentResponse,
+  ResolverSettings,
+  ResolverSourceDraft,
+  ResolverSourceSecrets,
+  ResolverSourceTestResult,
+  ResolverSourcePreviewResult,
+  ResolverOperationResult,
+  ResolverCacheStats,
+  OidLookupRequest,
+  OidLookupResult,
+  ResolverHistoryEntry,
 } from './api/engine-api';
+export type { SourceConfig, SourceKind } from '@omc/resolver';
 export type {
   MibNodeKind,
   MibNodeSummary,
   MibNodeDetail,
   ModuleInfo,
+  ModuleDependency,
+  ModuleView,
+  ModuleTreeRole,
+  ModuleTreeNode,
   ImportResult,
   MibSearchHit,
   ResolvedName,
+  MibTextFile,
+  MibFileImportInspection,
+  MibModuleCollisionKind,
+  MibFileInspection,
+  MibFilesInspection,
 } from '@omc/smi';
 export { OmcError, mapSnmpError, type OmcErrorCode } from './errors';
+export { inferWireType, validateVarbindInput } from './snmp/wire-types';
 export {
   EventBus,
   type EngineEvent,
@@ -33,6 +60,12 @@ export type {
   AuthProtocol,
   PrivProtocol,
   DecodedVarbind,
+  SnmpWireType,
+  SnmpVarbindInput,
+  NotificationKind,
+  NotificationPayload,
+  NotificationSendRequest,
+  NotificationSendResult,
 } from './snmp/types';
 export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver';
 export { runMigrations, MIGRATIONS, getSetting, setSetting } from './db/migrate';

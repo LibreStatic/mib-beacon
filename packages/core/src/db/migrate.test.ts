@@ -14,6 +14,16 @@ describe('runMigrations', () => {
     const names = tables.map((t) => t.name);
     expect(names).toContain('schema_migrations');
     expect(names).toContain('settings');
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'resolver_sources',
+        'resolver_cache',
+        'resolver_source_indexes',
+        'resolver_lookup_cache',
+        'resolver_history',
+        'resolver_cooldowns',
+      ]),
+    );
     db.close();
   });
 

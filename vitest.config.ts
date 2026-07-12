@@ -16,6 +16,8 @@ export default defineConfig({
       join(root, 'packages/transport'),
       join(root, 'packages/core'),
       join(root, 'packages/smi'),
+      join(root, 'packages/resolver'),
+      join(root, 'packages/app'),
     ],
   },
 });

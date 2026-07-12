@@ -29,12 +29,24 @@ describe('mapSnmpError', () => {
     expect(mapSnmpError({ message: 'connect EHOSTUNREACH' }).code).toBe('HOST_UNREACHABLE');
   });
 
+  it('maps Set-specific agent errors to actionable codes', () => {
+    expect(mapSnmpError({ message: 'NotWritable: 1.3.6.1.2.1.1.6.0' }).code).toBe(
+      'SET_NOT_WRITABLE',
+    );
+    expect(mapSnmpError({ message: 'WrongType: expected INTEGER' }).code).toBe('SET_WRONG_TYPE');
+  });
+
   it('falls back to REQ_FAILED for unknown errors', () => {
     expect(mapSnmpError({ message: 'weird' }).code).toBe('REQ_FAILED');
   });
 
   it('serializes to a structured-clone-safe JSON shape', () => {
     const json = new OmcError('V3_WRONG_AUTH', 'nope', { hint: 'check auth' }).toJSON();
-    expect(json).toEqual({ code: 'V3_WRONG_AUTH', message: 'nope', hint: 'check auth', details: undefined });
+    expect(json).toEqual({
+      code: 'V3_WRONG_AUTH',
+      message: 'nope',
+      hint: 'check auth',
+      details: undefined,
+    });
   });
 });

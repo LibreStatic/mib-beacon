@@ -1,7 +1,6 @@
 import netSnmpPkg from 'net-snmp/package.json';
 import type { Transport, StorageAdapter } from '@omc/transport';
 import { MibStore } from '@omc/smi';
-import type { ImportResult } from '@omc/smi';
 import { EventBus } from './events';
 import { OmcError } from './errors';
 import { SnmpSession } from './snmp/session';
@@ -9,10 +8,17 @@ import { TrapReceiver, type TrapRecord } from './snmp/receiver';
 import { runMigrations } from './db/migrate';
 import type { DecodedVarbind } from './snmp/types';
 import type { EngineAPI, EngineInfo, StubDomain } from './api/engine-api';
+import { ResolverService } from './resolver-service';
+import { validateMibFileBatch } from './mib-file-limits';
+import { AsyncMutationQueue } from './async-mutex';
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/omc.db. Pass ':memory:' for tests. */
   dbPath?: string;
+  resolver?: {
+    now?: () => number;
+    consentTtlMs?: number;
+  };
 }
 
 const ENGINE_VERSION = '0.0.0';
@@ -39,10 +45,17 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
   } catch (e) {
     // The UI must still work if the DB can't open; log and continue.
     bus.emit({ channel: 'logs', kind: 'error', payload: `DB init failed: ${String(e)}` });
+    try {
+      db = transport.storage.open(':memory:');
+      runMigrations(db);
+    } catch {
+      /* transport storage is unavailable; handled below */
+    }
   }
 
   // --- MIB store: base modules + persisted user modules ---
   const mibStore = new MibStore();
+  const mibMutations = new AsyncMutationQueue();
   if (db) {
     try {
       const rows = db.all<{ name: string; content: string }>(
@@ -56,17 +69,17 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     }
   }
 
-  function persistLoadedModules(result: ImportResult): void {
+  function persistCatalog(): void {
     if (!db) return;
-    for (const moduleName of result.loaded) {
-      const content = mibStore.getSource(moduleName);
-      if (content === undefined) continue;
-      db.run(
-        `INSERT INTO mib_modules (name, content, loaded_at) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET content = excluded.content, loaded_at = excluded.loaded_at`,
-        [moduleName, content, Date.now()],
-      );
-    }
+    db.transaction(() => {
+      db!.run('DELETE FROM mib_modules');
+      for (const document of mibStore.userSourceDocuments()) {
+        db!.run(
+          'INSERT INTO mib_modules (name, content, loaded_at) VALUES (?, ?, ?)',
+          [document.name, document.content, Date.now()],
+        );
+      }
+    });
   }
 
   /** Decorate decoded varbinds with MIB-resolved display names. */
@@ -93,6 +106,16 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     aes256: transport.crypto.hasCipher('aes-256-cfb'),
   };
 
+  if (!db) throw new OmcError('INTERNAL', 'Resolver requires an available storage adapter');
+  const resolverService = new ResolverService(
+    transport,
+    db,
+    mibStore,
+    bus,
+    mibMutations,
+    opts.resolver,
+  );
+
   return {
     system: {
       async info(): Promise<EngineInfo> {
@@ -106,10 +129,21 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     },
 
     mibs: {
+      async inspectFiles(files) {
+        validateMibFileBatch(files);
+        return mibStore.inspectFiles(files);
+      },
+
+      async replacementGroup(moduleName) {
+        return mibStore.replacementGroup(moduleName);
+      },
+
       async importTexts(files) {
-        const result = mibStore.importTexts(files);
-        persistLoadedModules(result);
-        return result;
+        return mibMutations.run(() => {
+          const result = mibStore.importTexts(files);
+          if (result.loaded.length > 0) persistCatalog();
+          return result;
+        });
       },
 
       async importUrl(url) {
@@ -125,30 +159,51 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
           });
         }
         const name = url.split('/').pop() || 'downloaded-mib';
-        const result = mibStore.importTexts([{ name, content: res.text }]);
-        persistLoadedModules(result);
-        return result;
+        return mibMutations.run(() => {
+          const result = mibStore.importTexts([{ name, content: res.text }]);
+          if (result.loaded.length > 0) persistCatalog();
+          return result;
+        });
+      },
+
+      async startImport(request) {
+        if ('files' in request && request.files) validateMibFileBatch(request.files);
+        return resolverService.startImport(request);
       },
 
       async list() {
         return mibStore.listModules();
       },
 
+      async module(moduleName) {
+        return mibStore.module(moduleName);
+      },
+
+      async moduleTree(moduleName, oid) {
+        return mibStore.moduleChildren(moduleName, oid);
+      },
+
       async unload(moduleName) {
-        mibStore.unload(moduleName);
-        db?.run('DELETE FROM mib_modules WHERE name = ?', [moduleName]);
+        await mibMutations.run(() => {
+          mibStore.unload(moduleName);
+          persistCatalog();
+        });
       },
 
       async tree(oid) {
         return mibStore.index.children(oid);
       },
 
-      async node(oidOrName) {
-        return mibStore.index.node(oidOrName);
+      async node(oidOrName, moduleName) {
+        return mibStore.index.node(oidOrName, moduleName);
       },
 
       async search(query, limit) {
         return mibStore.index.search(query, limit);
+      },
+
+      async moduleSearch(moduleName, query, limit) {
+        return mibStore.index.searchModule(moduleName, query, limit);
       },
 
       async resolve(oid) {
@@ -170,6 +225,15 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         const session = new SnmpSession(req.agent);
         try {
           return named(await session.getNext(req.oids));
+        } finally {
+          session.close();
+        }
+      },
+
+      async set(req) {
+        const session = new SnmpSession(req.agent);
+        try {
+          return named(await session.set(req.varbinds));
         } finally {
           session.close();
         }
@@ -249,6 +313,16 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       async clear() {
         traps.length = 0;
       },
+
+      async send(req) {
+        const session = new SnmpSession(req.target);
+        try {
+          const { target: _target, ...payload } = req;
+          return await session.sendNotification(payload);
+        } finally {
+          session.close();
+        }
+      },
     },
 
     events: {
@@ -256,7 +330,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     },
 
     agents: stub('plan 04'),
-    resolver: stub('plan 06'),
+    resolver: resolverService.api,
     tools: stub('plan 08'),
     logs: stub('plan 04'),
   };
