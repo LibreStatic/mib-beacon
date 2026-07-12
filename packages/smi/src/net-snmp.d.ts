@@ -13,6 +13,7 @@ declare module 'net-snmp' {
   export const ObjectType: Record<string, number> & Record<number, string>;
   export const ErrorStatus: Record<string, number> & Record<number, string>;
   export const PduType: Record<string, number> & Record<number, string>;
+  export const TrapType: Record<string, number> & Record<number, string>;
 
   export interface Varbind {
     oid: string;
@@ -41,6 +42,7 @@ declare module 'net-snmp' {
 
   export interface SessionOptions {
     port?: number;
+    trapPort?: number;
     retries?: number;
     timeout?: number;
     transport?: 'udp4' | 'udp6';
@@ -61,6 +63,12 @@ declare module 'net-snmp' {
     get(oids: string[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;
     getNext(oids: string[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;
     set(varbinds: Varbind[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;
+    inform(
+      oid: string,
+      varbinds: Varbind[],
+      options: { upTime?: number },
+      cb: (error: Error | null, varbinds: Varbind[]) => void,
+    ): void;
     walk(
       oid: string,
       maxRepetitions: number,
@@ -128,7 +136,11 @@ declare module 'net-snmp' {
 
   export function createModuleStore(options?: { baseModules?: string[] }): ModuleStore;
 
-  export function createSession(target: string, community: string, options?: SessionOptions): Session;
+  export function createSession(
+    target: string,
+    community: string,
+    options?: SessionOptions,
+  ): Session;
   export function createV3Session(target: string, user: V3User, options?: SessionOptions): Session;
   export function createReceiver(
     options: {
@@ -154,6 +166,7 @@ declare module 'net-snmp' {
     ObjectType: typeof ObjectType;
     ErrorStatus: typeof ErrorStatus;
     PduType: typeof PduType;
+    TrapType: typeof TrapType;
     createSession: typeof createSession;
     createV3Session: typeof createV3Session;
     createReceiver: typeof createReceiver;

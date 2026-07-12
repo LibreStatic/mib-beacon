@@ -6,7 +6,19 @@ export type {
   MibNodeSummary,
   MibNodeDetail,
   ModuleInfo,
+  ModuleDependency,
+  ModuleView,
+  ModuleTreeRole,
+  ModuleTreeNode,
   ImportResult,
+  MibTextFile,
+  MibFileImportInspection,
+  MibModuleCollisionKind,
+  MibFileInspection,
+  MibFilesInspection,
   MibSearchHit,
   ResolvedName,
 } from './types';
+
+export { parseCheckMibText } from './parse-check';
+export type { MibParseCheck } from './parse-check';

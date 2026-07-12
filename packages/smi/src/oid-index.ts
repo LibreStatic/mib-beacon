@@ -6,6 +6,7 @@ import type {
   MibNodeKind,
   MibNodeSummary,
   MibSearchHit,
+  ModuleTreeNode,
   ResolvedName,
 } from './types';
 
@@ -15,6 +16,8 @@ interface TrieNode {
   /** Symbol name (from a definition or an ancestor's NameSpace path). */
   label?: string;
   entry?: MibModuleEntry;
+  /** Every definition at this OID, retained by module for focused views. */
+  entries: Map<string, MibModuleEntry>;
   kind: MibNodeKind;
   children: Map<number, TrieNode>;
 }
@@ -26,12 +29,26 @@ interface TrieNode {
  * iso.org.dod.internet… even where no symbol is defined.
  */
 export class OidIndex {
-  private root: TrieNode = { arc: -1, oid: '', kind: 'subtree', children: new Map() };
+  private root: TrieNode = {
+    arc: -1,
+    oid: '',
+    kind: 'subtree',
+    children: new Map(),
+    entries: new Map(),
+  };
   private byName = new Map<string, TrieNode>();
+  private byModuleName = new Map<string, TrieNode>();
 
   rebuild(modules: Record<string, Record<string, MibModuleEntry>>): void {
-    this.root = { arc: -1, oid: '', kind: 'subtree', children: new Map() };
+    this.root = {
+      arc: -1,
+      oid: '',
+      kind: 'subtree',
+      children: new Map(),
+      entries: new Map(),
+    };
     this.byName = new Map();
+    this.byModuleName = new Map();
 
     for (const symbols of Object.values(modules)) {
       for (const entry of Object.values(symbols)) {
@@ -56,6 +73,7 @@ export class OidIndex {
           oid: node === this.root ? String(arc) : `${node.oid}.${arc}`,
           kind: 'subtree',
           children: new Map(),
+          entries: new Map(),
         };
         node.children.set(arc, child);
       }
@@ -70,8 +88,12 @@ export class OidIndex {
       node.entry = entry;
       if (entry.ObjectName) node.label = entry.ObjectName;
     }
+    if (entry.ModuleName) node.entries.set(entry.ModuleName, entry);
     if (entry.ObjectName && !this.byName.has(entry.ObjectName)) {
       this.byName.set(entry.ObjectName, node);
+    }
+    if (entry.ObjectName && entry.ModuleName) {
+      this.byModuleName.set(`${entry.ModuleName}:${entry.ObjectName}`, node);
     }
   }
 
@@ -81,7 +103,8 @@ export class OidIndex {
     if (e) {
       const syntax = formatSyntax(e.SYNTAX);
       if (e.MACRO === 'MODULE-IDENTITY') node.kind = 'module-identity';
-      else if (e.MACRO === 'NOTIFICATION-TYPE' || e.MACRO === 'TRAP-TYPE') node.kind = 'notification';
+      else if (e.MACRO === 'NOTIFICATION-TYPE' || e.MACRO === 'TRAP-TYPE')
+        node.kind = 'notification';
       else if (e.MACRO === 'OBJECT-TYPE') {
         if (syntax?.startsWith('SEQUENCE OF')) node.kind = 'table';
         else if (e.INDEX || e.AUGMENTS) node.kind = 'entry';
@@ -105,13 +128,13 @@ export class OidIndex {
     return node;
   }
 
-  private summarize(node: TrieNode): MibNodeSummary {
+  private summarize(node: TrieNode, entry = node.entry): MibNodeSummary {
     return {
       oid: node.oid,
-      name: node.label ?? String(node.arc),
-      module: node.entry?.ModuleName,
+      name: entry?.ObjectName ?? node.label ?? String(node.arc),
+      module: entry?.ModuleName,
       kind: node.kind,
-      access: node.entry?.['MAX-ACCESS'] ?? node.entry?.ACCESS,
+      access: entry?.['MAX-ACCESS'] ?? entry?.ACCESS,
       hasChildren: node.children.size > 0,
       childCount: node.children.size,
     };
@@ -121,20 +144,75 @@ export class OidIndex {
   children(oid?: string): MibNodeSummary[] {
     const node = this.find(oid ?? '');
     if (!node) return [];
-    return [...node.children.values()]
+    return [...node.children.values()].sort((a, b) => a.arc - b.arc).map((c) => this.summarize(c));
+  }
+
+  /** A sparse tree containing one module, its imported symbols, and connector ancestors. */
+  moduleChildren(
+    moduleName: string,
+    dependencies: { name: string; symbols: string[] }[],
+    oid?: string,
+  ): ModuleTreeNode[] {
+    const included = new Set<string>();
+    const roles = new Map<string, { role: ModuleTreeNode['role']; owner?: string }>();
+    const includePath = (node: TrieNode, role: ModuleTreeNode['role'], owner: string) => {
+      const arcs = node.oid.split('.');
+      let prefix = '';
+      for (const arc of arcs) {
+        prefix = prefix ? `${prefix}.${arc}` : arc;
+        included.add(prefix);
+        if (!roles.has(prefix)) roles.set(prefix, { role: 'parent' });
+      }
+      const existing = roles.get(node.oid)?.role;
+      if (role === 'module' || existing === undefined || existing === 'parent') {
+        roles.set(node.oid, { role, owner });
+      }
+    };
+
+    const visit = (node: TrieNode) => {
+      if (node.entries.has(moduleName)) includePath(node, 'module', moduleName);
+      for (const child of node.children.values()) visit(child);
+    };
+    visit(this.root);
+
+    for (const dependency of dependencies) {
+      for (const symbol of dependency.symbols) {
+        const node = this.byModuleName.get(`${dependency.name}:${symbol}`);
+        if (node) includePath(node, 'dependency', dependency.name);
+      }
+    }
+
+    const parent = this.find(oid ?? '');
+    if (!parent) return [];
+    return [...parent.children.values()]
+      .filter((node) => included.has(node.oid))
       .sort((a, b) => a.arc - b.arc)
-      .map((c) => this.summarize(c));
+      .map((node) => {
+        const assignment = roles.get(node.oid) ?? { role: 'parent' as const };
+        const entry = assignment.owner ? node.entries.get(assignment.owner) : node.entry;
+        const childCount = [...node.children.values()].filter((child) =>
+          included.has(child.oid),
+        ).length;
+        return {
+          ...this.summarize(node, entry),
+          hasChildren: childCount > 0,
+          childCount,
+          role: assignment.role,
+        };
+      });
   }
 
   /** Full detail for a numeric OID or a symbol name. */
-  node(oidOrName: string): MibNodeDetail | null {
+  node(oidOrName: string, moduleName?: string): MibNodeDetail | null {
     const node = /^[0-9.]+$/.test(oidOrName)
       ? this.find(oidOrName)
-      : (this.byName.get(oidOrName) ?? null);
+      : moduleName
+        ? (this.byModuleName.get(`${moduleName}:${oidOrName}`) ?? null)
+        : (this.byName.get(oidOrName) ?? null);
     if (!node) return null;
-    const e = node.entry;
+    const e = (moduleName ? node.entries.get(moduleName) : undefined) ?? node.entry;
     return {
-      ...this.summarize(node),
+      ...this.summarize(node, e),
       namedPath: e?.NameSpace,
       syntax: formatSyntax(e?.SYNTAX),
       status: e?.STATUS,
@@ -192,16 +270,50 @@ export class OidIndex {
     // exact/prefix name matches first
     return hits.sort((a, b) => {
       const rank = (h: MibSearchHit) =>
-        h.name.toLowerCase() === q ? 0 : h.name.toLowerCase().startsWith(q) ? 1 : h.matched === 'name' ? 2 : 3;
+        h.name.toLowerCase() === q
+          ? 0
+          : h.name.toLowerCase().startsWith(q)
+            ? 1
+            : h.matched === 'name'
+              ? 2
+              : 3;
       return rank(a) - rank(b);
     });
   }
 
-  private hit(node: TrieNode, matched: MibSearchHit['matched']): MibSearchHit {
+  searchModule(moduleName: string, query: string, limit = 30): MibSearchHit[] {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const hits: MibSearchHit[] = [];
+    const isOidQuery = /^\d+(?:\.\d+)*$/.test(q);
+    const visit = (node: TrieNode): boolean => {
+      if (hits.length >= limit) return false;
+      const entry = node.entries.get(moduleName);
+      if (entry) {
+        const name = entry.ObjectName ?? node.label ?? String(node.arc);
+        if (isOidQuery && node.oid.startsWith(q)) hits.push(this.hit(node, 'oid', entry));
+        else if (!isOidQuery && name.toLowerCase().includes(q)) {
+          hits.push(this.hit(node, 'name', entry));
+        } else if (!isOidQuery && entry.DESCRIPTION?.toLowerCase().includes(q)) {
+          hits.push(this.hit(node, 'description', entry));
+        }
+      }
+      for (const child of node.children.values()) if (!visit(child)) return false;
+      return true;
+    };
+    visit(this.root);
+    return hits.sort((a, b) => {
+      const rank = (hit: MibSearchHit) =>
+        hit.name.toLowerCase() === q ? 0 : hit.name.toLowerCase().startsWith(q) ? 1 : 2;
+      return rank(a) - rank(b);
+    });
+  }
+
+  private hit(node: TrieNode, matched: MibSearchHit['matched'], entry = node.entry): MibSearchHit {
     return {
       oid: node.oid,
-      name: node.label ?? String(node.arc),
-      module: node.entry?.ModuleName,
+      name: entry?.ObjectName ?? node.label ?? String(node.arc),
+      module: entry?.ModuleName,
       kind: node.kind,
       matched,
     };
