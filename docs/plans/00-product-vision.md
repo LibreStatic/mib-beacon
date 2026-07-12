@@ -83,4 +83,6 @@ Legend: ✅ v1 scope · 🔜 designed-now/built-later · ➕ differentiator (iRe
 
 ## Naming
 
-- Product: **Open MIB Catalog** (OMC). Package scope `@omc/*`. Binary/app id: `org.openmibcatalog.app` (adjust when an org/domain is registered).
+- Product: **Open MIB Catalog** (OMC), published by **LibreStatic**. Package scope `@omc/*`.
+  Permanent application/bundle ID: `com.librestatic.openmibcatalog` across Electron, Android,
+  iOS, and Flatpak.

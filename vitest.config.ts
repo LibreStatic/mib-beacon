@@ -18,6 +18,7 @@ export default defineConfig({
       join(root, 'packages/smi'),
       join(root, 'packages/resolver'),
       join(root, 'packages/app'),
+      join(root, 'tests'),
     ],
   },
 });

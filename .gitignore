@@ -19,6 +19,7 @@ ios/
 # electron
 apps/desktop/out/
 apps/desktop/dist/
+apps/desktop/release/
 
 # test / coverage
 coverage/

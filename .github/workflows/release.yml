@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm verify:release-metadata
+
+  desktop:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            command: dist:linux
+          - os: windows-latest
+            command: dist:windows
+          - os: macos-latest
+            command: dist:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - name: Install Linux package tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @omc/desktop ${{ matrix.command }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: apps/desktop/release/*
+          if-no-files-found: error
+
+  flatpak:
+    needs: [verify, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-Linux
+          path: apps/desktop/release
+      - name: Install Flatpak tooling
+        run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder
+      - name: Install runtime and SDK
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.electronjs.Electron2.BaseApp//24.08
+      - name: Stage Electron application
+        run: |
+          mkdir -p packaging/flatpak/staging/app
+          cp -a apps/desktop/release/linux-unpacked/. packaging/flatpak/staging/app/
+      - name: Build Flatpak bundle
+        working-directory: packaging/flatpak
+        run: |
+          flatpak-builder --user --force-clean --repo=repo build com.librestatic.openmibcatalog.yml
+          flatpak build-bundle repo Open-MIB-Catalog-${GITHUB_REF_NAME}.flatpak com.librestatic.openmibcatalog
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: packaging/flatpak/*.flatpak
+
+  android:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: pnpm install --frozen-lockfile
+      - name: Generate Android project from canonical Expo metadata
+        run: pnpm --filter @omc/mobile exec expo prebuild --platform android --clean --no-install
+      - name: Build sideload APK and Play bundle
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
+            apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  ios-validation:
+    needs: verify
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Generate iOS project from canonical Expo metadata
+        run: pnpm --filter @omc/mobile exec expo prebuild --platform ios --clean --no-install
+      - name: Install CocoaPods
+        working-directory: apps/mobile/ios
+        run: pod install
+      - name: Validate unsigned iOS build
+        working-directory: apps/mobile/ios
+        run: xcodebuild -workspace OpenMIBCatalog.xcworkspace -scheme OpenMIBCatalog -configuration Release -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+
+  draft-release:
+    needs: [desktop, flatpak, android, ios-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - name: Generate checksums
+        run: find artifacts -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/**/*
+            SHA256SUMS

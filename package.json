@@ -3,6 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "description": "Open-source cross-platform SNMP toolkit",
+  "homepage": "https://librestatic.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LibreStatic/openmibcatalog.git"
+  },
+  "author": "LibreStatic",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "engines": {
@@ -10,7 +16,11 @@
   },
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "unrs-resolver", "electron"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver",
+      "electron"
+    ]
   },
   "scripts": {
     "dev:desktop": "pnpm --filter @omc/desktop dev",
@@ -19,6 +29,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "test": "vitest run",
+    "build:desktop": "pnpm --filter @omc/desktop build",
+    "dist:desktop": "pnpm --filter @omc/desktop dist",
+    "verify:release-metadata": "vitest run tests/release-identity.test.ts",
     "spike:engine": "pnpm --filter @omc/core spike",
     "corpus": "echo 'corpus harness lands in plan 03'"
   },
@@ -35,6 +48,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.4",
+    "tslib": "^2.8.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
     "vitest": "^3.0.2"

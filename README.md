@@ -27,6 +27,9 @@ One React Native codebase:
 - **Desktop** — Linux, Windows, macOS via Electron + react-native-web (SNMP engine in the Node main process).
 - **Mobile/tablet** — Android and iOS via Expo (dev builds; UDP/TCP/crypto through native modules), with responsive layouts from phone to 3-pane desktop.
 
+Open MIB Catalog is published under the **LibreStatic** open-source umbrella. Its permanent
+cross-platform application identifier is `com.librestatic.openmibcatalog`.
+
 ## Repository layout
 
 ```

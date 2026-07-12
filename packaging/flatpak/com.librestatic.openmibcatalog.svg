@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Open MIB Catalog</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11263f" />
+      <stop offset="1" stop-color="#07111f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <g fill="none" stroke="#59d7c6" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 122v82M150 240h212M150 240v94M256 240v94M362 240v94" />
+  </g>
+  <g fill="#f4f8fb" stroke="#59d7c6" stroke-width="14">
+    <circle cx="256" cy="112" r="38" />
+    <circle cx="150" cy="370" r="38" />
+    <circle cx="256" cy="370" r="38" />
+    <circle cx="362" cy="370" r="38" />
+  </g>
+</svg>

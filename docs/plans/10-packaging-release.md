@@ -5,13 +5,17 @@ Depends on: all feature phases (can be developed in parallel from plan 02 onward
 
 ## Objective
 
-Installable, updatable releases for Linux (AppImage/deb/rpm), Windows (NSIS), macOS (dmg), and Android (APK direct + AAB for Play); iOS build validated; a tagged-release GitHub Actions pipeline; GPL compliance in order.
+Installable, updatable releases for Linux (AppImage/deb/rpm/Flatpak via Flathub), Windows
+(NSIS), macOS (dmg), and Android (APK direct + AAB for Play); iOS build validated; a
+tagged-release GitHub Actions pipeline; GPL compliance in order. All artifacts use the
+LibreStatic-owned identifier `com.librestatic.openmibcatalog`.
 
 ## Tasks
 
 ### T1 — Desktop packaging (electron-builder)
 - Targets: Linux AppImage + deb + rpm (x64, arm64), Windows NSIS (x64), macOS dmg (universal or x64+arm64).
-- App metadata: id `org.openmibcatalog.app`, icons (from plan 09), file associations: register `.mib`/`.my`/`.smi` open-with (desktop) → import flow.
+- App metadata: id `com.librestatic.openmibcatalog`, publisher LibreStatic, icons (from plan 09), file associations: register `.mib`/`.my`/`.smi` open-with (desktop) → import flow.
+- Flatpak/Flathub: manifest, AppStream metadata, Wayland/X11 and network permissions, portal-based file access, Flathub validation and publication. Flatpak updates through Flathub rather than `electron-updater`.
 - **Trap-port helper**: post-install docs + in-app guidance only (no setuid tricks): Linux packages ship a `README`/docs note with the exact `setcap 'cap_net_bind_service=+ep' <binary>` line (and the AppImage caveat: setcap doesn't survive AppImage mount — recommend the 1162 fallback or deb/rpm for port 162); Windows/macOS rely on the 1162 fallback by default.
 - Signing: Windows (defer if no cert — document unsigned-build SmartScreen implications), macOS (Developer ID + notarization — gate on credentials being available; unsigned macOS builds documented as "right-click open"), Linux none.
 - Auto-update: `electron-updater` against GitHub Releases (AppImage/NSIS/dmg supported paths); update check opt-out setting; deb/rpm rely on repo/manual (post-v1: apt/copr repos).
@@ -49,4 +53,6 @@ Installable, updatable releases for Linux (AppImage/deb/rpm), Windows (NSIS), ma
 - Keep a `RELEASE-CHECKLIST.md` distilled from criteria 2–5.
 
 ## Out of scope
-Store submissions (Play/App Store/Flathub/winget/brew — post-v1, but keep artifact naming store-friendly), apt/copr repositories, crash reporting/telemetry (none by design; revisit opt-in crash reports post-v1 with a privacy-respecting backend), headless/server distribution of the engine (post-v1 direction enabled by the architecture).
+Store submissions other than Flathub (Play/App Store/winget/brew), Snap packaging, apt/copr
+repositories, crash reporting/telemetry (none by design; revisit opt-in crash reports post-v1
+with a privacy-respecting backend), and headless/server distribution of the engine.

@@ -8,10 +8,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
-      "package": "org.openmibcatalog.app"
+      "package": "com.librestatic.openmibcatalog"
     },
     "ios": {
-      "bundleIdentifier": "org.openmibcatalog.app",
+      "bundleIdentifier": "com.librestatic.openmibcatalog",
       "supportsTablet": true
     },
     "plugins": ["expo-dev-client", "expo-sqlite", "expo-secure-store"]

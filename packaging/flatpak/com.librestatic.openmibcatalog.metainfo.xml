@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.librestatic.openmibcatalog</id>
+  <name>Open MIB Catalog</name>
+  <summary>Browse MIBs and work with SNMP devices</summary>
+  <developer id="com.librestatic"><name>LibreStatic</name></developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <url type="homepage">https://librestatic.com</url>
+  <url type="vcs-browser">https://github.com/LibreStatic/openmibcatalog</url>
+  <url type="bugtracker">https://github.com/LibreStatic/openmibcatalog/issues</url>
+  <description>
+    <p>Open MIB Catalog is a modern cross-platform SNMP toolkit for importing, exploring, and querying MIB data.</p>
+  </description>
+  <launchable type="desktop-id">com.librestatic.openmibcatalog.desktop</launchable>
+  <provides>
+    <binary>open-mib-catalog</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.0.0" date="2026-07-12" type="development" />
+  </releases>
+</component>
