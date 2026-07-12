@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { SafeAreaView, StatusBar, useColorScheme } from 'react-native';
+import { Platform, SafeAreaView, StatusBar, useColorScheme } from 'react-native';
 import { createReactNativeTransport } from '@omc/transport/react-native';
 import { createEngine } from '@omc/core';
 import type { AgentSpec } from '@omc/core/client';
-import { EngineProvider, AppRoot } from '@omc/app';
+import { EngineProvider, AppRoot, FileImportProvider, type FileImportAdapter } from '@omc/app';
+import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
 
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
 const SPIKE_HOST = '10.0.2.2';
@@ -46,11 +47,19 @@ export default function App() {
   }, [engine]);
 
   const isDark = useColorScheme() === 'dark';
+  const fileImportAdapter = useMemo<FileImportAdapter>(() => ({
+    platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    acquireFiles: acquireNativeMibFiles,
+    acquireDirectory: acquireNativeMibDirectory,
+    destinationLabel: 'Engine on this device',
+  }), []);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? '#0e1116' : '#f6f7f9' }}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <EngineProvider engine={engine}>
-        <AppRoot />
+        <FileImportProvider adapter={fileImportAdapter}>
+          <AppRoot />
+        </FileImportProvider>
       </EngineProvider>
     </SafeAreaView>
   );

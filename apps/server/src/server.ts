@@ -39,7 +39,8 @@ async function main() {
   const server = http.createServer((req, res) => void serveStatic(req, res));
 
   // --- WebSocket engine bridge ---
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // A validated 50 MiB text batch grows when JSON encoded over the bridge.
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 * 1024 });
   const clients = new Set<WebSocket>();
 
   wss.on('connection', (ws) => {

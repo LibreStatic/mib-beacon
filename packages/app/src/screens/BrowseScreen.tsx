@@ -11,29 +11,12 @@ import {
   runSearch,
   walkFromNode,
   getFromNode,
+  clearModuleFocus,
+  setFromNode,
+  trapFromNode,
 } from '../actions';
-
-interface Flat {
-  node: MibNodeSummary;
-  depth: number;
-}
-
-function flattenVisible(
-  cache: Record<string, MibNodeSummary[]>,
-  expanded: Record<string, boolean>,
-): Flat[] {
-  const out: Flat[] = [];
-  const walk = (oid: string, depth: number) => {
-    const children = cache[oid];
-    if (!children) return;
-    for (const node of children) {
-      out.push({ node, depth });
-      if (expanded[node.oid]) walk(node.oid, depth + 1);
-    }
-  };
-  walk('', 0);
-  return out;
-}
+import { OidLookupPanel } from '../components/OidLookupPanel';
+import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } from './browse-tree';
 
 export function BrowseScreen() {
   const engine = useEngine();
@@ -43,8 +26,9 @@ export function BrowseScreen() {
   const selected = useAppStore((s) => s.selected);
   const search = useAppStore((s) => s.search);
   const hits = useAppStore((s) => s.hits);
+  const moduleFocus = useAppStore((s) => s.moduleFocus);
 
-  const rows = useMemo(() => flattenVisible(cache, expanded), [cache, expanded]);
+  const rows = useMemo(() => flattenVisibleTree(cache, expanded), [cache, expanded]);
 
   const onSearch = (q: string) => {
     useAppStore.getState().setSearch(q);
@@ -66,8 +50,41 @@ export function BrowseScreen() {
 
   return (
     <View style={styles.container}>
+      {moduleFocus ? (
+        <View
+          style={[styles.focusBanner, { backgroundColor: t.surface, borderBottomColor: t.border }]}
+        >
+          <View style={styles.focusMain}>
+            <Text style={[styles.focusEyebrow, { color: t.kind.module }]}>MODULE FOCUS</Text>
+            <Text style={[styles.focusTitle, { color: t.text }]}>{moduleFocus.module.name}</Text>
+            <Text style={{ color: t.textDim, fontSize: 11 }}>
+              {moduleFocus.module.objectCount} definitions · {moduleFocus.dependencies.length}{' '}
+              imports
+            </Text>
+          </View>
+          <View style={styles.dependencyWrap}>
+            {moduleFocus.dependencies.map((dep) => (
+              <Pill
+                key={dep.name}
+                text={`${dep.loaded ? '↳' : '⚠'} ${dep.name}`}
+                color={dep.loaded ? t.textDim : t.warn}
+              />
+            ))}
+          </View>
+          <Button
+            title="All MIBs"
+            small
+            variant="ghost"
+            onPress={() => void clearModuleFocus(engine)}
+          />
+        </View>
+      ) : null}
       <View style={styles.searchWrap}>
-        <Field placeholder="Search name, OID, or description…" value={search} onChangeText={onSearch} />
+        <Field
+          placeholder="Search name, OID, or description…"
+          value={search}
+          onChangeText={onSearch}
+        />
       </View>
 
       {search.trim() ? (
@@ -75,7 +92,19 @@ export function BrowseScreen() {
           data={hits}
           keyExtractor={(h) => h.oid + h.matched}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={<EmptyState title="No matches" />}
+          ListEmptyComponent={
+            /^\.?\d+(?:\.\d+)+$/.test(search.trim()) ? (
+              <View style={styles.lookupEmpty}>
+                <EmptyState
+                  title="OID is not in the loaded catalog"
+                  hint="External lookup is optional and starts only when you press Resolve."
+                />
+                <OidLookupPanel oid={search} />
+              </View>
+            ) : (
+              <EmptyState title="No matches" />
+            )
+          }
           renderItem={({ item }) => (
             <Pressable
               onPress={() => void pickHit(item.oid)}
@@ -97,34 +126,107 @@ export function BrowseScreen() {
           data={rows}
           keyExtractor={(r) => r.node.oid}
           style={styles.tree}
+          ListEmptyComponent={
+            moduleFocus ? (
+              <EmptyState
+                title="No OID assignments in this module"
+                hint="This dependency may only define macros or textual conventions."
+              />
+            ) : null
+          }
           renderItem={({ item }) => {
-            const { node, depth } = item;
+            const { node, depth, rootIndex } = item;
             const isSel = selected?.oid === node.oid;
+            const role = 'role' in node ? node.role : undefined;
+            const isExpanded = Boolean(expanded[node.oid]);
+            const disclosure = getTreeDisclosureVisual(node.hasChildren, isExpanded);
+            const disclosureColor =
+              disclosure.tone === 'expanded'
+                ? t.accent
+                : disclosure.tone === 'collapsed'
+                  ? t.kind.subtree
+                  : t.textDim;
             return (
-              <Pressable
-                onPress={() => void selectNode(engine, node.oid)}
+              <View
                 style={[
                   styles.treeRow,
-                  { paddingLeft: 8 + depth * 14, backgroundColor: isSel ? t.accentSoft : 'transparent' },
+                  {
+                    paddingLeft: 8 + depth * 14,
+                    backgroundColor: isSel
+                      ? t.accentSoft
+                      : getTreeRowBackground(t.scheme, rootIndex, depth),
+                    borderLeftColor:
+                      role === 'module'
+                        ? t.kind.module
+                        : role === 'dependency'
+                          ? t.warn
+                          : 'transparent',
+                  },
                 ]}
               >
                 <Pressable
-                  onPress={() => (node.hasChildren ? toggle(node) : void selectNode(engine, node.oid))}
-                  hitSlop={8}
-                  style={styles.chevron}
+                  onPress={() =>
+                    node.hasChildren ? toggle(node) : void selectNode(engine, node.oid)
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    node.hasChildren
+                      ? `${isExpanded ? 'Collapse' : 'Expand'} ${node.name}`
+                      : `Select ${node.name}`
+                  }
+                  accessibilityState={node.hasChildren ? { expanded: isExpanded } : undefined}
+                  style={styles.branchTrigger}
                 >
-                  <Text style={{ color: t.textDim, fontSize: 12 }}>
-                    {node.hasChildren ? (expanded[node.oid] ? '▾' : '▸') : '·'}
-                  </Text>
+                  <View style={styles.chevron}>
+                    <Text
+                      style={[
+                        styles.disclosureIcon,
+                        {
+                          color: disclosureColor,
+                          fontSize: 14,
+                        },
+                      ]}
+                    >
+                      {disclosure.glyph}
+                    </Text>
+                  </View>
+                  <KindGlyph kind={node.kind} />
                 </Pressable>
-                <KindGlyph kind={node.kind} />
-                <Text style={[styles.treeName, { color: t.text }]} numberOfLines={1}>
-                  {node.name}
-                </Text>
-                {node.hasChildren ? (
-                  <Text style={{ color: t.textDim, fontSize: 11 }}>{node.childCount}</Text>
-                ) : null}
-              </Pressable>
+                <Pressable
+                  onPress={() => void selectNode(engine, node.oid)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View details for ${node.name}`}
+                  accessibilityState={{ selected: isSel }}
+                  style={styles.nodeTrigger}
+                >
+                  <View style={styles.treeText}>
+                    <Text
+                      style={[styles.treeName, { color: role === 'parent' ? t.textDim : t.text }]}
+                      numberOfLines={1}
+                    >
+                      {node.name}
+                    </Text>
+                    <Mono dim size={9} numberOfLines={1}>
+                      {node.oid}
+                    </Mono>
+                  </View>
+                  {role ? (
+                    <Pill
+                      text={role === 'module' ? 'this MIB' : role}
+                      color={
+                        role === 'module'
+                          ? t.kind.module
+                          : role === 'dependency'
+                            ? t.warn
+                            : t.textDim
+                      }
+                    />
+                  ) : null}
+                  {node.hasChildren ? (
+                    <Text style={{ color: t.textDim, fontSize: 11 }}>{node.childCount}</Text>
+                  ) : null}
+                </Pressable>
+              </View>
             );
           }}
         />
@@ -139,6 +241,10 @@ function DetailPanel() {
   const engine = useEngine();
   const t = useTheme();
   const selected = useAppStore((s) => s.selected)!;
+  const writable =
+    selected.access === 'read-write' ||
+    selected.access === 'read-create' ||
+    selected.access === 'write-only';
   return (
     <Card style={styles.detail}>
       <ScrollView>
@@ -158,8 +264,25 @@ function DetailPanel() {
         ) : null}
         <View style={styles.detailActions}>
           <Button title="Walk here" small onPress={() => walkFromNode(engine, selected.oid)} />
-          {(selected.kind === 'scalar' || selected.kind === 'column') && selected.access !== 'not-accessible' ? (
-            <Button title="Get" small variant="ghost" onPress={() => getFromNode(engine, selected)} />
+          {(selected.kind === 'scalar' || selected.kind === 'column') &&
+          selected.access !== 'not-accessible' ? (
+            <Button
+              title="Get"
+              small
+              variant="ghost"
+              onPress={() => getFromNode(engine, selected)}
+            />
+          ) : null}
+          {writable ? (
+            <Button title="Set value" small variant="ghost" onPress={() => setFromNode(selected)} />
+          ) : null}
+          {selected.kind === 'notification' ? (
+            <Button
+              title="Send this trap"
+              small
+              variant="ghost"
+              onPress={() => void trapFromNode(engine, selected)}
+            />
           ) : null}
           <Button
             title="Close"
@@ -185,19 +308,69 @@ function KV({ k, v }: { k: string; v: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  focusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+  },
+  focusMain: { minWidth: 150 },
+  focusEyebrow: { fontSize: 9, fontWeight: '900', letterSpacing: 1.1 },
+  focusTitle: { fontSize: 15, fontWeight: '800' },
+  dependencyWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
   searchWrap: { padding: 12, paddingBottom: 8 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   rowText: { flex: 1 },
   tree: { flex: 1 },
-  treeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingRight: 12, paddingVertical: 7 },
-  chevron: { width: 16, alignItems: 'center' },
-  treeName: { flex: 1, fontSize: 14 },
+  treeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 2,
+    minHeight: 44,
+  },
+  branchTrigger: {
+    alignSelf: 'stretch',
+    minHeight: 44,
+    width: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chevron: { width: 20, alignItems: 'center' },
+  disclosureIcon: { fontWeight: '800', lineHeight: 20 },
+  nodeTrigger: {
+    flex: 1,
+    alignSelf: 'stretch',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 12,
+  },
+  treeText: { flex: 1 },
+  treeName: { fontSize: 14 },
   detail: { margin: 12, maxHeight: '45%' },
-  detailHead: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 },
+  detailHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginBottom: 6,
+  },
   detailName: { fontSize: 16, fontWeight: '700' },
   desc: { fontSize: 13, lineHeight: 19, marginTop: 8 },
   detailActions: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   kv: { flexDirection: 'row', gap: 8, marginTop: 6 },
   kvKey: { fontSize: 12, fontWeight: '700', width: 64 },
   kvVal: { fontSize: 12, flex: 1 },
+  lookupEmpty: { padding: 12, gap: 8 },
 });

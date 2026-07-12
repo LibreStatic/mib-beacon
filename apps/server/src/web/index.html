@@ -5,8 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Open MIB Catalog</title>
     <style>
-      html, body, #root { height: 100%; margin: 0; }
-      #root { display: flex; }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        min-height: 0;
+      }
+      #app-bottom-navigation {
+        flex-shrink: 0;
+        padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+      }
+      @supports (height: 100dvh) {
+        #root {
+          height: 100dvh;
+        }
+      }
     </style>
   </head>
   <body>

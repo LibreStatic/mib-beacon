@@ -120,6 +120,9 @@ importers:
       expo-dev-client:
         specifier: ~6.0.0
         version: 6.0.21(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))
+      expo-document-picker:
+        specifier: ~14.0.8
+        version: 14.0.8(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))
       expo-file-system:
         specifier: ~19.0.0
         version: 19.0.23(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))
@@ -206,12 +209,18 @@ importers:
       '@omc/ui':
         specifier: workspace:*
         version: link:../ui
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       zustand:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.2.17)(react@19.1.0)
 
   packages/core:
     dependencies:
+      '@omc/resolver':
+        specifier: workspace:*
+        version: link:../resolver
       '@omc/smi':
         specifier: workspace:*
         version: link:../smi
@@ -225,6 +234,15 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.0
+
+  packages/resolver:
+    dependencies:
+      '@omc/smi':
+        specifier: workspace:*
+        version: link:../smi
+      '@omc/transport':
+        specifier: workspace:*
+        version: link:../transport
 
   packages/smi:
     dependencies:
@@ -2658,6 +2676,11 @@ packages:
     peerDependencies:
       expo: '*'
 
+  expo-document-picker@14.0.8:
+    resolution: {integrity: sha512-3tyQKpPqWWFlI8p9RiMX1+T1Zge5mEKeBuXWp1h8PEItFMUDSiOJbQ112sfdC6Hxt8wSxreV9bCRl/NgBdt+fA==}
+    peerDependencies:
+      expo: '*'
+
   expo-file-system@19.0.23:
     resolution: {integrity: sha512-MeGkid9OeNILfT/qonaXHp4f2c15xaB28U/bcN7pqZej0Kx0+6+V7e9ZIXpPHm07zVatxA+QkMTPQEGfmvVOxA==}
     peerDependencies:
@@ -2773,6 +2796,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   file-entry-cache@8.0.0:
     resolution: {integrity: sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==}
@@ -7655,6 +7681,10 @@ snapshots:
       expo: 54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
       expo-dev-menu-interface: 2.0.0(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))
 
+  expo-document-picker@14.0.8(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)):
+    dependencies:
+      expo: 54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
+
   expo-file-system@19.0.23(expo@54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3))(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0)):
     dependencies:
       expo: 54.0.35(@babel/core@7.29.7)(react-native@0.81.4(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
@@ -7792,6 +7822,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
+
+  fflate@0.8.3: {}
 
   file-entry-cache@8.0.0:
     dependencies:

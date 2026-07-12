@@ -1,7 +1,7 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, safeStorage } from 'electron';
 import crypto from 'node:crypto';
 import { join } from 'node:path';
-import { createNodeTransport } from '@omc/transport/node';
+import { createNodeTransport, createPersistentSecretStore } from '@omc/transport/node';
 import { createEngine } from '@omc/core';
 import { registerEngineBridge } from './bridge';
 
@@ -60,9 +60,18 @@ async function runCryptoProbe(): Promise<void> {
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
-  const transport = createNodeTransport({ dataDir: app.getPath('userData') });
+  const userData = app.getPath('userData');
+  const secrets = createPersistentSecretStore({
+    filePath: join(userData, 'resolver-secrets.json'),
+    codec: {
+      encrypt: (plaintext) => safeStorage.encryptString(plaintext).toString('base64'),
+      decrypt: (ciphertext) => safeStorage.decryptString(Buffer.from(ciphertext, 'base64')),
+      isEncrypted: () => safeStorage.isEncryptionAvailable(),
+    },
+  });
+  const transport = createNodeTransport({ dataDir: userData, secrets });
   const engine = createEngine(transport, {
-    dbPath: join(app.getPath('userData'), 'omc.db'),
+    dbPath: join(userData, 'omc.db'),
   });
   registerEngineBridge(engine, () => mainWindow);
 
