@@ -7,6 +7,9 @@ const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 export const nodeHttpClient: HttpClient = {
   async fetch(req: HttpRequest): Promise<HttpResponse> {
     const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    if (req.signal?.aborted) controller.abort();
+    else req.signal?.addEventListener('abort', abortFromCaller, { once: true });
     const timeout = setTimeout(() => controller.abort(), req.timeoutMs ?? DEFAULT_TIMEOUT);
     try {
       const res = await fetch(req.url, {
@@ -26,6 +29,7 @@ export const nodeHttpClient: HttpClient = {
       return { status: res.status, ok: res.ok, headers, text, bytes: buf.byteLength };
     } finally {
       clearTimeout(timeout);
+      req.signal?.removeEventListener('abort', abortFromCaller);
     }
   },
 };

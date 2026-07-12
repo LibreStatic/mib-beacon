@@ -12,8 +12,8 @@ export { nodeTcpFactory } from './tcp';
 export { nodeCrypto } from './crypto';
 export { createNodeFileStore } from './files';
 export { nodeStorageFactory } from './storage';
-export { createInMemorySecretStore } from './secrets';
-export type { SecretCodec } from './secrets';
+export { createInMemorySecretStore, createPersistentSecretStore } from './secrets';
+export type { SecretCodec, PersistentSecretStoreOptions } from './secrets';
 export { nodeHttpClient } from './http';
 
 export interface NodeTransportOptions {

@@ -39,8 +39,17 @@ export interface UdpSocketFactory {
 // TCP (used by the resolver's FTP source, plan 07)
 // ---------------------------------------------------------------------------
 
+export interface TcpTlsOptions {
+  /** TLS server identity/SNI name. Defaults to the host passed to connect. */
+  serverName?: string;
+  /** Defaults to true. Disable only for explicitly trusted test/private endpoints. */
+  rejectUnauthorized?: boolean;
+}
+
 export interface TcpSocket {
   connect(port: number, host: string, opts?: { tls?: boolean }): Promise<void>;
+  /** Upgrade an established plaintext connection in place (for protocols such as explicit FTPS). */
+  startTls(options?: TcpTlsOptions): Promise<void>;
   write(data: Uint8Array): Promise<void>;
   onData(listener: (data: Uint8Array) => void): () => void;
   onError(listener: (err: Error) => void): () => void;
@@ -121,6 +130,7 @@ export interface HttpRequest {
   headers?: Record<string, string>;
   body?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
   /** Cap on downloaded bytes; reject beyond it (guards against soft-200 giants). */
   maxBytes?: number;
 }
