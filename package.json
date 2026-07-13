@@ -1,12 +1,12 @@
 {
-  "name": "openmibcatalog",
+  "name": "mibbeacon",
   "version": "0.0.0",
   "private": true,
   "description": "Open-source cross-platform SNMP toolkit",
   "homepage": "https://librestatic.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LibreStatic/openmibcatalog.git"
+    "url": "https://github.com/LibreStatic/mibbeacon.git"
   },
   "author": "LibreStatic",
   "license": "GPL-3.0-or-later",
@@ -23,16 +23,16 @@
     ]
   },
   "scripts": {
-    "dev:desktop": "pnpm --filter @omc/desktop dev",
-    "dev:mobile": "pnpm --filter @omc/mobile android",
-    "dev:server": "pnpm --filter @omc/server dev",
+    "dev:desktop": "pnpm --filter @mibbeacon/desktop dev",
+    "dev:mobile": "pnpm --filter @mibbeacon/mobile android",
+    "dev:server": "pnpm --filter @mibbeacon/server dev",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint .",
     "test": "vitest run",
-    "build:desktop": "pnpm --filter @omc/desktop build",
-    "dist:desktop": "pnpm --filter @omc/desktop dist",
+    "build:desktop": "pnpm --filter @mibbeacon/desktop build",
+    "dist:desktop": "pnpm --filter @mibbeacon/desktop dist",
     "verify:release-metadata": "vitest run tests/release-identity.test.ts",
-    "spike:engine": "pnpm --filter @omc/core spike",
+    "spike:engine": "pnpm --filter @mibbeacon/core spike",
     "corpus": "echo 'corpus harness lands in plan 03'"
   },
   "devDependencies": {

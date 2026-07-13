@@ -1,4 +1,4 @@
-# Open MIB Catalog
+# MIB Beacon
 
 **An open-source, cross-platform SNMP toolkit** — explore MIBs, query live devices, send and receive traps, compare standards, and (uniquely) **auto-resolve missing MIB dependencies from the internet**.
 
@@ -8,7 +8,7 @@
 
 Every open-source MIB explorer is abandoned (SnmpB's last release was 2019, qtmib 2014, mbrowse ~2010). The de-facto standard, iReasoning MIB Browser, is closed-source Java/Swing, caps its free tier at 10 loaded MIBs for personal use only, and paywalls basics like the trap sender, graphs, and discovery at $495–$895 per seat. Nobody — commercial or FOSS — automatically resolves missing MIB `IMPORTS` from online sources.
 
-Open MIB Catalog aims to be the modern, maintained, genuinely free alternative.
+MIB Beacon aims to be the modern, maintained, genuinely free alternative.
 
 ## Feature goals (v1)
 
@@ -27,8 +27,8 @@ One React Native codebase:
 - **Desktop** — Linux, Windows, macOS via Electron + react-native-web (SNMP engine in the Node main process).
 - **Mobile/tablet** — Android and iOS via Expo (dev builds; UDP/TCP/crypto through native modules), with responsive layouts from phone to 3-pane desktop.
 
-Open MIB Catalog is published under the **LibreStatic** open-source umbrella. Its permanent
-cross-platform application identifier is `com.librestatic.openmibcatalog`.
+MIB Beacon is published under the **LibreStatic** open-source umbrella. Its permanent
+cross-platform application identifier is `com.librestatic.mibbeacon`.
 
 ## Repository layout
 
@@ -61,7 +61,7 @@ Run a real SNMP test agent (snmpd in Docker), then the engine feasibility spike:
 
 ```bash
 docker compose -f dev/snmpd/docker-compose.yml up -d --build
-pnpm --filter @omc/core spike        # v2c/v3 Get, trap receive, streaming walk
+pnpm --filter @mibbeacon/core spike        # v2c/v3 Get, trap receive, streaming walk
 ```
 
 Desktop app (Electron + react-native-web) — needs a graphical session:
@@ -74,7 +74,7 @@ Mobile app (Expo dev build) — needs the Android SDK / Xcode and a device or em
 (Expo Go is **not** supported — the app needs native UDP/TCP/crypto modules):
 
 ```bash
-pnpm --filter @omc/mobile prebuild   # generate the native project (first time)
+pnpm --filter @mibbeacon/mobile prebuild   # generate the native project (first time)
 pnpm dev:mobile                      # = expo run:android
 ```
 
@@ -87,7 +87,7 @@ pnpm dev:server              # builds the web bundle + starts the server (defaul
 # then open http://<that-host-ip>:8899 from any device on the network
 ```
 
-Configure with `OMC_SERVER_PORT`, `OMC_SERVER_HOST`, `OMC_SERVER_DATA`.
+Configure with `MIB_BEACON_SERVER_PORT`, `MIB_BEACON_SERVER_HOST`, `MIB_BEACON_SERVER_DATA`.
 
 See [`docs/plans/SPIKE-RESULTS.md`](docs/plans/SPIKE-RESULTS.md) for validated runtime
 findings (crypto/DES support per runtime, required Electron version, etc.).

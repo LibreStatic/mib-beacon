@@ -1,5 +1,5 @@
 import { AppRegistry } from 'react-native';
-import { EngineProvider, AppRoot } from '@omc/app';
+import { EngineProvider, AppRoot } from '@mibbeacon/app';
 import { makeEngineProxy } from './engine-proxy';
 
 const engine = makeEngineProxy();
@@ -10,15 +10,15 @@ function Root() {
       <AppRoot
         host={{
           canOpenWindow: true,
-          newWindow: () => void window.omcBridge.newWindow(),
-          setWindowTitle: (title) => void window.omcBridge.setWindowTitle(title),
+          newWindow: () => void window.mibbeaconBridge.newWindow(),
+          setWindowTitle: (title) => void window.mibbeaconBridge.setWindowTitle(title),
         }}
       />
     </EngineProvider>
   );
 }
 
-AppRegistry.registerComponent('OpenMibCatalog', () => Root);
-AppRegistry.runApplication('OpenMibCatalog', {
+AppRegistry.registerComponent('MibBeacon', () => Root);
+AppRegistry.runApplication('MibBeacon', {
   rootTag: document.getElementById('root'),
 });

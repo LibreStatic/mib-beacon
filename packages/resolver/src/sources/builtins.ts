@@ -1,4 +1,4 @@
-import type { HttpClient } from '@omc/transport';
+import type { HttpClient } from '@mibbeacon/transport';
 import { GitHubTreeSource } from './github-tree';
 import { HttpTemplateSource } from './http-template';
 import type { MibSource, SecretResolver, SourceConfig } from './types';

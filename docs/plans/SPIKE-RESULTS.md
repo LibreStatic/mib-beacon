@@ -22,8 +22,8 @@ on device through react-native-udp + react-native-quick-crypto, after a few shim
 ## Results
 
 ### S1 — desktop v2c Get — ✅ PASS
-`engine.ops.get` v2c Get of sysDescr returns `"Open MIB Catalog spike test agent"`.
-Verified through the real engine both under plain Node 26 (`pnpm --filter @omc/core spike`)
+`engine.ops.get` v2c Get of sysDescr returns `"MIB Beacon spike test agent"`.
+Verified through the real engine both under plain Node 26 (`pnpm --filter @mibbeacon/core spike`)
 and under Electron's Node 22 runtime (`ELECTRON_RUN_AS_NODE=1 electron --import tsx …`).
 
 ### S2 — v3 crypto matrix + DES/BoringSSL — ✅ PASS (with a documented DES nuance)
@@ -50,8 +50,8 @@ The app bundles (908 modules), the shared Spike screen renders, and an on-mount
 self-test in `App.tsx` performed real SNMP against the host snmpd (via `10.0.2.2:1611`):
 
 ```
-S3_SELFTEST v2c: OK value="Open MIB Catalog spike test agent"
-S3_SELFTEST v3-sha256-aes128: OK value="Open MIB Catalog spike test agent"
+S3_SELFTEST v2c: OK value="MIB Beacon spike test agent"
+S3_SELFTEST v3-sha256-aes128: OK value="MIB Beacon spike test agent"
 ```
 
 So node-net-snmp runs on React Native end-to-end: **react-native-udp** (datagrams),
@@ -75,7 +75,7 @@ expo-file-system/legacy, Buffer/assert/util/events/stream polyfills. The engine'
 5. expo-file-system SDK-54 API moved to `/legacy`; RN socket event/Buffer typings — fixed
    during the type-level pass.
 
-Reproduce: boot an AVD, `pnpm --filter @omc/mobile prebuild`, `pnpm dev:mobile`; point the
+Reproduce: boot an AVD, `pnpm --filter @mibbeacon/mobile prebuild`, `pnpm dev:mobile`; point the
 app at the snmpd host (emulator: `10.0.2.2:1611`). Not yet exercised on device: streaming
 walk (S5) and trap receive (S4) — the code paths are shared with the validated desktop
 engine, but re-confirm on hardware when convenient. iOS not yet built (plan 10).
@@ -102,7 +102,7 @@ display; run `pnpm dev:desktop` on a desktop session to see the Spike screen.
    is required, since Electron 34 (Node 20) lacks `node:sqlite`. Pinned `electron@^37`.
 2. **Tamagui deferred to plan 09.** The spike UI uses React Native primitives + a minimal
    theme to keep the gating phase focused on the SNMP stack, not styling infra.
-3. **`@omc/core/client` subpath** added so the renderer imports only EventBus/OmcError/types,
+3. **`@mibbeacon/core/client` subpath** added so the renderer imports only EventBus/MibBeaconError/types,
    keeping net-snmp + node builtins out of the browser bundle.
 4. **RN transport typed via small local interfaces** (documented runtime API) rather than
    the libraries' imperfect type stubs; mobile tsconfig relaxes `verbatimModuleSyntax`

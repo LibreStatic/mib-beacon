@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Button, Chip, Field, Label, Row, useTheme } from '@omc/ui';
-import { validateVarbindInput } from '@omc/core/client';
-import type { SnmpVarbindInput, SnmpWireType } from '@omc/core/client';
+import { Button, Chip, Field, Label, Row, useTheme } from '@mibbeacon/ui';
+import { validateVarbindInput } from '@mibbeacon/core/client';
+import type { SnmpVarbindInput, SnmpWireType } from '@mibbeacon/core/client';
 
 const TYPES: SnmpWireType[] = [
   'Integer',

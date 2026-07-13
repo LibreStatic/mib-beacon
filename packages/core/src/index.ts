@@ -24,7 +24,7 @@ export type {
   OidLookupResult,
   ResolverHistoryEntry,
 } from './api/engine-api';
-export type { SourceConfig, SourceKind } from '@omc/resolver';
+export type { SourceConfig, SourceKind } from '@mibbeacon/resolver';
 export type {
   MibNodeKind,
   MibNodeSummary,
@@ -42,8 +42,8 @@ export type {
   MibModuleCollisionKind,
   MibFileInspection,
   MibFilesInspection,
-} from '@omc/smi';
-export { OmcError, mapSnmpError, type OmcErrorCode } from './errors';
+} from '@mibbeacon/smi';
+export { MibBeaconError, mapSnmpError, type MibBeaconErrorCode } from './errors';
 export { inferWireType, validateVarbindInput } from './snmp/wire-types';
 export {
   EventBus,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TcpSocket, TcpSocketFactory } from '@omc/transport';
+import type { TcpSocket, TcpSocketFactory } from '@mibbeacon/transport';
 import {
   FtpSource,
   PassiveFtpClient,

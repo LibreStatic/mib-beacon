@@ -1,17 +1,17 @@
 {
   "expo": {
-    "name": "Open MIB Catalog",
-    "slug": "open-mib-catalog",
+    "name": "MIB Beacon",
+    "slug": "mib-beacon",
     "version": "0.0.0",
     "orientation": "default",
-    "scheme": "openmibcatalog",
+    "scheme": "mibbeacon",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "android": {
-      "package": "com.librestatic.openmibcatalog"
+      "package": "com.librestatic.mibbeacon"
     },
     "ios": {
-      "bundleIdentifier": "com.librestatic.openmibcatalog",
+      "bundleIdentifier": "com.librestatic.mibbeacon",
       "supportsTablet": true
     },
     "plugins": ["expo-dev-client", "expo-sqlite", "expo-secure-store"]

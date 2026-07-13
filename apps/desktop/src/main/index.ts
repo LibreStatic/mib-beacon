@@ -2,8 +2,8 @@ import { app, BrowserWindow, ipcMain, Menu, safeStorage, screen } from 'electron
 import crypto from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createNodeTransport, createPersistentSecretStore } from '@omc/transport/node';
-import { createEngine } from '@omc/core';
+import { createNodeTransport, createPersistentSecretStore } from '@mibbeacon/transport/node';
+import { createEngine } from '@mibbeacon/core';
 import { registerEngineBridge } from './bridge';
 import { getNextWindowBounds, getVisibleWindowBounds, type Rectangle } from './window-geometry';
 
@@ -33,9 +33,9 @@ async function runCryptoProbe(): Promise<void> {
 
   // Exercise the REAL engine (S1 + S2) under Electron's runtime against the dev
   // snmpd container. Skips gracefully if the container isn't up.
-  const host = process.env.OMC_SPIKE_HOST ?? '127.0.0.1';
-  const port = Number(process.env.OMC_SPIKE_PORT ?? 1611);
-  const engine = createEngine(createNodeTransport({ dataDir: '/tmp/omc-probe' }), {
+  const host = process.env.MIB_BEACON_SPIKE_HOST ?? '127.0.0.1';
+  const port = Number(process.env.MIB_BEACON_SPIKE_PORT ?? 1611);
+  const engine = createEngine(createNodeTransport({ dataDir: '/tmp/mibbeacon-probe' }), {
     dbPath: ':memory:',
   });
   const oid = '1.3.6.1.2.1.1.1.0';
@@ -87,6 +87,7 @@ async function runCryptoProbe(): Promise<void> {
 
 const windows = new Map<number, BrowserWindow>();
 let savedBounds: Rectangle | null = null;
+let releaseWindowBridgeState: (webContentsId: number) => void = () => undefined;
 
 function boundsFile(): string {
   return join(app.getPath('userData'), 'window-state.json');
@@ -136,7 +137,7 @@ function createWindow(): BrowserWindow {
     ...bounds,
     minWidth: 390,
     minHeight: 560,
-    title: 'Open MIB Catalog',
+    title: 'MIB Beacon',
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -145,13 +146,29 @@ function createWindow(): BrowserWindow {
     },
   });
   windows.set(window.id, window);
+  const webContentsId = window.webContents.id;
 
   window.on('close', () => {
     if (!window.isMinimized() && !window.isMaximized() && !window.isFullScreen()) {
       persistBounds(window.getBounds());
     }
   });
-  window.on('closed', () => windows.delete(window.id));
+  window.on('unresponsive', () => {
+    console.error('WINDOW_UNRESPONSIVE', { windowId: window.id, webContentsId });
+  });
+  window.webContents.on('did-fail-load', (_event, code, description, url) => {
+    console.error('WINDOW_LOAD_FAILED', {
+      windowId: window.id,
+      webContentsId,
+      code,
+      description,
+      url,
+    });
+  });
+  window.on('closed', () => {
+    releaseWindowBridgeState(webContentsId);
+    windows.delete(window.id);
+  });
 
   const windowId = String(window.id);
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
@@ -167,17 +184,24 @@ function createWindow(): BrowserWindow {
 }
 
 function configureApplication(engine: ReturnType<typeof createEngine>): void {
-  registerEngineBridge(
+  const bridge = registerEngineBridge(
     engine,
     () => [...windows.values()],
     () => BrowserWindow.getFocusedWindow(),
   );
-  ipcMain.handle('omc:window:new', () => createWindow().id);
+  releaseWindowBridgeState = bridge.releaseWindow;
+  app.on('render-process-gone', (_event, webContents, details) => {
+    console.error('RENDER_PROCESS_GONE', { webContentsId: webContents.id, ...details });
+  });
+  app.on('child-process-gone', (_event, details) => {
+    console.error('CHILD_PROCESS_GONE', details);
+  });
+  ipcMain.handle('mibbeacon:window:new', () => createWindow().id);
   ipcMain.handle(
-    'omc:window:id',
+    'mibbeacon:window:id',
     (event) => BrowserWindow.fromWebContents(event.sender)?.id ?? null,
   );
-  ipcMain.handle('omc:window:title', (event, title: unknown) => {
+  ipcMain.handle('mibbeacon:window:title', (event, title: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window && typeof title === 'string') window.setTitle(title.slice(0, 160));
   });
@@ -215,7 +239,7 @@ function createSharedEngine(): ReturnType<typeof createEngine> {
   });
   const transport = createNodeTransport({ dataDir: userData, secrets });
   return createEngine(transport, {
-    dbPath: join(userData, 'omc.db'),
+    dbPath: join(userData, 'mibbeacon.db'),
   });
 }
 

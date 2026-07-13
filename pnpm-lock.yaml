@@ -59,16 +59,16 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@omc/app':
+      '@mibbeacon/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@omc/core':
+      '@mibbeacon/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@omc/transport':
+      '@mibbeacon/transport':
         specifier: workspace:*
         version: link:../../packages/transport
-      '@omc/ui':
+      '@mibbeacon/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       net-snmp:
@@ -102,16 +102,16 @@ importers:
 
   apps/mobile:
     dependencies:
-      '@omc/app':
+      '@mibbeacon/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@omc/core':
+      '@mibbeacon/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@omc/transport':
+      '@mibbeacon/transport':
         specifier: workspace:*
         version: link:../../packages/transport
-      '@omc/ui':
+      '@mibbeacon/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       assert:
@@ -175,16 +175,16 @@ importers:
 
   apps/server:
     dependencies:
-      '@omc/app':
+      '@mibbeacon/app':
         specifier: workspace:*
         version: link:../../packages/app
-      '@omc/core':
+      '@mibbeacon/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@omc/transport':
+      '@mibbeacon/transport':
         specifier: workspace:*
         version: link:../../packages/transport
-      '@omc/ui':
+      '@mibbeacon/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       net-snmp:
@@ -215,7 +215,7 @@ importers:
 
   packages/app:
     dependencies:
-      '@omc/ui':
+      '@mibbeacon/ui':
         specifier: workspace:*
         version: link:../ui
       fflate:
@@ -224,16 +224,20 @@ importers:
       zustand:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.2.17)(react@19.1.0)
+    devDependencies:
+      '@mibbeacon/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core:
     dependencies:
-      '@omc/resolver':
+      '@mibbeacon/resolver':
         specifier: workspace:*
         version: link:../resolver
-      '@omc/smi':
+      '@mibbeacon/smi':
         specifier: workspace:*
         version: link:../smi
-      '@omc/transport':
+      '@mibbeacon/transport':
         specifier: workspace:*
         version: link:../transport
       net-snmp:
@@ -246,10 +250,10 @@ importers:
 
   packages/resolver:
     dependencies:
-      '@omc/smi':
+      '@mibbeacon/smi':
         specifier: workspace:*
         version: link:../smi
-      '@omc/transport':
+      '@mibbeacon/transport':
         specifier: workspace:*
         version: link:../transport
 

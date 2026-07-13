@@ -112,7 +112,7 @@ describe('nodeStorageFactory', () => {
 
 describe('nodeFileStore', () => {
   it('writes and reads bytes and text', async () => {
-    const fs = createNodeFileStore(join(tmpdir(), 'omc-test'));
+    const fs = createNodeFileStore(join(tmpdir(), 'mibbeacon-test'));
     const p = fs.join(fs.dataDir(), 'sample.txt');
     await fs.writeText(p, 'hello');
     expect(await fs.readText(p)).toBe('hello');
@@ -124,7 +124,7 @@ describe('nodeFileStore', () => {
 
 describe('persistent encrypted secret store', () => {
   it('survives store recreation without writing plaintext and keeps its file private', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'omc-secrets-'));
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-secrets-'));
     const filePath = join(directory, 'resolver-secrets.json');
     const codec: SecretCodec = {
       encrypt: (plaintext) => Buffer.from(`sealed:${plaintext}`).toString('base64'),
@@ -151,7 +151,7 @@ describe('nodeHttpClient', () => {
     servers.length = 0;
   });
 
-  it('fetches text with the OMC user-agent', async () => {
+  it('fetches text with the MIB Beacon user-agent', async () => {
     let seenUa = '';
     const srv = createServer((req, res) => {
       seenUa = req.headers['user-agent'] ?? '';
@@ -165,7 +165,7 @@ describe('nodeHttpClient', () => {
     const res = await nodeHttpClient.fetch({ url: `http://127.0.0.1:${port}/IF-MIB` });
     expect(res.ok).toBe(true);
     expect(res.text).toContain('DEFINITIONS ::= BEGIN');
-    expect(seenUa).toMatch(/OpenMIBCatalog/);
+    expect(seenUa).toMatch(/MIBBeacon/);
   });
 
   it('aborts on timeout', async () => {

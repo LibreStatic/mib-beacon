@@ -163,4 +163,4 @@ export interface Transport {
   readonly platform: 'node' | 'react-native';
 }
 
-export const USER_AGENT = 'OpenMIBCatalog/0.0.0 (+https://github.com/openmibcatalog/openmibcatalog)';
+export const USER_AGENT = 'MIBBeacon/0.0.0 (+https://github.com/LibreStatic/mibbeacon)';

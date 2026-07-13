@@ -26,7 +26,7 @@ import type {
   OidLookupResult,
   ResolverSourcePreviewResult,
   SourceConfig,
-} from '@omc/core/client';
+} from '@mibbeacon/core/client';
 
 export type Tab = 'browse' | 'query' | 'traps' | 'mibs' | 'settings';
 
@@ -55,6 +55,7 @@ export interface WalkStats {
 }
 
 export type BrowseTreeNode = MibNodeSummary | ModuleTreeNode;
+export type BrowseSearchPhase = 'idle' | 'debouncing' | 'searching' | 'opening' | 'error';
 export type QueryOperation = 'get' | 'getNext' | 'walk' | 'set';
 export type TrapMode = 'receive' | 'send';
 
@@ -94,6 +95,8 @@ export interface AppState {
   selected: MibNodeDetail | null;
   search: string;
   hits: MibSearchHit[];
+  searchPhase: BrowseSearchPhase;
+  searchError: string | null;
   setExpanded: (oid: string, open: boolean) => void;
   setChildren: (oid: string, children: BrowseTreeNode[]) => void;
   setModuleFocus: (focus: ModuleView | null) => void;
@@ -101,6 +104,8 @@ export interface AppState {
   setSelected: (node: MibNodeDetail | null) => void;
   setSearch: (q: string) => void;
   setHits: (hits: MibSearchHit[]) => void;
+  setSearchPhase: (phase: BrowseSearchPhase) => void;
+  setSearchError: (error: string | null) => void;
 
   // --- query ---
   agent: AgentForm;
@@ -268,6 +273,8 @@ export const useAppStore = create<AppState>((set) => ({
   selected: null,
   search: '',
   hits: [],
+  searchPhase: 'idle',
+  searchError: null,
   setExpanded: (oid, open) => set((s) => ({ expanded: { ...s.expanded, [oid]: open } })),
   setChildren: (oid, children) =>
     set((s) => ({ childrenCache: { ...s.childrenCache, [oid]: children } })),
@@ -276,6 +283,8 @@ export const useAppStore = create<AppState>((set) => ({
   setSelected: (selected) => set({ selected }),
   setSearch: (search) => set({ search }),
   setHits: (hits) => set({ hits }),
+  setSearchPhase: (searchPhase) => set({ searchPhase }),
+  setSearchError: (searchError) => set({ searchError }),
 
   agent: defaultAgent,
   oid: '1.3.6.1.2.1',
@@ -353,28 +362,45 @@ export const useAppStore = create<AppState>((set) => ({
   finishImport: (importStatus, lastImport) =>
     set({ importStatus, lastImport, importBusy: false, importHandle: null }),
   setFileImportDraft: (fileImportDraft) => set({ fileImportDraft }),
-  updateFileImportDraft: (patch) => set((state) => ({
-    fileImportDraft: state.fileImportDraft ? { ...state.fileImportDraft, ...patch } : null,
-  })),
-  acceptFileImportDraft: (handleId) => set((state) => {
-    const draft = state.fileImportDraft;
-    if (!draft) return {};
-    const terminal = state.importStatus?.handleId === handleId ? state.importStatus.state : null;
-    if (terminal === 'done') return { fileImportDraft: null };
-    if (terminal && ['partial', 'error', 'cancelled', 'expired'].includes(terminal)) {
-      return { fileImportDraft: { ...draft, handleId: null, visible: true, reopenMessage: `Import ${terminal}. Review your original selection and try again.` } };
-    }
-    return { fileImportDraft: { ...draft, handleId, visible: false, reopenMessage: undefined } };
-  }),
-  settleFileImportDraft: (handleId, terminal) => set((state) => {
-    const draft = state.fileImportDraft;
-    if (!draft || draft.handleId !== handleId) return {};
-    if (terminal === 'done') return { fileImportDraft: null };
-    if (['partial', 'error', 'cancelled', 'expired'].includes(terminal)) {
-      return { fileImportDraft: { ...draft, handleId: null, visible: true, reopenMessage: `Import ${terminal}. Review your original selection and try again.` } };
-    }
-    return {};
-  }),
+  updateFileImportDraft: (patch) =>
+    set((state) => ({
+      fileImportDraft: state.fileImportDraft ? { ...state.fileImportDraft, ...patch } : null,
+    })),
+  acceptFileImportDraft: (handleId) =>
+    set((state) => {
+      const draft = state.fileImportDraft;
+      if (!draft) return {};
+      const terminal = state.importStatus?.handleId === handleId ? state.importStatus.state : null;
+      if (terminal === 'done') return { fileImportDraft: null };
+      if (terminal && ['partial', 'error', 'cancelled', 'expired'].includes(terminal)) {
+        return {
+          fileImportDraft: {
+            ...draft,
+            handleId: null,
+            visible: true,
+            reopenMessage: `Import ${terminal}. Review your original selection and try again.`,
+          },
+        };
+      }
+      return { fileImportDraft: { ...draft, handleId, visible: false, reopenMessage: undefined } };
+    }),
+  settleFileImportDraft: (handleId, terminal) =>
+    set((state) => {
+      const draft = state.fileImportDraft;
+      if (!draft || draft.handleId !== handleId) return {};
+      if (terminal === 'done') return { fileImportDraft: null };
+      if (['partial', 'error', 'cancelled', 'expired'].includes(terminal)) {
+        return {
+          fileImportDraft: {
+            ...draft,
+            handleId: null,
+            visible: true,
+            reopenMessage: `Import ${terminal}. Review your original selection and try again.`,
+          },
+        };
+      }
+      return {};
+    }),
 
   resolverSettings: null,
   resolverSources: [],
@@ -398,9 +424,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       if (s.consent?.handleId === prompt.handleId) return { consent: prompt };
       if (s.consentQueue.some((item) => item.handleId === prompt.handleId)) return {};
-      return s.consent
-        ? { consentQueue: [...s.consentQueue, prompt] }
-        : { consent: prompt };
+      return s.consent ? { consentQueue: [...s.consentQueue, prompt] } : { consent: prompt };
     }),
   dismissConsent: (handleId) =>
     set((s) => {

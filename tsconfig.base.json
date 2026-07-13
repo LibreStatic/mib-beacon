@@ -20,16 +20,16 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@omc/transport": ["packages/transport/src/index.ts"],
-      "@omc/transport/node": ["packages/transport/src/node/index.ts"],
-      "@omc/transport/react-native": ["packages/transport/src/react-native/index.ts"],
-      "@omc/smi": ["packages/smi/src/index.ts"],
-      "@omc/resolver": ["packages/resolver/src/index.ts"],
-      "@omc/core": ["packages/core/src/index.ts"],
-      "@omc/core/client": ["packages/core/src/client.ts"],
-      "@omc/core/bridge": ["packages/core/src/bridge.ts"],
-      "@omc/ui": ["packages/ui/src/index.ts"],
-      "@omc/app": ["packages/app/src/index.ts"]
+      "@mibbeacon/transport": ["packages/transport/src/index.ts"],
+      "@mibbeacon/transport/node": ["packages/transport/src/node/index.ts"],
+      "@mibbeacon/transport/react-native": ["packages/transport/src/react-native/index.ts"],
+      "@mibbeacon/smi": ["packages/smi/src/index.ts"],
+      "@mibbeacon/resolver": ["packages/resolver/src/index.ts"],
+      "@mibbeacon/core": ["packages/core/src/index.ts"],
+      "@mibbeacon/core/client": ["packages/core/src/client.ts"],
+      "@mibbeacon/core/bridge": ["packages/core/src/bridge.ts"],
+      "@mibbeacon/ui": ["packages/ui/src/index.ts"],
+      "@mibbeacon/app": ["packages/app/src/index.ts"]
     }
   }
 }

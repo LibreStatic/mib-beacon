@@ -1,5 +1,5 @@
 {
-  "name": "@omc/resolver",
+  "name": "@mibbeacon/resolver",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@omc/smi": "workspace:*",
-    "@omc/transport": "workspace:*"
+    "@mibbeacon/smi": "workspace:*",
+    "@mibbeacon/transport": "workspace:*"
   }
 }

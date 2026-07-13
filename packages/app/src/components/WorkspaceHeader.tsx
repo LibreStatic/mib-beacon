@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useTheme } from '@omc/ui';
+import { useTheme } from '@mibbeacon/ui';
 
 export function WorkspaceHeader({
   title,

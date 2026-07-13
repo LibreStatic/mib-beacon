@@ -1,8 +1,8 @@
 import netSnmpPkg from 'net-snmp/package.json';
-import type { Transport, StorageAdapter } from '@omc/transport';
-import { MibStore } from '@omc/smi';
+import type { Transport, StorageAdapter } from '@mibbeacon/transport';
+import { MibStore } from '@mibbeacon/smi';
 import { EventBus } from './events';
-import { OmcError } from './errors';
+import { MibBeaconError } from './errors';
 import { SnmpSession } from './snmp/session';
 import { TrapReceiver, type TrapRecord } from './snmp/receiver';
 import { runMigrations } from './db/migrate';
@@ -13,7 +13,7 @@ import { validateMibFileBatch } from './mib-file-limits';
 import { AsyncMutationQueue } from './async-mutex';
 
 export interface EngineOptions {
-  /** SQLite file path; defaults to <dataDir>/omc.db. Pass ':memory:' for tests. */
+  /** SQLite file path; defaults to <dataDir>/mibbeacon.db. Pass ':memory:' for tests. */
   dbPath?: string;
   resolver?: {
     now?: () => number;
@@ -35,7 +35,7 @@ function netSnmpVersion(): string {
 
 export function createEngine(transport: Transport, opts: EngineOptions = {}): EngineAPI {
   const bus = new EventBus();
-  const dbPath = opts.dbPath ?? transport.files.join(transport.files.dataDir(), 'omc.db');
+  const dbPath = opts.dbPath ?? transport.files.join(transport.files.dataDir(), 'mibbeacon.db');
   let db: StorageAdapter | null = null;
   try {
     // Hosts pass an existing data dir (Electron userData / Expo documentDirectory);
@@ -106,7 +106,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     aes256: transport.crypto.hasCipher('aes-256-cfb'),
   };
 
-  if (!db) throw new OmcError('INTERNAL', 'Resolver requires an available storage adapter');
+  if (!db) throw new MibBeaconError('INTERNAL', 'Resolver requires an available storage adapter');
   const resolverService = new ResolverService(
     transport,
     db,
@@ -156,12 +156,12 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       async importUrl(url) {
         const res = await transport.http.fetch({ url, maxBytes: MIB_URL_MAX_BYTES });
         if (!res.ok) {
-          throw new OmcError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${res.status}`);
+          throw new MibBeaconError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${res.status}`);
         }
         // Guard against HTML soft-200s before feeding the parser (plan 06 rule).
         const head = res.text.slice(0, 2048);
         if (/<html|<!doctype/i.test(head) || !/DEFINITIONS\s*::=\s*BEGIN/.test(res.text)) {
-          throw new OmcError('CONTENT_VALIDATION_FAILED', 'response is not a MIB module', {
+          throw new MibBeaconError('CONTENT_VALIDATION_FAILED', 'response is not a MIB module', {
             hint: 'The URL returned something that does not look like SMI text (no DEFINITIONS ::= BEGIN).',
           });
         }
@@ -275,7 +275,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
               channel: 'ops',
               handleId,
               kind: 'error',
-              payload: err instanceof OmcError ? err.toJSON() : { message: String(err) },
+              payload: err instanceof MibBeaconError ? err.toJSON() : { message: String(err) },
             }),
           )
           .finally(() => {

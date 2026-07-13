@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.librestatic.openmibcatalog</id>
-  <name>Open MIB Catalog</name>
+  <id>com.librestatic.mibbeacon</id>
+  <name>MIB Beacon</name>
   <summary>Browse MIBs and work with SNMP devices</summary>
   <developer id="com.librestatic"><name>LibreStatic</name></developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <url type="homepage">https://librestatic.com</url>
-  <url type="vcs-browser">https://github.com/LibreStatic/openmibcatalog</url>
-  <url type="bugtracker">https://github.com/LibreStatic/openmibcatalog/issues</url>
+  <url type="vcs-browser">https://github.com/LibreStatic/mibbeacon</url>
+  <url type="bugtracker">https://github.com/LibreStatic/mibbeacon/issues</url>
   <description>
-    <p>Open MIB Catalog is a modern cross-platform SNMP toolkit for importing, exploring, and querying MIB data.</p>
+    <p>MIB Beacon is a modern cross-platform SNMP toolkit for importing, exploring, and querying MIB data.</p>
   </description>
-  <launchable type="desktop-id">com.librestatic.openmibcatalog.desktop</launchable>
+  <launchable type="desktop-id">com.librestatic.mibbeacon.desktop</launchable>
   <provides>
-    <binary>open-mib-catalog</binary>
+    <binary>mib-beacon</binary>
   </provides>
   <content_rating type="oars-1.1" />
   <releases>

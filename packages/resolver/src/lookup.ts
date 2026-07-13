@@ -1,4 +1,4 @@
-import type { HttpClient } from '@omc/transport';
+import type { HttpClient } from '@mibbeacon/transport';
 
 export interface IanaEnterpriseRecord {
   number: number;

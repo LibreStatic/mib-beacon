@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { getEventRecipientIds } from '../apps/desktop/src/main/event-routing';
+import {
+  getEventRecipientIds,
+  isSharedStateMutation,
+} from '../apps/desktop/src/main/event-routing';
+
+describe('isSharedStateMutation', () => {
+  it('broadcasts only resolver configuration mutations', () => {
+    expect(isSharedStateMutation('resolver.settings.update')).toBe(true);
+    expect(isSharedStateMutation('resolver.sources.create')).toBe(true);
+    expect(isSharedStateMutation('resolver.sources.update')).toBe(true);
+    expect(isSharedStateMutation('resolver.sources.remove')).toBe(true);
+    expect(isSharedStateMutation('resolver.sources.reorder')).toBe(true);
+    expect(isSharedStateMutation('resolver.sources.importCustom')).toBe(true);
+    expect(isSharedStateMutation('resolver.cache.clear')).toBe(true);
+  });
+
+  it('never rebroadcasts resolver reads or transient operations', () => {
+    expect(isSharedStateMutation('resolver.settings.get')).toBe(false);
+    expect(isSharedStateMutation('resolver.sources.list')).toBe(false);
+    expect(isSharedStateMutation('resolver.sources.exportCustom')).toBe(false);
+    expect(isSharedStateMutation('resolver.sources.test')).toBe(false);
+    expect(isSharedStateMutation('resolver.sources.preview')).toBe(false);
+    expect(isSharedStateMutation('resolver.cache.stats')).toBe(false);
+    expect(isSharedStateMutation('resolver.history.list')).toBe(false);
+  });
+});
 
 describe('getEventRecipientIds', () => {
   it('broadcasts ordinary engine events to every window', () => {

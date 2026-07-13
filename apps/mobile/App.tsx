@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { Platform, SafeAreaView, StatusBar, useColorScheme } from 'react-native';
-import { createReactNativeTransport } from '@omc/transport/react-native';
-import { createEngine } from '@omc/core';
-import type { AgentSpec } from '@omc/core/client';
-import { EngineProvider, AppRoot, FileImportProvider, type FileImportAdapter } from '@omc/app';
+import { createReactNativeTransport } from '@mibbeacon/transport/react-native';
+import { createEngine } from '@mibbeacon/core';
+import type { AgentSpec } from '@mibbeacon/core/client';
+import { EngineProvider, AppRoot, FileImportProvider, type FileImportAdapter } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
 
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
@@ -17,7 +17,7 @@ const SPIKE_PORT = 1611;
 export default function App() {
   const engine = useMemo(() => {
     const transport = createReactNativeTransport();
-    return createEngine(transport, { dbPath: `${transport.files.dataDir()}omc.db` });
+    return createEngine(transport, { dbPath: `${transport.files.dataDir()}mibbeacon.db` });
   }, []);
 
   // Spike S3 self-test: exercise the RN transport (react-native-udp +

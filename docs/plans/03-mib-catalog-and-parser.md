@@ -2,7 +2,7 @@
 
 Status: in-progress (core slice landed early with the UI overhaul)
 
-> **Landed early** (`@omc/smi` + engine `mibs` domain + Browse/MIBs UI): text-based
+> **Landed early** (`@mibbeacon/smi` + engine `mibs` domain + Browse/MIBs UI): text-based
 > MIB parsing on every platform (`MibStore.importTexts`, no fs — base modules bundled
 > in `packages/smi/src/base-mibs.generated.ts` and loaded via `ParseModule` so React
 > Native works), an OID tree index (`OidIndex`: children/node/resolve/search with node
@@ -39,10 +39,10 @@ Users can import any real-world MIB file (however broken), see exactly what pars
 
 ### T1 — Corpus harness (build FIRST — it drives everything else)
 - `dev/corpus/fetch-corpus.ts`: script that shallow-clones/downloads a pinned revision of `netdisco/netdisco-mibs` (curated, patched vendor MIBs — good "should parse" ground truth) and a selected subset of `librenms/librenms` `mibs/` (raw vendor reality). Store under `dev/corpus/` (gitignored), pin revisions in a checked-in lockfile.
-- `dev/corpus/run-corpus.ts`: parse every file through `@omc/smi`, emit `corpus-report.json`: per-file status (ok / recovered-with-diagnostics / failed), error class, timing. Summary: pass rate, top-10 failure causes, slowest files.
+- `dev/corpus/run-corpus.ts`: parse every file through `@mibbeacon/smi`, emit `corpus-report.json`: per-file status (ok / recovered-with-diagnostics / failed), error class, timing. Summary: pass rate, top-10 failure causes, slowest files.
 - Wire a `pnpm corpus` script. Not part of default CI (size/time); run at the end of this phase and record results in this doc under `## Corpus results`.
 
-### T2 — @omc/smi parse pipeline
+### T2 — @mibbeacon/smi parse pipeline
 `packages/smi/src/`:
 - `parser.ts` — `parseModules(input: SourceFile[]): ParsedBatch`. Steps per file:
   1. **Pre-lex normalization** (each fix recorded as a `ParseDiagnostic` with `severity: 'recovered'`): strip BOM/control chars, normalize line endings, tolerate tabs, handle files containing multiple MODULE definitions, strip stray page-break/formfeed artifacts common in RFC extracts.
@@ -64,7 +64,7 @@ When a recovery would change semantics ambiguously, prefer failing that *object*
 
 ### T4 — Table/index semantics audit (feeds plan 04's Table View)
 - Verify, against corpus + unit fixtures, that the pipeline surfaces per-table: INDEX column list (incl. IMPLIED), AUGMENTS resolution to the base table, index object syntaxes needed for instance decoding, and DISPLAY-HINT / TEXTUAL-CONVENTION resolution chains.
-- Wherever `ModuleStore` doesn't expose a needed piece, extract it from its parsed JSON representation in `@omc/smi` helpers (`table-info.ts`, `display-hint.ts` — implement DISPLAY-HINT formatting for OCTET STRING and INTEGER hints per RFC 2579 §3.1, with unit tests: `1x:`, `255a`, `d-2`, MAC/IP/date-and-time cases).
+- Wherever `ModuleStore` doesn't expose a needed piece, extract it from its parsed JSON representation in `@mibbeacon/smi` helpers (`table-info.ts`, `display-hint.ts` — implement DISPLAY-HINT formatting for OCTET STRING and INTEGER hints per RFC 2579 §3.1, with unit tests: `1x:`, `255a`, `d-2`, MAC/IP/date-and-time cases).
 
 ### T5 — Engine + catalog surface
 `packages/core`:

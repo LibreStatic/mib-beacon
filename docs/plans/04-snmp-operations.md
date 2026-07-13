@@ -25,7 +25,7 @@ The core iReasoning workflow, done better: pick/enter an agent, click a node, ru
 ### T1 — Agent profiles (`packages/core` + UI)
 - Implement `EngineAPI.agents.*`: CRUD on `agents` table; secret material (community, v3 auth/priv passwords) through `SecretStore` refs only.
 - Profile fields: name, host (IPv4/IPv6/hostname), port (default 161), transport udp4/udp6, version, v2c community, v3 (user, security level noAuthNoPriv/authNoPriv/authPriv, auth proto MD5/SHA/SHA-224/256/384/512, priv proto DES*/AES-128/AES-256-blumenthal/AES-256-reeder, context name/engine), timeout ms, retries, getbulk non-repeaters/max-repetitions. (*DES only if the plan-02 spike found it workable on that platform; otherwise hide with an explanatory tooltip.)
-- `agents.test(id)`: Get sysDescr+sysUpTime+sysObjectID; result = latency + decoded values, or granular `OmcError` (the v3 code mapping from plan 01 — implement it here: map node-net-snmp v3 report PDUs/usmStats OIDs to `V3_WRONG_AUTH`/`V3_DECRYPT_FAILED`/`V3_UNKNOWN_USER`/`V3_NOT_IN_TIME_WINDOW`).
+- `agents.test(id)`: Get sysDescr+sysUpTime+sysObjectID; result = latency + decoded values, or granular `MibBeaconError` (the v3 code mapping from plan 01 — implement it here: map node-net-snmp v3 report PDUs/usmStats OIDs to `V3_WRONG_AUTH`/`V3_DECRYPT_FAILED`/`V3_UNKNOWN_USER`/`V3_NOT_IN_TIME_WINDOW`).
 - **Agent groups**: named lists of profile ids; used by multi-agent ops (T5).
 - UI: agents screen (list, add/edit form with version-dependent fields, test button with result detail incl. the hint text); quick-pick dropdown in the operations bar; "last used" ordering.
 
@@ -33,7 +33,7 @@ The core iReasoning workflow, done better: pick/enter an agent, click a node, ru
 - Implement `EngineAPI.ops.start/cancel` for: `get`, `getnext`, `getbulk`, `set`, `walk` (subtree via getnext for v1, getbulk otherwise; STOP at subtree end by OID-prefix check), `subtree-fetch` (walk constrained to selected node), `table-fetch` (walk of a table's columns — used by Table View).
 - Session reuse per agent; serialize ops per session (node-net-snmp session semantics) but allow concurrent ops across agents.
 - Streaming per plan 01 (≤50ms/≤50-varbind batches), cancellation, completion event with stats (varbind count, duration, PDU count).
-- Varbind post-processing pipeline (in `@omc/smi` helpers): OID → name resolution (longest-prefix + instance suffix), type name, DISPLAY-HINT-formatted value, enum label (`up(1)`), plus raw value; keep both formatted and raw.
+- Varbind post-processing pipeline (in `@mibbeacon/smi` helpers): OID → name resolution (longest-prefix + instance suffix), type name, DISPLAY-HINT-formatted value, enum label (`up(1)`), plus raw value; keep both formatted and raw.
 - Sanity guards: walk hard-cap (default 100k varbinds, user-raisable), endless-loop detection (non-increasing OID → `REQ_OID_NOT_INCREASING` error mentioning the misbehaving agent).
 
 ### T3 — Operations UI (the main screen)

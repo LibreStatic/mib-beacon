@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
-import { createNodeTransport, nodeStorageFactory } from '@omc/transport/node';
+import { createNodeTransport, nodeStorageFactory } from '@mibbeacon/transport/node';
 import { createEngine } from './engine';
 
 const TOY_MIB = `
@@ -94,8 +94,8 @@ describe('engine mibs domain', () => {
   });
 
   it('persists user modules across engine restarts', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'omc-mibs-'));
-    const dbPath = join(dir, 'omc.db');
+    const dir = await mkdtemp(join(tmpdir(), 'mibbeacon-mibs-'));
+    const dbPath = join(dir, 'mibbeacon.db');
 
     const engine1 = makeEngine(dbPath);
     await engine1.mibs.importTexts([{ name: 'TOY-MIB', content: TOY_MIB }]);
@@ -112,8 +112,8 @@ describe('engine mibs domain', () => {
   });
 
   it('persists a multi-module source once and preserves ownership across replacement restart', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'omc-multi-source-'));
-    const dbPath = join(dir, 'omc.db');
+    const dir = await mkdtemp(join(tmpdir(), 'mibbeacon-multi-source-'));
+    const dbPath = join(dir, 'mibbeacon.db');
     const bundle = `${TOY_MIB}\n${OTHER_MIB}`;
     const engine1 = makeEngine(dbPath);
     await engine1.mibs.importTexts([{ name: 'bundle.mib', content: bundle }]);

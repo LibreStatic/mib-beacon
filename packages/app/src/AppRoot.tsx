@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Modal, ScrollView } from 'react-native';
-import { Button, Card, Label, SectionTitle, useTheme } from '@omc/ui';
-import type { DecodedVarbind, EngineEvent, EngineInfo, TrapRecord } from '@omc/core/client';
+import { Button, Card, Label, SectionTitle, useTheme } from '@mibbeacon/ui';
+import type { DecodedVarbind, EngineEvent, EngineInfo, TrapRecord } from '@mibbeacon/core/client';
 import { useEngine } from './engine-context';
 import { useAppStore, type Tab } from './store';
 import {
@@ -51,8 +51,8 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
   const [info, setInfo] = useState<EngineInfo | null>(null);
 
   useEffect(() => {
-    const label = TABS.find((item) => item.key === tab)?.label ?? 'Open MIB Catalog';
-    host?.setWindowTitle?.(`${label} — Open MIB Catalog`);
+    const label = TABS.find((item) => item.key === tab)?.label ?? 'MIB Beacon';
+    host?.setWindowTitle?.(`${label} — MIB Beacon`);
   }, [host, tab]);
 
   useEffect(() => {
@@ -148,7 +148,7 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {mode === 'compact' ? (
         <View style={[styles.header, { borderBottomColor: t.border }]}>
-          <Text style={[styles.title, { color: t.text }]}>Open MIB Catalog</Text>
+          <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
           {info ? (
             <Text style={[styles.sub, { color: t.textDim }]}>
               {info.platform} · net-snmp {info.netSnmpVersion}
@@ -267,7 +267,7 @@ function AppNavigation({
       </View>
       {expanded ? (
         <View style={styles.brandCopy}>
-          <Text style={[styles.brandTitle, { color: t.text }]}>Open MIB Catalog</Text>
+          <Text style={[styles.brandTitle, { color: t.text }]}>MIB Beacon</Text>
           <Text style={[styles.brandKicker, { color: t.textDim }]}>NETWORK WORKBENCH</Text>
         </View>
       ) : null}
@@ -391,7 +391,7 @@ function ResolverConsentModal({
             Search configured external sources?
           </Text>
           <Label tone="dim" size={12}>
-            Local parsing found missing definitions. Open MIB Catalog can contact the enabled hosts
+            Local parsing found missing definitions. MIB Beacon can contact the enabled hosts
             below. Valid modules are cached on the engine host (the LAN server when using the web
             app). These sources are configured for lookup; they are not inherently trusted or
             endorsed.

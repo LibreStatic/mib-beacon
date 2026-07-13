@@ -1,18 +1,18 @@
 import { ipcMain, type BrowserWindow } from 'electron';
-import type { EngineAPI } from '@omc/core';
-import type { EngineEvent } from '@omc/core/client';
-import { ENGINE_METHODS, ENGINE_EVENT_CHANNELS, dispatchEngineCall } from '@omc/core/bridge';
-import { getEventRecipientIds } from './event-routing';
+import type { EngineAPI } from '@mibbeacon/core';
+import type { EngineEvent } from '@mibbeacon/core/client';
+import { ENGINE_METHODS, ENGINE_EVENT_CHANNELS, dispatchEngineCall } from '@mibbeacon/core/bridge';
+import { getEventRecipientIds, isSharedStateMutation } from './event-routing';
 
 /**
  * Maps the EngineAPI onto Electron IPC using the shared host-side dispatch
- * (@omc/core/bridge), which the LAN server also uses over WebSocket.
+ * (@mibbeacon/core/bridge), which the LAN server also uses over WebSocket.
  */
 export function registerEngineBridge(
   engine: EngineAPI,
   getWindows: () => BrowserWindow[],
   getFocusedWindow: () => BrowserWindow | null,
-): void {
+): { releaseWindow: (webContentsId: number) => void } {
   const ownerByHandle = new Map<string, number>();
   const pendingResolverEvents = new Map<string, EngineEvent[]>();
 
@@ -20,19 +20,19 @@ export function registerEngineBridge(
     const window = getWindows().find(
       (candidate) => !candidate.isDestroyed() && candidate.webContents.id === webContentsId,
     );
-    if (window && !window.webContents.isDestroyed()) window.webContents.send('omc:event', event);
+    if (window && !window.webContents.isDestroyed()) window.webContents.send('mibbeacon:event', event);
   };
 
   const broadcast = (event: EngineEvent) => {
     for (const window of getWindows()) {
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send('omc:event', event);
+        window.webContents.send('mibbeacon:event', event);
       }
     }
   };
 
   for (const method of Object.keys(ENGINE_METHODS)) {
-    ipcMain.handle(`omc:${method}`, async (event, ...args) => {
+    ipcMain.handle(`mibbeacon:${method}`, async (event, ...args) => {
       const result = await dispatchEngineCall(engine, method, args);
       const value = result.value as { handleId?: unknown } | undefined;
       if (result.ok && typeof value?.handleId === 'string') {
@@ -42,12 +42,7 @@ export function registerEngineBridge(
         }
         pendingResolverEvents.delete(value.handleId);
       }
-      if (
-        result.ok &&
-        (method === 'resolver.settings.update' ||
-          method.startsWith('resolver.sources.') ||
-          method === 'resolver.cache.clear')
-      ) {
+      if (result.ok && isSharedStateMutation(method)) {
         broadcast({ channel: 'tools', kind: 'resolver-changed', payload: { method } });
       }
       return result;
@@ -84,7 +79,7 @@ export function registerEngineBridge(
       for (const id of recipientIds) {
         const window = windowsByWebContents.get(id);
         if (window && !window.webContents.isDestroyed())
-          window.webContents.send('omc:event', event);
+          window.webContents.send('mibbeacon:event', event);
       }
 
       if (event.handleId && ['done', 'error', 'cancelled', 'expired'].includes(event.kind)) {
@@ -92,4 +87,12 @@ export function registerEngineBridge(
       }
     });
   }
+
+  return {
+    releaseWindow(webContentsId) {
+      for (const [handleId, ownerId] of ownerByHandle) {
+        if (ownerId === webContentsId) ownerByHandle.delete(handleId);
+      }
+    },
+  };
 }

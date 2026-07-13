@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Label, Mono, Pill, SectionTitle, useTheme } from '@omc/ui';
+import { Button, Card, Label, Mono, Pill, SectionTitle, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { importReviewedFiles } from '../actions';

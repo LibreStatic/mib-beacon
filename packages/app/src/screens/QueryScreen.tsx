@@ -12,8 +12,8 @@ import {
   EmptyState,
   Row,
   useTheme,
-} from '@omc/ui';
-import { validateVarbindInput } from '@omc/core/client';
+} from '@mibbeacon/ui';
+import { validateVarbindInput } from '@mibbeacon/core/client';
 import type {
   AuthProtocol,
   DecodedVarbind,
@@ -21,7 +21,7 @@ import type {
   PrivProtocol,
   SecurityLevel,
   SnmpVersion,
-} from '@omc/core/client';
+} from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore, type QueryOperation } from '../store';
 import { runGet, runGetNext, runSet, runWalk, stopWalk, resolveOidHint } from '../actions';

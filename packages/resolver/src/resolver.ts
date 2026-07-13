@@ -1,4 +1,4 @@
-import { parseCheckMibText } from '@omc/smi';
+import { parseCheckMibText } from '@mibbeacon/smi';
 import { HostScheduler } from './scheduler';
 import { validateMibContent } from './sources/validator';
 

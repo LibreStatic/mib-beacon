@@ -1,4 +1,4 @@
-import type { HttpClient, HttpRequest, HttpResponse } from '@omc/transport';
+import type { HttpClient, HttpRequest, HttpResponse } from '@mibbeacon/transport';
 
 import type {
   GitHubTreeSourceConfig,

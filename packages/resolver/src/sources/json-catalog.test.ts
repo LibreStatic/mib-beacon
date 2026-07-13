@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { HttpClient, HttpRequest, HttpResponse } from '@omc/transport';
+import type { HttpClient, HttpRequest, HttpResponse } from '@mibbeacon/transport';
 
 import { evaluateSimpleJsonPath, JsonCatalogSource } from './json-catalog';
 import type { JsonCatalogSourceConfig } from './types';

@@ -12,7 +12,7 @@ import {
   Mono,
   Pill,
   useTheme,
-} from '@omc/ui';
+} from '@mibbeacon/ui';
 import type {
   AuthProtocol,
   EngineInfo,
@@ -20,8 +20,8 @@ import type {
   SecurityLevel,
   SnmpVersion,
   TrapRecord,
-} from '@omc/core/client';
-import { validateVarbindInput } from '@omc/core/client';
+} from '@mibbeacon/core/client';
+import { validateVarbindInput } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore, type AgentForm, type NotificationHistoryItem } from '../store';
 import { repeatNotification, sendNotification, toggleReceiver } from '../actions';

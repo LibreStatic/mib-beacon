@@ -10,8 +10,8 @@ import {
   EmptyState,
   Mono,
   useTheme,
-} from '@omc/ui';
-import type { ModuleInfo } from '@omc/core/client';
+} from '@mibbeacon/ui';
+import type { ModuleInfo } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { cancelImport, focusModule, importPastedText, importUrl, unloadModule } from '../actions';

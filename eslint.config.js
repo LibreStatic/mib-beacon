@@ -5,9 +5,9 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 /**
  * Dependency-direction enforcement (see docs/plans/README.md):
- *  - @omc/ui and @omc/app must NOT import Node builtins or node-net-snmp directly;
- *    they talk to the engine only through the EngineAPI type surface from @omc/core.
- *  - @omc/transport is the ONLY package allowed platform-conditional / native imports.
+ *  - @mibbeacon/ui and @mibbeacon/app must NOT import Node builtins or node-net-snmp directly;
+ *    they talk to the engine only through the EngineAPI type surface from @mibbeacon/core.
+ *  - @mibbeacon/transport is the ONLY package allowed platform-conditional / native imports.
  */
 const NODE_BUILTINS = [
   'fs',
@@ -27,9 +27,9 @@ const NODE_BUILTINS = [
 const UI_APP_FORBIDDEN = [
   ...NODE_BUILTINS,
   'net-snmp',
-  '@omc/transport',
-  '@omc/transport/node',
-  '@omc/transport/react-native',
+  '@mibbeacon/transport',
+  '@mibbeacon/transport/node',
+  '@mibbeacon/transport/react-native',
 ];
 
 export default tseslint.config(
@@ -83,7 +83,7 @@ export default tseslint.config(
     },
   },
   {
-    // The engine seam: UI/app may import ONLY types from @omc/core, never Node/native.
+    // The engine seam: UI/app may import ONLY types from @mibbeacon/core, never Node/native.
     files: ['packages/ui/**/*.{ts,tsx}', 'packages/app/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -92,7 +92,7 @@ export default tseslint.config(
           paths: UI_APP_FORBIDDEN.map((name) => ({
             name,
             message:
-              'UI/app must not import Node builtins, native modules, node-net-snmp, or transport directly. Use the EngineAPI seam from @omc/core (types only).',
+              'UI/app must not import Node builtins, native modules, node-net-snmp, or transport directly. Use the EngineAPI seam from @mibbeacon/core (types only).',
           })),
         },
       ],

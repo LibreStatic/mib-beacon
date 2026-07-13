@@ -1,7 +1,7 @@
 import { createSocket } from 'node:dgram';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { createNodeTransport } from '@omc/transport/node';
+import { createNodeTransport } from '@mibbeacon/transport/node';
 import { createEngine } from './engine';
 
 async function freeUdpPort(): Promise<number> {

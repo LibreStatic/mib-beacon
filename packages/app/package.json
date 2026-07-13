@@ -1,5 +1,5 @@
 {
-  "name": "@omc/app",
+  "name": "@mibbeacon/app",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
@@ -11,13 +11,16 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@omc/ui": "workspace:*",
+    "@mibbeacon/ui": "workspace:*",
     "fflate": "^0.8.3",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
-    "@omc/core": "workspace:*",
+    "@mibbeacon/core": "workspace:*",
     "react": "*",
     "react-native": "*"
+  },
+  "devDependencies": {
+    "@mibbeacon/core": "workspace:*"
   }
 }

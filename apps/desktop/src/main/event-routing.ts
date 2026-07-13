@@ -3,6 +3,20 @@ export interface RoutableEngineEvent {
   handleId?: string;
 }
 
+const SHARED_STATE_MUTATIONS = new Set([
+  'resolver.settings.update',
+  'resolver.sources.create',
+  'resolver.sources.update',
+  'resolver.sources.remove',
+  'resolver.sources.reorder',
+  'resolver.sources.importCustom',
+  'resolver.cache.clear',
+]);
+
+export function isSharedStateMutation(method: string): boolean {
+  return SHARED_STATE_MUTATIONS.has(method);
+}
+
 export function getEventRecipientIds(
   event: RoutableEngineEvent,
   windowIds: number[],

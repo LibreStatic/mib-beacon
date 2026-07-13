@@ -1,7 +1,7 @@
 /**
  * Host-side engine dispatch, shared by every out-of-process host (Electron main,
  * LAN server). Maps a method name + args onto the EngineAPI and serializes the
- * result (incl. OmcError) so it can cross IPC or a WebSocket. Spike-scope method
+ * result (incl. MibBeaconError) so it can cross IPC or a WebSocket. Spike-scope method
  * list; grows alongside the EngineAPI in later plans.
  *
  * Type-only imports keep this free of the engine implementation / net-snmp.

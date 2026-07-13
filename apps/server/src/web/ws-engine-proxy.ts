@@ -3,7 +3,7 @@ import {
   type EngineAPI,
   type EngineEvent,
   type BridgeResult,
-} from '@omc/core/client';
+} from '@mibbeacon/core/client';
 
 interface ResultMessage {
   type: 'result';
@@ -16,7 +16,7 @@ interface EventMessage {
 }
 
 /**
- * Browser-side EngineAPI: the shared proxy (@omc/core/client) over a WebSocket to
+ * Browser-side EngineAPI: the shared proxy (@mibbeacon/core/client) over a WebSocket to
  * the LAN server, which runs the real engine. Auto-reconnects.
  */
 export function makeWsEngineProxy(): EngineAPI {

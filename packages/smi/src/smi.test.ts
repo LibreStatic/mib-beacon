@@ -11,7 +11,7 @@ IMPORTS
 
 toyMIB MODULE-IDENTITY
     LAST-UPDATED "202601010000Z"
-    ORGANIZATION "Open MIB Catalog"
+    ORGANIZATION "MIB Beacon"
     CONTACT-INFO "test"
     DESCRIPTION "A toy MIB for unit tests."
     ::= { enterprises 99999 }
@@ -51,12 +51,17 @@ describe('MibStore', () => {
     const deceptive = TOY_MIB.replace(
       'A toy MIB for unit tests.',
       'FAKE-MIB DEFINITIONS ::= BEGIN and END are documentation only.',
-    ).replace('toyObjects OBJECT IDENTIFIER', '-- COMMENT-MIB DEFINITIONS ::= BEGIN\ntoyObjects OBJECT IDENTIFIER');
+    ).replace(
+      'toyObjects OBJECT IDENTIFIER',
+      '-- COMMENT-MIB DEFINITIONS ::= BEGIN\ntoyObjects OBJECT IDENTIFIER',
+    );
     const imported = store.importTexts([{ name: 'deceptive.mib', content: deceptive }]);
     expect(imported.loaded).toEqual(['TOY-MIB']);
     expect(store.listModules().some((module) => module.name === 'FAKE-MIB')).toBe(false);
 
-    const duplicate = store.importTexts([{ name: 'duplicate.mib', content: `${OTHER_MIB}\n${OTHER_MIB}` }]);
+    const duplicate = store.importTexts([
+      { name: 'duplicate.mib', content: `${OTHER_MIB}\n${OTHER_MIB}` },
+    ]);
     expect(duplicate.loaded).toEqual([]);
     expect(duplicate.errors[0]?.message).toMatch(/duplicate module definition OTHER-MIB/);
   });
@@ -69,7 +74,9 @@ describe('MibStore', () => {
       'toyObjects OBJECT IDENTIFIER',
       `-- astral comment ${'🚀'.repeat(80)}\ntoyObjects OBJECT IDENTIFIER`,
     );
-    const result = store.importTexts([{ name: 'emoji-bundle.mib', content: `${first}\n${OTHER_MIB}` }]);
+    const result = store.importTexts([
+      { name: 'emoji-bundle.mib', content: `${first}\n${OTHER_MIB}` },
+    ]);
 
     expect(result.errors).toEqual([]);
     expect(result.loaded).toEqual(expect.arrayContaining(['TOY-MIB', 'OTHER-MIB']));
@@ -195,7 +202,10 @@ END`;
     expect(inspection.duplicateDefinitions).toEqual([
       { module: 'TOY-MIB', files: ['first.mib', 'second.mib'] },
     ]);
-    expect(inspection.files[0]?.collisions).toContainEqual({ module: 'TOY-MIB', kind: 'batch-duplicate' });
+    expect(inspection.files[0]?.collisions).toContainEqual({
+      module: 'TOY-MIB',
+      kind: 'batch-duplicate',
+    });
     expect(inspection.files[2]?.collisions).toContainEqual({ module: 'SNMPv2-MIB', kind: 'base' });
   });
 
@@ -204,9 +214,10 @@ END`;
     store.importTexts([{ name: 'toy.mib', content: TOY_MIB }]);
     const replacement = TOY_MIB.replace('99999', '99997');
 
-    const replaced = store.replaceTexts([{ name: 'replacement.mib', content: replacement }], [
-      'TOY-MIB',
-    ]);
+    const replaced = store.replaceTexts(
+      [{ name: 'replacement.mib', content: replacement }],
+      ['TOY-MIB'],
+    );
     expect(replaced.errors).toEqual([]);
     expect(store.index.node('toyGauge')?.oid).toBe('1.3.6.1.4.1.99997.1.1');
 
@@ -216,8 +227,9 @@ END`;
     );
     expect(failed.errors).not.toEqual([]);
     expect(store.index.node('toyGauge')?.oid).toBe('1.3.6.1.4.1.99997.1.1');
-    expect(() => store.replaceTexts([{ name: 'base.mib', content: TOY_MIB }], ['SNMPv2-MIB']))
-      .toThrow(/base module/);
+    expect(() =>
+      store.replaceTexts([{ name: 'base.mib', content: TOY_MIB }], ['SNMPv2-MIB']),
+    ).toThrow(/base module/);
   });
 
   it('requires every module from a multi-module source during replacement', () => {
@@ -226,10 +238,7 @@ END`;
     expect(store.importTexts([{ name: 'bundle.mib', content: bundled }]).errors).toEqual([]);
 
     const inspection = store.inspectFiles([{ name: 'replacement.mib', content: TOY_MIB }]);
-    expect(inspection.files[0]?.collisions[0]?.replacementGroup).toEqual([
-      'TOY-MIB',
-      'OTHER-MIB',
-    ]);
+    expect(inspection.files[0]?.collisions[0]?.replacementGroup).toEqual(['TOY-MIB', 'OTHER-MIB']);
     const result = store.replaceTexts([{ name: 'replacement.mib', content: TOY_MIB }], ['TOY-MIB']);
     expect(result.errors[0]?.message).toContain('OTHER-MIB');
     expect(store.index.node('otherGauge')).not.toBeNull();
@@ -336,6 +345,8 @@ END`;
     expect(hits[0]?.name).toBe('sysDescr');
     const fuzzy = store.index.search('ifIn');
     expect(fuzzy.some((h) => h.name === 'ifInOctets')).toBe(true);
+    expect(store.index.search('sysdescr')[0]?.name).toBe('sysDescr');
+    expect(store.index.search('SYSDESCR')[0]?.name).toBe('sysDescr');
   });
 
   it('unloads a user module (and refuses base modules)', () => {

@@ -1,4 +1,4 @@
-import type { StorageAdapter } from '@omc/transport';
+import type { StorageAdapter } from '@mibbeacon/transport';
 
 export interface Migration {
   id: number;

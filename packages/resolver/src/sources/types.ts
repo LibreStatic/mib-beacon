@@ -1,4 +1,4 @@
-import type { HttpClient } from '@omc/transport';
+import type { HttpClient } from '@mibbeacon/transport';
 
 export type SourceKind = 'cache' | 'http-template' | 'github-tree' | 'json-catalog' | 'ftp';
 export type HttpAuthKind = 'none' | 'basic';

@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Button, Card, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@omc/ui';
+import { Button, Card, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { lookupUnknownOid } from '../actions';

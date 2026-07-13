@@ -1,5 +1,5 @@
 - generic [ref=e4]:
-  - generic [ref=e5]: Open MIB Catalog — Spike
+  - generic [ref=e5]: MIB Beacon — Spike
   - generic [ref=e6]: "node · net-snmp 3.26.3 · ciphers: DES ✗ · AES-128 ✓ · AES-256 ✓"
   - generic [ref=e7]:
     - generic [ref=e8]: Agent
@@ -22,7 +22,7 @@
         - generic [ref=e25]: Walk 1.3.6.1.2.1
   - generic [ref=e26]:
     - generic [ref=e27]: Get result
-    - generic [ref=e43]: 1.3.6.1.2.1.1.1.0 = [OctetString] "Open MIB Catalog spike test agent"
+    - generic [ref=e43]: 1.3.6.1.2.1.1.1.0 = [OctetString] "MIB Beacon spike test agent"
   - generic [ref=e29]:
     - generic [ref=e30]: Walk progress
     - generic [ref=e31]: 0 varbinds · 0 batches · 0 ms

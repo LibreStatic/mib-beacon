@@ -12,7 +12,7 @@ A pnpm monorepo where `pnpm dev:desktop` opens an Electron window rendering a sh
 
 ### T1 — Workspace root
 - `pnpm init`; `pnpm-workspace.yaml` covering `apps/*`, `packages/*`.
-- Root `tsconfig.base.json` (strict, `moduleResolution: bundler`, path aliases `@omc/*` → `packages/*/src`).
+- Root `tsconfig.base.json` (strict, `moduleResolution: bundler`, path aliases `@mibbeacon/*` → `packages/*/src`).
 - Root eslint (typescript-eslint + react + react-native + import rules incl. the dependency-direction restrictions from `docs/plans/README.md`) + prettier.
 - `vitest.workspace.ts` covering `packages/*`.
 - Root scripts: `dev:desktop`, `dev:mobile`, `typecheck`, `lint`, `test` (recursive).
@@ -22,13 +22,13 @@ A pnpm monorepo where `pnpm dev:desktop` opens an Electron window rendering a sh
 - Define the interfaces from plan 01 (`UdpSocketFactory`, `TcpSocketFactory`, `CryptoProvider`, `FileStore`, `StorageAdapter`, `SecretStore`, `HttpClient`) in `src/types.ts`.
 - `src/node/` implementations: dgram, net, node:crypto, node:fs, better-sqlite3, Electron safeStorage (safeStorage impl lives in `apps/desktop` and is injected — transport only defines the interface + a plaintext-forbidden guard), fetch with timeout/UA.
 - `src/react-native/` implementations: react-native-udp, react-native-tcp-socket, react-native-quick-crypto, expo-file-system, expo-sqlite, expo-secure-store, fetch.
-- Export condition or explicit entry points (`@omc/transport/node`, `@omc/transport/react-native`) — do NOT rely on runtime platform sniffing.
+- Export condition or explicit entry points (`@mibbeacon/transport/node`, `@mibbeacon/transport/react-native`) — do NOT rely on runtime platform sniffing.
 - Unit tests for the Node implementations (UDP echo test, SQLite round-trip, HTTP timeout).
 
 ### T3 — packages/core (walking skeleton)
 - `EngineAPI` types (full interface from plan 01, stub implementations throwing `NOT_IMPLEMENTED` except:)
 - `agents.test()`-equivalent minimal path: a `snmpGet(agentSpec, oid)` using node-net-snmp with injected transport, and `traps.startReceiver/stopReceiver/query` minimal path (in-memory list is fine for the spike; SQLite lands in plan 05).
-- `errors.ts` with the `OmcError` codes from plan 01 (transport + basic SNMP set).
+- `errors.ts` with the `MibBeaconError` codes from plan 01 (transport + basic SNMP set).
 - DB bootstrap: migration runner + `schema_migrations` + `settings` table only.
 
 ### T4 — packages/ui + packages/app (walking skeleton)
@@ -36,7 +36,7 @@ A pnpm monorepo where `pnpm dev:desktop` opens an Electron window rendering a sh
 - zustand store wiring the screen to an injected `EngineAPI` via React context (`EngineProvider`).
 
 ### T5 — apps/desktop
-- electron-vite project: main (instantiates core with Node transport), preload (contextBridge `window.omcEngine`), renderer (react-native-web; vite alias `react-native` → `react-native-web`).
+- electron-vite project: main (instantiates core with Node transport), preload (contextBridge `window.mibbeaconEngine`), renderer (react-native-web; vite alias `react-native` → `react-native-web`).
 - The `ipc-bridge.ts` generic mapper (EngineAPI ⇄ ipc channels) from plan 01, including the event-subscription channel.
 - Security flags: contextIsolation on, sandbox on, CSP in index.html.
 - `pnpm dev:desktop` opens the Spike screen.
@@ -69,7 +69,7 @@ Test agent for S1–S3: `snmpd` in Docker on the dev machine (v2c community `pub
 4. No secrets, no telemetry, license headers/`license` fields correct (GPL-3.0 for workspace packages).
 
 ## Test strategy
-- Unit: transport Node impls; ipc-bridge mapper (mock ipcMain/ipcRenderer); OmcError mapping for timeout vs refused.
+- Unit: transport Node impls; ipc-bridge mapper (mock ipcMain/ipcRenderer); MibBeaconError mapping for timeout vs refused.
 - Manual: the spike itself, with results committed.
 
 ## Out of scope
@@ -82,8 +82,8 @@ Real MIB parsing (plan 03), styling/theming beyond defaults, packaging/installer
 - **Tamagui deferred to plan 09.** Spike UI uses React Native primitives + a minimal theme
   (`packages/ui`) to keep the gating phase focused on the SNMP stack. Plan 09 introduces
   Tamagui + semantic tokens as planned.
-- **`@omc/core/client` subpath added** (not in plan 01's original surface) to give the
-  renderer a net-snmp-free import surface (EventBus/OmcError/types). Keeps the SNMP engine
+- **`@mibbeacon/core/client` subpath added** (not in plan 01's original surface) to give the
+  renderer a net-snmp-free import surface (EventBus/MibBeaconError/types). Keeps the SNMP engine
   out of the browser bundle. Worth folding into plan 01's contract when next revised.
 - **S3 (on-device Android) passed** on a Pixel_9_Pro emulator. Required shims (all
   committed, documented in SPIKE-RESULTS): removed `.js` import extensions (Metro doesn't

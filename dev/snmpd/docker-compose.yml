@@ -3,7 +3,7 @@
 services:
   snmpd:
     build: .
-    container_name: omc-spike-snmpd
+    container_name: mibbeacon-spike-snmpd
     ports:
       - '127.0.0.1:1611:161/udp'
     restart: unless-stopped

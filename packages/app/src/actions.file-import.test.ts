@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EngineAPI } from '@omc/core/client';
+import type { EngineAPI } from '@mibbeacon/core/client';
 import { importReviewedFiles } from './actions';
 import { useAppStore } from './store';
 

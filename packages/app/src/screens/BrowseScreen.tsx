@@ -1,14 +1,22 @@
-import { useMemo } from 'react';
-import { View, Text, Pressable, FlatList, ScrollView, StyleSheet } from 'react-native';
-import { Card, Field, Button, Pill, Mono, EmptyState, KindGlyph, useTheme } from '@omc/ui';
-import type { MibNodeSummary } from '@omc/core/client';
+import { useEffect, useMemo } from 'react';
+import {
+  ActivityIndicator,
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import { Card, Field, Button, Pill, Mono, EmptyState, KindGlyph, useTheme } from '@mibbeacon/ui';
+import type { MibNodeSummary } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import {
   loadChildren,
   selectNode,
-  revealOid,
   runSearch,
+  openSearchHit,
   walkFromNode,
   getFromNode,
   clearModuleFocus,
@@ -30,14 +38,25 @@ export function BrowseScreen() {
   const selected = useAppStore((s) => s.selected);
   const search = useAppStore((s) => s.search);
   const hits = useAppStore((s) => s.hits);
+  const searchPhase = useAppStore((s) => s.searchPhase);
+  const searchError = useAppStore((s) => s.searchError);
   const moduleFocus = useAppStore((s) => s.moduleFocus);
 
   const rows = useMemo(() => flattenVisibleTree(cache, expanded), [cache, expanded]);
 
   const onSearch = (q: string) => {
-    useAppStore.getState().setSearch(q);
-    void runSearch(engine, q);
+    const state = useAppStore.getState();
+    state.setSearch(q);
+    state.setHits([]);
+    state.setSearchError(null);
+    state.setSearchPhase(q.trim() ? 'debouncing' : 'idle');
   };
+
+  useEffect(() => {
+    if (!search.trim()) return;
+    const timer = setTimeout(() => void runSearch(engine, search), 250);
+    return () => clearTimeout(timer);
+  }, [engine, search]);
 
   const toggle = (node: MibNodeSummary) => {
     const open = !expanded[node.oid];
@@ -45,12 +64,7 @@ export function BrowseScreen() {
     if (open) void loadChildren(engine, node.oid);
   };
 
-  const pickHit = async (oid: string) => {
-    useAppStore.getState().setSearch('');
-    useAppStore.getState().setHits([]);
-    await revealOid(engine, oid);
-    await selectNode(engine, oid);
-  };
+  const pickHit = (oid: string) => void openSearchHit(engine, oid);
 
   const navigator = (
     <View style={[styles.navigator, { borderRightColor: t.border }]}>
@@ -84,11 +98,31 @@ export function BrowseScreen() {
         </View>
       ) : null}
       <View style={styles.searchWrap}>
-        <Field
-          placeholder="Search name, OID, or description…"
-          value={search}
-          onChangeText={onSearch}
-        />
+        <View style={styles.searchFieldRow}>
+          <Field
+            placeholder="Search name, OID, or description…"
+            value={search}
+            onChangeText={onSearch}
+          />
+          {searchPhase === 'debouncing' ||
+          searchPhase === 'searching' ||
+          searchPhase === 'opening' ? (
+            <ActivityIndicator color={t.accent} size="small" />
+          ) : null}
+        </View>
+        {searchPhase !== 'idle' ? (
+          <Text
+            style={[styles.searchStatus, { color: searchPhase === 'error' ? t.error : t.textDim }]}
+          >
+            {searchPhase === 'debouncing'
+              ? 'Waiting for you to finish typing…'
+              : searchPhase === 'searching'
+                ? 'Searching loaded MIB names, OIDs, and descriptions…'
+                : searchPhase === 'opening'
+                  ? 'Opening object and revealing its tree location…'
+                  : (searchError ?? 'Search failed.')}
+          </Text>
+        ) : null}
       </View>
 
       {search.trim() ? (
@@ -97,7 +131,7 @@ export function BrowseScreen() {
           keyExtractor={(h) => h.oid + h.matched}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            /^\.?\d+(?:\.\d+)+$/.test(search.trim()) ? (
+            searchPhase !== 'idle' ? null : /^\.?\d+(?:\.\d+)+$/.test(search.trim()) ? (
               <View style={styles.lookupEmpty}>
                 <EmptyState
                   title="OID is not in the loaded catalog"
@@ -111,8 +145,14 @@ export function BrowseScreen() {
           }
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => void pickHit(item.oid)}
-              style={[styles.row, { borderBottomColor: t.border }]}
+              onPress={() => pickHit(item.oid)}
+              disabled={searchPhase === 'opening'}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${item.name} at ${item.oid}`}
+              style={[
+                styles.row,
+                { borderBottomColor: t.border, opacity: searchPhase === 'opening' ? 0.55 : 1 },
+              ]}
             >
               <KindGlyph kind={item.kind} />
               <View style={styles.rowText}>
@@ -379,6 +419,8 @@ const styles = StyleSheet.create({
   focusTitle: { fontSize: 15, fontWeight: '800' },
   dependencyWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
   searchWrap: { padding: 12, paddingBottom: 8 },
+  searchFieldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchStatus: { fontSize: 10, lineHeight: 14, marginTop: 5 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

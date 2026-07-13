@@ -2,7 +2,7 @@
 
 ## Identity and compliance
 
-- [ ] Every artifact identifies as `com.librestatic.openmibcatalog` and names LibreStatic as publisher.
+- [ ] Every artifact identifies as `com.librestatic.mibbeacon` and names LibreStatic as publisher.
 - [ ] `pnpm verify:release-metadata`, typecheck, lint, and the full test suite pass.
 - [ ] GPL license and third-party notices are present; no vendor MIBs or secrets are bundled.
 - [ ] SHA-256 checksums match every uploaded artifact.

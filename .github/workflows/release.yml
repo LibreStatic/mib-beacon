@@ -46,7 +46,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @omc/desktop ${{ matrix.command }}
+      - run: pnpm --filter @mibbeacon/desktop ${{ matrix.command }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
@@ -77,8 +77,8 @@ jobs:
       - name: Build Flatpak bundle
         working-directory: packaging/flatpak
         run: |
-          flatpak-builder --user --force-clean --repo=repo build com.librestatic.openmibcatalog.yml
-          flatpak build-bundle repo Open-MIB-Catalog-${GITHUB_REF_NAME}.flatpak com.librestatic.openmibcatalog
+          flatpak-builder --user --force-clean --repo=repo build com.librestatic.mibbeacon.yml
+          flatpak build-bundle repo MIB-Beacon-${GITHUB_REF_NAME}.flatpak com.librestatic.mibbeacon
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak
@@ -97,7 +97,7 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: pnpm install --frozen-lockfile
       - name: Generate Android project from canonical Expo metadata
-        run: pnpm --filter @omc/mobile exec expo prebuild --platform android --clean --no-install
+        run: pnpm --filter @mibbeacon/mobile exec expo prebuild --platform android --clean --no-install
       - name: Build sideload APK and Play bundle
         working-directory: apps/mobile/android
         run: ./gradlew assembleRelease bundleRelease --no-daemon
@@ -120,13 +120,13 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Generate iOS project from canonical Expo metadata
-        run: pnpm --filter @omc/mobile exec expo prebuild --platform ios --clean --no-install
+        run: pnpm --filter @mibbeacon/mobile exec expo prebuild --platform ios --clean --no-install
       - name: Install CocoaPods
         working-directory: apps/mobile/ios
         run: pod install
       - name: Validate unsigned iOS build
         working-directory: apps/mobile/ios
-        run: xcodebuild -workspace OpenMIBCatalog.xcworkspace -scheme OpenMIBCatalog -configuration Release -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+        run: xcodebuild -workspace MIBBeacon.xcworkspace -scheme MIBBeacon -configuration Release -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
 
   draft-release:
     needs: [desktop, flatpak, android, ios-validation]

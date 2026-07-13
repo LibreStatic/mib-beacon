@@ -56,14 +56,14 @@ resolveModules(names):
       if hit: break
     if !hit: failed[mod]; continue
     cache(hit)                                # mib_cache row + file; keep source attribution
-    parse-check via @omc/smi (parse only, don't load into user catalog yet)
+    parse-check via @mibbeacon/smi (parse only, don't load into user catalog yet)
     enqueue its own missing IMPORTS not already loaded/seen
   return { resolved, failed, graph }          # graph: who-needed-what, for the UI
 ```
 
 - Streams progress events per module/source attempt (drives UI log: "IF-MIB ✓ mibs.pysnmp.com · CISCO-SMI ✓ cisco-mibs · FOO-MIB ✗ not found in 6 sources").
 - After resolution completes, load the closure into the catalog in dependency order (leaves first), then retry the originally-failed import; final report reuses plan 03's import summary UI.
-- Per-fetch: timeout 15s, one retry, exponential backoff on 429/403 (and per-source cool-down so a rate-limited source doesn't stall the chain), honest `User-Agent: OpenMIBCatalog/<version> (+https://github.com/<org>/openmibcatalog)`.
+- Per-fetch: timeout 15s, one retry, exponential backoff on 429/403 (and per-source cool-down so a rate-limited source doesn't stall the chain), honest `User-Agent: MIBBeacon/<version> (+https://github.com/<org>/mibbeacon)`.
 - Concurrency: ≤3 parallel module fetches, ≤2 per host.
 
 ### Unknown-OID lookup (`resolver.lookupOid`)
@@ -80,7 +80,7 @@ For a numeric OID with no loaded MIB match (from results table, trap console, or
 - "Clear online cache" + cache size display in settings.
 
 ## Tasks
-1. `@omc/resolver` package: source abstraction, template source, GitHub tree-index source, variant probing, content validator, cache manager, pipeline with events, IANA parser, oid-base/oidref lookup clients. All HTTP via `@omc/transport` HttpClient.
+1. `@mibbeacon/resolver` package: source abstraction, template source, GitHub tree-index source, variant probing, content validator, cache manager, pipeline with events, IANA parser, oid-base/oidref lookup clients. All HTTP via `@mibbeacon/transport` HttpClient.
 2. Built-in source registry with the table above as seed data (rows in `sources` table on first run; user-editable priority/enabled from plan 07 UI, but seed + hardcoded fallback-to-defaults belongs here).
 3. Engine surface: `resolver.getSettings/setSettings/resolveModules/lookupOid` + events.
 4. UI integration: (a) import-summary "N imports missing → Resolve online" button → progress sheet with per-module/per-source live log → success reloads module; (b) results-table & trap-console "unknown OID" affordance → lookup card (local/IANA/oid-base sections + "fetch candidate MIB" actions); (c) first-run opt-in explainer; (d) settings section (master switch, cache mgmt).

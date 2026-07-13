@@ -7,8 +7,8 @@ import {
   createPersistentSecretStore,
   nodeStorageFactory,
   type SecretCodec,
-} from '@omc/transport/node';
-import type { HttpClient, Transport } from '@omc/transport';
+} from '@mibbeacon/transport/node';
+import type { HttpClient, Transport } from '@mibbeacon/transport';
 import { createEngine } from './engine';
 import type { ResolverOperationStatus, ResolverSourceDraft } from './api/engine-api';
 
@@ -153,8 +153,8 @@ describe('engine resolver orchestration', () => {
   });
 
   it('replays cached dependencies offline without asking for consent', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'omc-resolver-cache-'));
-    const dbPath = join(dir, 'omc.db');
+    const dir = await mkdtemp(join(tmpdir(), 'mibbeacon-resolver-cache-'));
+    const dbPath = join(dir, 'mibbeacon.db');
     const http = fixtureHttp();
     const engine1 = createEngine(transportWith(http, dir), { dbPath });
     await engine1.resolver.sources.create(sourceDraft());
@@ -232,7 +232,7 @@ describe('engine resolver orchestration', () => {
   });
 
   it('never emits or stores downloaded document bodies and strips terminal operation context', async () => {
-    const dbPath = join(await mkdtemp(join(tmpdir(), 'omc-redaction-')), 'omc.db');
+    const dbPath = join(await mkdtemp(join(tmpdir(), 'mibbeacon-redaction-')), 'mibbeacon.db');
     const engine = createEngine(transportWith(fixtureHttp()), { dbPath });
     await engine.resolver.sources.create(sourceDraft());
     const eventPayloads: unknown[] = [];
@@ -381,8 +381,8 @@ describe('engine resolver orchestration', () => {
   });
 
   it('reloads resolver credentials from an encrypted persistent store', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'omc-engine-secrets-'));
-    const dbPath = join(directory, 'omc.db');
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-engine-secrets-'));
+    const dbPath = join(directory, 'mibbeacon.db');
     const secretPath = join(directory, 'secrets.json');
     const codec: SecretCodec = {
       encrypt: (plaintext) => Buffer.from(`encrypted:${plaintext}`).toString('base64'),
@@ -463,8 +463,8 @@ describe('engine resolver orchestration', () => {
   });
 
   it('disables and reports one invalid persisted source without hiding valid resolver sources', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'omc-invalid-source-'));
-    const dbPath = join(directory, 'omc.db');
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-invalid-source-'));
+    const dbPath = join(directory, 'mibbeacon.db');
     const engine = createEngine(transportWith(fixtureHttp(), directory), { dbPath });
     await engine.resolver.sources.create(sourceDraft());
     const db = nodeStorageFactory.open(dbPath);
@@ -556,7 +556,7 @@ describe('engine resolver orchestration', () => {
 
   it('keeps an incomplete cached closure staged until network fills its missing leaf', async () => {
     const http = fixtureHttp();
-    const dbPath = join(await mkdtemp(join(tmpdir(), 'omc-partial-cache-')), 'omc.db');
+    const dbPath = join(await mkdtemp(join(tmpdir(), 'mibbeacon-partial-cache-')), 'mibbeacon.db');
     const engine = createEngine(transportWith(http), { dbPath });
     await engine.resolver.sources.create(sourceDraft());
     const seed = await engine.mibs.startImport({ files: [{ name: 'root.mib', content: ROOT }] });
@@ -594,7 +594,7 @@ describe('engine resolver orchestration', () => {
   });
 
   it('does not negative-cache a cancelled online OID lookup', async () => {
-    const dbPath = join(await mkdtemp(join(tmpdir(), 'omc-cancel-lookup-')), 'omc.db');
+    const dbPath = join(await mkdtemp(join(tmpdir(), 'mibbeacon-cancel-lookup-')), 'mibbeacon.db');
     let blocking = true;
     const http: HttpClient & { fetch: ReturnType<typeof vi.fn> } = {
       fetch: vi.fn(async (request) => {

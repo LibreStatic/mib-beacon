@@ -1,7 +1,7 @@
 /// <reference path="../../../smi/src/net-snmp.d.ts" />
 import snmp from 'net-snmp';
 import type { Varbind, Session, V3User } from 'net-snmp';
-import { mapSnmpError, OmcError } from '../errors';
+import { mapSnmpError, MibBeaconError } from '../errors';
 import type {
   AgentSpec,
   DecodedVarbind,
@@ -73,7 +73,7 @@ export class SnmpSession {
       transport: spec.transport ?? 'udp4',
     };
     if (spec.version === 'v3') {
-      if (!spec.v3) throw new OmcError('INTERNAL', 'v3 session requires credentials');
+      if (!spec.v3) throw new MibBeaconError('INTERNAL', 'v3 session requires credentials');
       const user: V3User = {
         name: spec.v3.user,
         level: num(snmp.SecurityLevel, spec.v3.level, 1),
@@ -118,17 +118,17 @@ export class SnmpSession {
 
   sendNotification(input: NotificationPayload): Promise<NotificationSendResult> {
     if (!/^\d+(?:\.\d+)+$/.test(input.trapOid.trim())) {
-      return Promise.reject(new OmcError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'));
+      return Promise.reject(new MibBeaconError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'));
     }
     if (input.kind === 'inform' && this.version === 'v1') {
-      return Promise.reject(new OmcError('REQ_FAILED', 'SNMP informs require v2c or v3.'));
+      return Promise.reject(new MibBeaconError('REQ_FAILED', 'SNMP informs require v2c or v3.'));
     }
     if (
       input.upTime !== undefined &&
       (!Number.isInteger(input.upTime) || input.upTime < 0 || input.upTime > 4_294_967_295)
     ) {
       return Promise.reject(
-        new OmcError('REQ_FAILED', 'Notification uptime must be an unsigned 32-bit integer.'),
+        new MibBeaconError('REQ_FAILED', 'Notification uptime must be an unsigned 32-bit integer.'),
       );
     }
     if (this.version === 'v1' && input.agentAddress) {
@@ -138,7 +138,7 @@ export class SnmpSession {
         octets.some((octet) => !/^\d+$/.test(octet) || Number(octet) > 255)
       ) {
         return Promise.reject(
-          new OmcError('REQ_FAILED', 'The v1 agent address must be a valid IPv4 address.'),
+          new MibBeaconError('REQ_FAILED', 'The v1 agent address must be a valid IPv4 address.'),
         );
       }
     }

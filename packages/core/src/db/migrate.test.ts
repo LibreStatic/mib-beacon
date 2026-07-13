@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nodeStorageFactory } from '@omc/transport/node';
+import { nodeStorageFactory } from '@mibbeacon/transport/node';
 import { runMigrations, getSetting, setSetting, MIGRATIONS } from './migrate';
 
 describe('runMigrations', () => {

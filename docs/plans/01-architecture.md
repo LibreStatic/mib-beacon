@@ -7,13 +7,13 @@ Status: done (reference document — no code tasks; the interfaces below are imp
 One TypeScript monorepo, one React codebase, three hosts (desktop, mobile, and an
 optional LAN server). The engine always runs in a native/backend layer — browsers can't
 do UDP — and the UI reaches it through the `EngineAPI` seam. The shared pieces live in
-`@omc/core`:
+`@mibbeacon/core`:
 
-- **`@omc/core/proxy` (via `@omc/core/client`)** — `createEngineProxy(adapter)` builds the
+- **`@mibbeacon/core/proxy` (via `@mibbeacon/core/client`)** — `createEngineProxy(adapter)` builds the
   client-side `EngineAPI` over any transport adapter (`invoke` + `subscribe`). Desktop uses
-  an IPC adapter (`window.omcBridge`); the LAN server uses a WebSocket adapter. Renderer-safe
+  an IPC adapter (`window.mibbeaconBridge`); the LAN server uses a WebSocket adapter. Renderer-safe
   (no net-snmp).
-- **`@omc/core/bridge`** — host-side dispatch: `ENGINE_METHODS`, `ENGINE_EVENT_CHANNELS`,
+- **`@mibbeacon/core/bridge`** — host-side dispatch: `ENGINE_METHODS`, `ENGINE_EVENT_CHANNELS`,
   `dispatchEngineCall(engine, method, args)`. Used by the Electron main IPC bridge and the
   LAN server's WebSocket handler alike, so the method list lives in one place.
 
@@ -34,8 +34,8 @@ Original two hosts:
 ┌──────────────▼──────────────────────────┐   ┌────────────────────────▼─────────────────────────┐
 │ apps/desktop (Electron)                 │   │ apps/mobile (Expo dev build)                     │
 │ renderer: react-native-web build        │   │ engine runs IN-PROCESS on the JS thread          │
-│ EngineAPI = IPC proxy over contextBridge│   │ EngineAPI = direct import of @omc/core           │
-│ main process: hosts @omc/core engine    │   │ transport: react-native-udp / tcp-socket /       │
+│ EngineAPI = IPC proxy over contextBridge│   │ EngineAPI = direct import of @mibbeacon/core           │
+│ main process: hosts @mibbeacon/core engine    │   │ transport: react-native-udp / tcp-socket /       │
 │ transport: dgram / net / node:crypto /  │   │   react-native-quick-crypto / expo-file-system / │
 │   node:fs / better-sqlite3              │   │   expo-sqlite (via Metro aliases + adapters)     │
 └─────────────────────────────────────────┘   └──────────────────────────────────────────────────┘
@@ -47,16 +47,16 @@ Original two hosts:
 
 | Package | Contents | May depend on |
 |---|---|---|
-| `@omc/transport` | Platform abstraction interfaces + both implementations: `UdpSocketFactory`, `TcpSocketFactory`, `CryptoProvider`, `FileStore`, `StorageAdapter` (SQLite), `SecretStore`, `HttpClient` (fetch wrapper w/ timeout+UA) | nothing internal |
-| `@omc/smi` | MIB parsing: wraps node-net-snmp `ModuleStore`; lenient-parse pipeline, `ParseDiagnostic` model, module metadata extraction, OID index (name↔OID, longest-prefix match), table/INDEX/AUGMENTS decoding helpers, DISPLAY-HINT formatting | transport |
-| `@omc/resolver` | Online MIB resolution: `MibSource` interface, built-in sources, custom source types, dependency-closure resolver, content validator, cache manager, OID lookup services | transport, smi |
-| `@omc/core` | The engine: `EngineAPI` implementation. Session/agent-profile management, operation execution (streaming walks etc.), trap receiver/sender lifecycle, poll scheduler, DB schema + migrations + repositories, log bus | transport, smi, resolver |
-| `@omc/ui` | Presentational RN components: `MibTree`, `VirtualizedResultTable`, `SnmpTableView`, `VarbindEditor`, forms, Tamagui theme/config | (react-native, tamagui only) |
-| `@omc/app` | Screens, navigation, zustand stores, `EngineProvider` (injects an `EngineAPI`) | ui, core (types only!) |
-| `apps/desktop` | Electron main (hosts core), preload (contextBridge), renderer entry (react-native-web + @omc/app) | all |
+| `@mibbeacon/transport` | Platform abstraction interfaces + both implementations: `UdpSocketFactory`, `TcpSocketFactory`, `CryptoProvider`, `FileStore`, `StorageAdapter` (SQLite), `SecretStore`, `HttpClient` (fetch wrapper w/ timeout+UA) | nothing internal |
+| `@mibbeacon/smi` | MIB parsing: wraps node-net-snmp `ModuleStore`; lenient-parse pipeline, `ParseDiagnostic` model, module metadata extraction, OID index (name↔OID, longest-prefix match), table/INDEX/AUGMENTS decoding helpers, DISPLAY-HINT formatting | transport |
+| `@mibbeacon/resolver` | Online MIB resolution: `MibSource` interface, built-in sources, custom source types, dependency-closure resolver, content validator, cache manager, OID lookup services | transport, smi |
+| `@mibbeacon/core` | The engine: `EngineAPI` implementation. Session/agent-profile management, operation execution (streaming walks etc.), trap receiver/sender lifecycle, poll scheduler, DB schema + migrations + repositories, log bus | transport, smi, resolver |
+| `@mibbeacon/ui` | Presentational RN components: `MibTree`, `VirtualizedResultTable`, `SnmpTableView`, `VarbindEditor`, forms, Tamagui theme/config | (react-native, tamagui only) |
+| `@mibbeacon/app` | Screens, navigation, zustand stores, `EngineProvider` (injects an `EngineAPI`) | ui, core (types only!) |
+| `apps/desktop` | Electron main (hosts core), preload (contextBridge), renderer entry (react-native-web + @mibbeacon/app) | all |
 | `apps/mobile` | Expo app: entry point instantiates core directly with RN transport | all |
 
-**Rule (enforced by lint, see plans README):** `@omc/app`/`@omc/ui` import only *types* from `@omc/core` — never the implementation — so the renderer bundle never pulls Node builtins.
+**Rule (enforced by lint, see plans README):** `@mibbeacon/app`/`@mibbeacon/ui` import only *types* from `@mibbeacon/core` — never the implementation — so the renderer bundle never pulls Node builtins.
 
 ## EngineAPI (the single seam between UI and engine)
 
@@ -111,7 +111,7 @@ export interface EngineAPI {
 
 ## Electron IPC contract
 
-- `apps/desktop/src/preload.ts` exposes `window.omcEngine: EngineAPI` via `contextBridge` + `ipcRenderer.invoke` per method (`omc:mibs:importFiles`, …) and `ipcRenderer.on('omc:event:<channel>')` for the bus. `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` for the renderer.
+- `apps/desktop/src/preload.ts` exposes `window.mibbeaconEngine: EngineAPI` via `contextBridge` + `ipcRenderer.invoke` per method (`mibbeacon:mibs:importFiles`, …) and `ipcRenderer.on('mibbeacon:event:<channel>')` for the bus. `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` for the renderer.
 - A single generated helper maps the `EngineAPI` type to IPC handlers on both sides (write once in `apps/desktop/src/ipc-bridge.ts`; avoid hand-maintaining channel lists). All payloads must be structured-clone-safe (plain objects; `Buffer` → `Uint8Array` at the boundary).
 - File pickers: renderer never sees raw paths on desktop; use `dialog.showOpenDialog` in main, pass contents or main-side paths into `importFiles`.
 
@@ -124,11 +124,11 @@ export interface EngineAPI {
 - `buffer` → `buffer` (npm), `events` → `events` (npm), `stream` → `readable-stream`
 - plus `global.Buffer` installed at app entry.
 
-node-net-snmp is consumed through `@omc/transport`'s socket/crypto factories where practical, but its *internal* `require('dgram')`/`require('crypto')` calls are what the aliases exist for. **Plan 02's spike validates this end-to-end; if a specific API is missing from a shim (e.g. `socket.send` signature differences), patch via a thin wrapper module aliased in Metro rather than forking node-net-snmp.** Fork only as last resort (documented decision required).
+node-net-snmp is consumed through `@mibbeacon/transport`'s socket/crypto factories where practical, but its *internal* `require('dgram')`/`require('crypto')` calls are what the aliases exist for. **Plan 02's spike validates this end-to-end; if a specific API is missing from a shim (e.g. `socket.send` signature differences), patch via a thin wrapper module aliased in Metro rather than forking node-net-snmp.** Fork only as last resort (documented decision required).
 
 ## Error model
 
-`packages/core/src/errors.ts` — every engine error is an `OmcError { code, message, hint?, cause? }`. Codes (extend as needed):
+`packages/core/src/errors.ts` — every engine error is an `MibBeaconError { code, message, hint?, cause? }`. Codes (extend as needed):
 
 - Transport: `TIMEOUT`, `HOST_UNREACHABLE`, `PORT_BIND_DENIED` (trap receiver on 162), `SOCKET_ERROR`
 - SNMP: `REQ_ERRORSTATUS_<name>` (from PDU error-status), `REQ_TOO_BIG`, `SET_WRONG_TYPE`, `SET_NOT_WRITABLE`
@@ -139,7 +139,7 @@ node-net-snmp is consumed through `@omc/transport`'s socket/crypto factories whe
 
 ## Persistence (SQLite)
 
-Single DB `omc.db` in the platform data dir (`app.getPath('userData')` / `FileSystem.documentDirectory`). Migrations = ordered `.sql` files applied at engine start (track in `schema_migrations` table). Initial schema (details per feature plan):
+Single DB `mibbeacon.db` in the platform data dir (`app.getPath('userData')` / `FileSystem.documentDirectory`). Migrations = ordered `.sql` files applied at engine start (track in `schema_migrations` table). Initial schema (details per feature plan):
 
 ```
 agents(id, name, host, port, version, transport, community_ref, v3_user, v3_seclevel, v3_authproto, v3_privproto, v3_auth_ref, v3_priv_ref, v3_context, created_at, last_used_at)
@@ -164,6 +164,6 @@ logs are NOT persisted to DB (ring buffer in memory, exportable to file)
 ## Security notes
 
 - SNMP credentials via `SecretStore` only (Electron `safeStorage`; mobile `expo-secure-store`). Redact secrets in logs (`community=***`).
-- Renderer is fully sandboxed; only `window.omcEngine` crosses the bridge.
+- Renderer is fully sandboxed; only `window.mibbeaconEngine` crosses the bridge.
 - Resolver fetches untrusted text: size cap (default 5MB), content validation before it ever reaches the parser, and the parser must treat input as hostile (no eval, bounded recursion — vet ModuleStore's parser behavior on adversarial input in plan 03).
 - The trap receiver parses untrusted network packets — same hostility assumption; wrap decode in try/catch per packet, malformed packets recorded as raw + flagged, never crash the receiver.

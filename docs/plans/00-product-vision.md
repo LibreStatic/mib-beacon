@@ -4,7 +4,7 @@ Status: done (reference document — no code tasks)
 
 ## Mission
 
-Open MIB Catalog is the maintained, modern, genuinely free SNMP toolkit: a tool network engineers reach for to answer "what is this OID?", "what does this device expose?", and "did that trap fire?" — on their desk and in their pocket — without license keys, module caps, or Java.
+MIB Beacon is the maintained, modern, genuinely free SNMP operations toolkit: a tool network engineers reach for to answer "what is this OID?", "what does this device expose?", and "did that trap fire?" — on their desk and in their pocket — without license keys, module caps, or Java.
 
 ## Target users
 
@@ -30,7 +30,7 @@ Open MIB Catalog is the maintained, modern, genuinely free SNMP toolkit: a tool 
 
 Legend: ✅ v1 scope · 🔜 designed-now/built-later · ➕ differentiator (iReasoning doesn't have it)
 
-| Category | Feature | iReasoning | OMC |
+| Category | Feature | iReasoning | MIB Beacon |
 |---|---|---|---|
 | MIB | SMIv1/v2 load, lenient parsing | ✅ (headline feature) | ✅ + structured diagnostics (what failed, where, what was recovered) ➕ |
 | MIB | Module cap | 10 in free tier | ✅ none |
@@ -79,10 +79,10 @@ Legend: ✅ v1 scope · 🔜 designed-now/built-later · ➕ differentiator (iRe
 
 ## Licensing
 
-**GPL-3.0.** Rationale: this project's moat is being *the* open alternative to a proprietary incumbent; GPL keeps distributed forks open (if anyone conveys a modified build, they must share source) while staying corporate-palatable, since Open MIB Catalog is a locally-run desktop/mobile app rather than a network service. AGPL was considered and rejected: its distinguishing network-use clause (§13) never triggers for a locally-run app, so it would add no practical give-back protection here while inviting the blanket AGPL bans many ISPs/enterprises enforce — shrinking the exact adopter/contributor pool this project wants. (Note: copyleft does **not** force an organization to publish modifications it only uses *internally* under either license — internal use isn't distribution. Contributions back are driven by fork-maintenance economics and good stewardship, not license text; invest in `CONTRIBUTING.md` and responsive review accordingly.) If a hosted/server repackaging of the engine ever becomes a real product direction, revisit AGPL for that component specifically. All runtime dependencies are MIT/BSD/Apache-2.0 (node-net-snmp is MIT) — compatible. MIB files fetched at runtime keep their original IETF/vendor copyrights and are cached as user data, not bundled.
+**GPL-3.0.** Rationale: this project's moat is being *the* open alternative to a proprietary incumbent; GPL keeps distributed forks open (if anyone conveys a modified build, they must share source) while staying corporate-palatable, since MIB Beacon is a locally-run desktop/mobile app rather than a network service. AGPL was considered and rejected: its distinguishing network-use clause (§13) never triggers for a locally-run app, so it would add no practical give-back protection here while inviting the blanket AGPL bans many ISPs/enterprises enforce — shrinking the exact adopter/contributor pool this project wants. (Note: copyleft does **not** force an organization to publish modifications it only uses *internally* under either license — internal use isn't distribution. Contributions back are driven by fork-maintenance economics and good stewardship, not license text; invest in `CONTRIBUTING.md` and responsive review accordingly.) If a hosted/server repackaging of the engine ever becomes a real product direction, revisit AGPL for that component specifically. All runtime dependencies are MIT/BSD/Apache-2.0 (node-net-snmp is MIT) — compatible. MIB files fetched at runtime keep their original IETF/vendor copyrights and are cached as user data, not bundled.
 
 ## Naming
 
-- Product: **Open MIB Catalog** (OMC), published by **LibreStatic**. Package scope `@omc/*`.
-  Permanent application/bundle ID: `com.librestatic.openmibcatalog` across Electron, Android,
+- Product: **MIB Beacon** (MIB Beacon), published by **LibreStatic**. Package scope `@mibbeacon/*`.
+  Permanent application/bundle ID: `com.librestatic.mibbeacon` across Electron, Android,
   iOS, and Flatpak.

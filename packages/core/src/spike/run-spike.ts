@@ -6,18 +6,18 @@
  * separately via apps/mobile.
  *
  * Run:  docker compose -f dev/snmpd/docker-compose.yml up -d --build
- *       pnpm --filter @omc/core spike
- * Env overrides: OMC_SPIKE_HOST (default 127.0.0.1), OMC_SPIKE_PORT (1611),
- *                OMC_SPIKE_TRAP_PORT (1162).
+ *       pnpm --filter @mibbeacon/core spike
+ * Env overrides: MIB_BEACON_SPIKE_HOST (default 127.0.0.1), MIB_BEACON_SPIKE_PORT (1611),
+ *                MIB_BEACON_SPIKE_TRAP_PORT (1162).
  */
 import { spawnSync } from 'node:child_process';
-import { createNodeTransport } from '@omc/transport/node';
+import { createNodeTransport } from '@mibbeacon/transport/node';
 import { createEngine } from '../index';
 import type { AgentSpec, AuthProtocol, PrivProtocol } from '../snmp/types';
 
-const HOST = process.env.OMC_SPIKE_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.OMC_SPIKE_PORT ?? 1611);
-const TRAP_PORT = Number(process.env.OMC_SPIKE_TRAP_PORT ?? 1162);
+const HOST = process.env.MIB_BEACON_SPIKE_HOST ?? '127.0.0.1';
+const PORT = Number(process.env.MIB_BEACON_SPIKE_PORT ?? 1611);
+const TRAP_PORT = Number(process.env.MIB_BEACON_SPIKE_TRAP_PORT ?? 1162);
 const SYS_DESCR = '1.3.6.1.2.1.1.1.0';
 
 let pass = 0;
@@ -36,7 +36,7 @@ const warn = (label: string, detail = '') => {
 };
 
 async function main() {
-  const transport = createNodeTransport({ dataDir: '/tmp/omc-spike' });
+  const transport = createNodeTransport({ dataDir: '/tmp/mibbeacon-spike' });
   const engine = createEngine(transport, { dbPath: ':memory:' });
 
   const info = await engine.system.info();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { HttpClient, HttpRequest, HttpResponse } from '@omc/transport';
+import type { HttpClient, HttpRequest, HttpResponse } from '@mibbeacon/transport';
 
 import { GitHubTreeIndex, GitHubTreeSource } from './github-tree';
 import type { GitHubTreeSourceConfig } from './types';

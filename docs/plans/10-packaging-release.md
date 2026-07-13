@@ -8,13 +8,13 @@ Depends on: all feature phases (can be developed in parallel from plan 02 onward
 Installable, updatable releases for Linux (AppImage/deb/rpm/Flatpak via Flathub), Windows
 (NSIS), macOS (dmg), and Android (APK direct + AAB for Play); iOS build validated; a
 tagged-release GitHub Actions pipeline; GPL compliance in order. All artifacts use the
-LibreStatic-owned identifier `com.librestatic.openmibcatalog`.
+LibreStatic-owned identifier `com.librestatic.mibbeacon`.
 
 ## Tasks
 
 ### T1 — Desktop packaging (electron-builder)
 - Targets: Linux AppImage + deb + rpm (x64, arm64), Windows NSIS (x64), macOS dmg (universal or x64+arm64).
-- App metadata: id `com.librestatic.openmibcatalog`, publisher LibreStatic, icons (from plan 09), file associations: register `.mib`/`.my`/`.smi` open-with (desktop) → import flow.
+- App metadata: id `com.librestatic.mibbeacon`, publisher LibreStatic, icons (from plan 09), file associations: register `.mib`/`.my`/`.smi` open-with (desktop) → import flow.
 - Flatpak/Flathub: manifest, AppStream metadata, Wayland/X11 and network permissions, portal-based file access, Flathub validation and publication. Flatpak updates through Flathub rather than `electron-updater`.
 - **Trap-port helper**: post-install docs + in-app guidance only (no setuid tricks): Linux packages ship a `README`/docs note with the exact `setcap 'cap_net_bind_service=+ep' <binary>` line (and the AppImage caveat: setcap doesn't survive AppImage mount — recommend the 1162 fallback or deb/rpm for port 162); Windows/macOS rely on the 1162 fallback by default.
 - Signing: Windows (defer if no cert — document unsigned-build SmartScreen implications), macOS (Developer ID + notarization — gate on credentials being available; unsigned macOS builds documented as "right-click open"), Linux none.

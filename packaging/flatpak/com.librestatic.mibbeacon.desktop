@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Open MIB Catalog
+Name=MIB Beacon
 Comment=Browse MIBs and work with SNMP devices
-Exec=open-mib-catalog %F
-Icon=com.librestatic.openmibcatalog
+Exec=mib-beacon %F
+Icon=com.librestatic.mibbeacon
 Terminal=false
 Type=Application
 Categories=Network;Development;
 MimeType=application/x-mib;text/x-smi;
-StartupWMClass=Open MIB Catalog
-X-Flatpak=com.librestatic.openmibcatalog
+StartupWMClass=MIB Beacon
+X-Flatpak=com.librestatic.mibbeacon

@@ -1,5 +1,5 @@
 /**
- * Open MIB Catalog — LAN server. Runs the engine on this host and serves the
+ * MIB Beacon — LAN server. Runs the engine on this host and serves the
  * react-native-web UI + a WebSocket engine bridge to any browser/phone on the
  * network. No authentication (LAN-only, non-confidential by design).
  *
@@ -10,14 +10,14 @@ import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { createNodeTransport } from '@omc/transport/node';
-import { createEngine } from '@omc/core';
-import { dispatchEngineCall, ENGINE_EVENT_CHANNELS } from '@omc/core/bridge';
+import { createNodeTransport } from '@mibbeacon/transport/node';
+import { createEngine } from '@mibbeacon/core';
+import { dispatchEngineCall, ENGINE_EVENT_CHANNELS } from '@mibbeacon/core/bridge';
 
-const PORT = Number(process.env.OMC_SERVER_PORT ?? 8899);
-const HOST = process.env.OMC_SERVER_HOST ?? '0.0.0.0';
+const PORT = Number(process.env.MIB_BEACON_SERVER_PORT ?? 8899);
+const HOST = process.env.MIB_BEACON_SERVER_HOST ?? '0.0.0.0';
 const WEB_DIR = path.resolve(import.meta.dirname, '../dist/web');
-const DATA_DIR = process.env.OMC_SERVER_DATA ?? path.join(os.homedir(), '.openmibcatalog', 'server');
+const DATA_DIR = process.env.MIB_BEACON_SERVER_DATA ?? path.join(os.homedir(), '.mibbeacon', 'server');
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -33,7 +33,7 @@ const CONTENT_TYPES: Record<string, string> = {
 async function main() {
   await mkdir(DATA_DIR, { recursive: true });
   const engine = createEngine(createNodeTransport({ dataDir: DATA_DIR }), {
-    dbPath: path.join(DATA_DIR, 'omc.db'),
+    dbPath: path.join(DATA_DIR, 'mibbeacon.db'),
   });
 
   const server = http.createServer((req, res) => void serveStatic(req, res));
@@ -72,7 +72,7 @@ async function main() {
   server.listen(PORT, HOST, () => {
     const info = engine.system.info();
     void info; // engine ready
-    console.log(`\nOpen MIB Catalog server listening on ${HOST}:${PORT}`);
+    console.log(`\nMIB Beacon server listening on ${HOST}:${PORT}`);
     console.log('Open in a browser on this network:');
     console.log(`  http://localhost:${PORT}`);
     for (const url of lanUrls(PORT)) console.log(`  ${url}`);
@@ -99,7 +99,7 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) 
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
     } catch {
       res.writeHead(404).end(
-        'Web bundle not built. Run: pnpm --filter @omc/server build:web',
+        'Web bundle not built. Run: pnpm --filter @mibbeacon/server build:web',
       );
     }
   }

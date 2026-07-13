@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { HttpClient, HttpRequest, HttpResponse } from '@omc/transport';
+import type { HttpClient, HttpRequest, HttpResponse } from '@mibbeacon/transport';
 
 import { HttpTemplateSource } from './http-template';
 import type { HttpTemplateSourceConfig } from './types';

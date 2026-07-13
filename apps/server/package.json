@@ -1,9 +1,9 @@
 {
-  "name": "@omc/server",
+  "name": "@mibbeacon/server",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "Open MIB Catalog — LAN server (headless engine + web UI)",
+  "description": "MIB Beacon — SNMP toolkit LAN server (headless engine + web UI)",
   "type": "module",
   "scripts": {
     "build:web": "vite build",
@@ -12,10 +12,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
-    "@omc/app": "workspace:*",
-    "@omc/core": "workspace:*",
-    "@omc/transport": "workspace:*",
-    "@omc/ui": "workspace:*",
+    "@mibbeacon/app": "workspace:*",
+    "@mibbeacon/core": "workspace:*",
+    "@mibbeacon/transport": "workspace:*",
+    "@mibbeacon/ui": "workspace:*",
     "net-snmp": "^3.26.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",

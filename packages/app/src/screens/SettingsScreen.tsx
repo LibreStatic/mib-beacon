@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -9,6 +9,9 @@ import {
   Switch,
   Text,
   View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import {
   Button,
@@ -21,12 +24,12 @@ import {
   Row,
   SectionTitle,
   useTheme,
-} from '@omc/ui';
+} from '@mibbeacon/ui';
 import type {
   ResolverSourceDraft,
   SourceConfig,
   SourceKind,
-} from '@omc/core/client';
+} from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import {
@@ -42,6 +45,12 @@ import {
 } from '../actions';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import {
+  getActiveSettingsSection,
+  SETTINGS_SECTIONS,
+  type SettingsSectionId,
+  type SettingsSectionOffsets,
+} from '../settings-navigation';
 
 const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'http-template', label: 'HTTP template' },
@@ -53,7 +62,7 @@ const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
 export function SettingsScreen() {
   const engine = useEngine();
   const t = useTheme();
-  const { supportsSplitView } = useResponsiveLayout();
+  const { mode, supportsSplitView } = useResponsiveLayout();
   const settings = useAppStore((s) => s.resolverSettings);
   const sources = useAppStore((s) => s.resolverSources);
   const cache = useAppStore((s) => s.resolverCache);
@@ -63,6 +72,9 @@ export function SettingsScreen() {
   const [testModule, setTestModule] = useState('IF-MIB');
   const [configTransfer, setConfigTransfer] = useState('');
   const [transferMessage, setTransferMessage] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('privacy');
+  const settingsScroll = useRef<ScrollView>(null);
+  const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
   const externalSources = sources.filter((source) => source.kind !== 'cache');
   const clearPreview = () => {
@@ -101,6 +113,52 @@ export function SettingsScreen() {
     }
   };
 
+  const captureSection = (section: SettingsSectionId) => (event: LayoutChangeEvent) => {
+    sectionOffsets.current[section] = event.nativeEvent.layout.y;
+  };
+  const scrollToSection = (section: SettingsSectionId) => {
+    setActiveSection(section);
+    settingsScroll.current?.scrollTo({
+      y: Math.max(0, (sectionOffsets.current[section] ?? 0) - 12),
+      animated: true,
+    });
+  };
+  const trackActiveSection = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - 8;
+    const next = getActiveSettingsSection(
+      sectionOffsets.current,
+      contentOffset.y,
+      48,
+      atEnd,
+    );
+    setActiveSection((current) => (current === next ? current : next));
+  };
+  const categoryButton = (section: (typeof SETTINGS_SECTIONS)[number], compact = false) => {
+    const active = activeSection === section.id;
+    return (
+      <Pressable
+        key={section.id}
+        accessibilityRole="button"
+        accessibilityLabel={`Show ${section.label} settings`}
+        accessibilityState={{ selected: active }}
+        onPress={() => scrollToSection(section.id)}
+        style={[
+          styles.settingsIndexItem,
+          compact ? styles.settingsIndexItemCompact : null,
+          {
+            backgroundColor: active ? t.accentSoft : 'transparent',
+            borderColor: active ? t.accent : 'transparent',
+          },
+        ]}
+      >
+        <Text style={{ color: active ? t.text : t.textDim, fontSize: 11, fontWeight: '700' }}>
+          {section.label}
+        </Text>
+      </Pressable>
+    );
+  };
+
   return (
     <View style={styles.workspace}>
       {supportsSplitView ? (
@@ -110,23 +168,33 @@ export function SettingsScreen() {
           actions={<Pill text={settings?.enabled ? 'ONLINE' : 'DISABLED'} color={settings?.enabled ? t.ok : t.textDim} />}
         />
       ) : null}
-      <View style={[styles.settingsBody, supportsSplitView ? styles.desktopSettingsBody : null]}>
-        {supportsSplitView ? (
+      {mode === 'medium' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={[styles.settingsStrip, { backgroundColor: t.surface, borderBottomColor: t.border }]}
+          contentContainerStyle={styles.settingsStripContent}
+        >
+          {SETTINGS_SECTIONS.map((section) => categoryButton(section, true))}
+        </ScrollView>
+      ) : null}
+      <View style={[styles.settingsBody, mode === 'expanded' ? styles.desktopSettingsBody : null]}>
+        {mode === 'expanded' ? (
           <View style={[styles.settingsIndex, { backgroundColor: t.surface, borderRightColor: t.border }]}> 
             <SectionTitle>Categories</SectionTitle>
-            {['Privacy & automation', 'Dependency cache', 'Source priority', 'Import / export', 'Recent activity'].map((label) => (
-              <View key={label} style={[styles.settingsIndexItem, { borderColor: 'transparent' }]}> 
-                <Text style={{ color: t.textDim, fontSize: 11, fontWeight: '700' }}>{label}</Text>
-              </View>
-            ))}
+            {SETTINGS_SECTIONS.map((section) => categoryButton(section))}
           </View>
         ) : null}
         <ScrollView
+          ref={settingsScroll}
           style={styles.screen}
           contentContainerStyle={[styles.content, supportsSplitView ? styles.desktopContent : null]}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="automatic"
+          onScroll={trackActiveSection}
+          scrollEventThrottle={32}
         >
+      <View style={styles.sectionGroup} onLayout={captureSection('privacy')}>
       <View style={styles.hero}>
         <View>
           <Text style={[styles.heroTitle, { color: t.text }]}>Resolver control room</Text>
@@ -173,7 +241,9 @@ export function SettingsScreen() {
           )}
         </View>
       </Card>
+      </View>
 
+      <View style={styles.sectionGroup} onLayout={captureSection('cache')}>
       <Card>
         <View style={styles.sectionHead}>
           <View style={styles.sectionHeadCopy}>
@@ -186,7 +256,9 @@ export function SettingsScreen() {
           <Button title="Clear cache" small variant="danger" disabled={!cache?.entries} onPress={() => void clearResolverCache(engine)} />
         </View>
       </Card>
+      </View>
 
+      <View style={styles.sectionGroup} onLayout={captureSection('sources')}>
       <View style={styles.sectionHead}>
         <View style={styles.sectionHeadCopy}>
           <SectionTitle>Source priority</SectionTitle>
@@ -229,7 +301,9 @@ export function SettingsScreen() {
           />
         ))}
       </Card>
+      </View>
 
+      <View style={styles.sectionGroup} onLayout={captureSection('transfer')}>
       <Card>
         <SectionTitle>Import / export custom sources</SectionTitle>
         <Label tone="warn" size={11}>
@@ -248,7 +322,9 @@ export function SettingsScreen() {
         </Row>
         {transferMessage ? <Label tone={transferMessage.startsWith('Imported') || transferMessage.startsWith('Export') ? 'ok' : 'error'} size={11}>{transferMessage}</Label> : null}
       </Card>
+      </View>
 
+      <View style={styles.sectionGroup} onLayout={captureSection('activity')}>
       <Card>
         <SectionTitle>Recent resolver activity</SectionTitle>
         {!history.length ? <Label tone="dim" size={12}>No resolver operations yet.</Label> : null}
@@ -267,6 +343,7 @@ export function SettingsScreen() {
           </View>
         ))}
       </Card>
+      </View>
 
       {error ? <Label tone="error">{error}</Label> : null}
       <View style={{ height: 28 }} />
@@ -682,12 +759,16 @@ const styles = StyleSheet.create({
   workspace: { flex: 1, minWidth: 0, minHeight: 0 },
   settingsBody: { flex: 1, minWidth: 0, minHeight: 0 },
   desktopSettingsBody: { flexDirection: 'row' },
+  settingsStrip: { flexGrow: 0, borderBottomWidth: 1 },
+  settingsStripContent: { paddingHorizontal: 10, paddingVertical: 7, gap: 6 },
   settingsIndex: { width: 176, borderRightWidth: 1, paddingHorizontal: 12, paddingVertical: 16, gap: 7 },
   settingsIndexItem: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
+  settingsIndexItemCompact: { paddingVertical: 7, minWidth: 130 },
   screen: { flex: 1 }, content: { padding: 12, gap: 12 },
   desktopContent: { width: '100%', maxWidth: 980, alignSelf: 'center', padding: 18, paddingBottom: 38 },
   hero: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
   heroTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
+  sectionGroup: { gap: 12 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   sectionHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, minWidth: 0 },
   sectionHeadCopy: { flex: 1, minWidth: 180, flexShrink: 1 },

@@ -1,4 +1,4 @@
-import { inferWireType } from '@omc/core/client';
+import { inferWireType } from '@mibbeacon/core/client';
 import type {
   AgentSpec,
   EngineAPI,
@@ -13,7 +13,7 @@ import type {
   ResolverSourceDraft,
   ResolverSourcePreviewResult,
   SourceConfig,
-} from '@omc/core/client';
+} from '@mibbeacon/core/client';
 import { useAppStore, type AgentForm } from './store';
 
 let notificationSeq = 0;
@@ -294,18 +294,26 @@ export async function cancelImport(engine: EngineAPI): Promise<void> {
 
 const TERMINAL_STATES = new Set(['done', 'partial', 'error', 'cancelled', 'expired']);
 
-export async function refreshResolverState(engine: EngineAPI): Promise<void> {
-  const s = useAppStore.getState();
-  const [settings, sources, cache, history] = await Promise.all([
-    engine.resolver.settings.get(),
-    engine.resolver.sources.list(),
-    engine.resolver.cache.stats(),
-    engine.resolver.history.list(30),
-  ]);
-  s.setResolverSettings(settings);
-  s.setResolverSources(sources);
-  s.setResolverCache(cache);
-  s.setResolverHistory(history);
+const resolverRefreshes = new WeakMap<EngineAPI, Promise<void>>();
+
+export function refreshResolverState(engine: EngineAPI): Promise<void> {
+  const current = resolverRefreshes.get(engine);
+  if (current) return current;
+  const refresh = (async () => {
+    const [settings, sources, cache, history] = await Promise.all([
+      engine.resolver.settings.get(),
+      engine.resolver.sources.list(),
+      engine.resolver.cache.stats(),
+      engine.resolver.history.list(30),
+    ]);
+    const s = useAppStore.getState();
+    s.setResolverSettings(settings);
+    s.setResolverSources(sources);
+    s.setResolverCache(cache);
+    s.setResolverHistory(history);
+  })().finally(() => resolverRefreshes.delete(engine));
+  resolverRefreshes.set(engine, refresh);
+  return refresh;
 }
 
 async function syncResolverOperation(engine: EngineAPI, handleId: string): Promise<void> {
@@ -411,7 +419,8 @@ async function handleStartImportFailure(
     state.importStatus &&
     state.importStatus.handleId !== priorStatusHandle &&
     TERMINAL_STATES.has(state.importStatus.state)
-  ) return;
+  )
+    return;
 
   // Do not disturb an operation that already existed before this start attempt.
   if (claimedHandle === priorHandle && priorHandle) return;
@@ -433,7 +442,9 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
   const sourceId = Object.entries(s.sourceTestHandles).find(([, id]) => id === event.handleId)?.[0];
   const isSourcePreview = Boolean(event.handleId && event.handleId === s.sourcePreviewHandle);
   const lookupOid = Object.entries(s.lookupHandles).find(([, id]) => id === event.handleId)?.[0];
-  const isImport = Boolean(event.handleId && event.handleId === useAppStore.getState().importHandle);
+  const isImport = Boolean(
+    event.handleId && event.handleId === useAppStore.getState().importHandle,
+  );
 
   if (event.kind === 'consent-required' && event.handleId) {
     const active = isImport || Boolean(sourceId) || isSourcePreview || Boolean(lookupOid);
@@ -462,11 +473,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
     if (event.kind === 'local-result') s.setLastImport(payload as unknown as ImportResult);
     if (event.kind === 'source-progress') {
       s.setImportStatus(
-        operationStatusForEvent(
-          useAppStore.getState().importStatus,
-          event.handleId!,
-          'resolving',
-        ),
+        operationStatusForEvent(useAppStore.getState().importStatus, event.handleId!, 'resolving'),
       );
       const progress = payload as Record<string, unknown>;
       if (progress.type === 'progress') {
@@ -617,7 +624,9 @@ export async function moveResolverSource(
   [ids[index], ids[target]] = [ids[target]!, ids[index]!];
   useAppStore
     .getState()
-    .setResolverSources(await engine.resolver.sources.reorder([...fixed.map((source) => source.id), ...ids]));
+    .setResolverSources(
+      await engine.resolver.sources.reorder([...fixed.map((source) => source.id), ...ids]),
+    );
 }
 
 export async function testResolverSource(
@@ -674,7 +683,9 @@ export async function lookupUnknownOid(engine: EngineAPI, oid: string): Promise<
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -727,7 +738,8 @@ function operationStatusForEvent(
 function extractImportResult(payload: Record<string, unknown>): ImportResult | null {
   const result = payload.result as Record<string, unknown> | undefined;
   if (!result) return null;
-  if (Array.isArray(result.loaded) && Array.isArray(result.errors)) return result as unknown as ImportResult;
+  if (Array.isArray(result.loaded) && Array.isArray(result.errors))
+    return result as unknown as ImportResult;
   const retry = result.retry as ImportResult | undefined;
   if (retry) return retry;
   return null;
@@ -777,34 +789,81 @@ export async function clearModuleFocus(engine: EngineAPI): Promise<void> {
   await loadChildren(engine, '');
 }
 
-export async function selectNode(engine: EngineAPI, oidOrName: string): Promise<void> {
+export async function selectNode(
+  engine: EngineAPI,
+  oidOrName: string,
+): Promise<MibNodeDetail | null> {
   const s = useAppStore.getState();
   const detail = await engine.mibs.node(oidOrName, s.moduleFocus?.module.name);
   s.setSelected(detail);
+  return detail;
 }
 
 /** Expand every ancestor prefix of an OID (used when jumping from search). */
+export function getOidAncestorPrefixes(oid: string): string[] {
+  const arcs = oid.split('.').filter(Boolean);
+  return arcs.slice(0, -1).map((_arc, index) => arcs.slice(0, index + 1).join('.'));
+}
+
 export async function revealOid(engine: EngineAPI, oid: string): Promise<void> {
   const s = useAppStore.getState();
-  const arcs = oid.split('.');
-  let prefix = '';
-  for (let i = 0; i < arcs.length - 1; i++) {
-    prefix = i === 0 ? arcs[0]! : `${prefix}.${arcs[i]}`;
+  const prefixes = getOidAncestorPrefixes(oid);
+  for (const prefix of prefixes) {
     s.setExpanded(prefix, true);
-    await loadChildren(engine, prefix);
   }
+  await Promise.all(prefixes.map((prefix) => loadChildren(engine, prefix)));
 }
 
 export async function runSearch(engine: EngineAPI, query: string): Promise<void> {
   const s = useAppStore.getState();
   if (!query.trim()) {
     s.setHits([]);
+    s.setSearchPhase('idle');
+    s.setSearchError(null);
     return;
   }
-  const hits = s.moduleFocus
-    ? await engine.mibs.moduleSearch(s.moduleFocus.module.name, query, 40)
-    : await engine.mibs.search(query, 40);
-  if (useAppStore.getState().search === query) s.setHits(hits);
+  s.setSearchPhase('searching');
+  s.setSearchError(null);
+  try {
+    const hits = s.moduleFocus
+      ? await engine.mibs.moduleSearch(s.moduleFocus.module.name, query, 40)
+      : await engine.mibs.search(query, 40);
+    const current = useAppStore.getState();
+    if (current.search === query) {
+      current.setHits(hits);
+      current.setSearchPhase('idle');
+    }
+  } catch (error) {
+    const current = useAppStore.getState();
+    if (current.search === query) {
+      current.setSearchPhase('error');
+      current.setSearchError(describeError(error));
+    }
+  }
+}
+
+export async function openSearchHit(engine: EngineAPI, oid: string): Promise<void> {
+  const initial = useAppStore.getState();
+  const activeQuery = initial.search;
+  initial.setSearchPhase('opening');
+  initial.setSearchError(null);
+  try {
+    const detail = await selectNode(engine, oid);
+    if (!detail) throw new Error(`MIB object is no longer available: ${oid}`);
+    await revealOid(engine, oid);
+    const current = useAppStore.getState();
+    if (current.search === activeQuery) {
+      current.setSearch('');
+      current.setHits([]);
+      current.setSearchPhase('idle');
+    }
+  } catch (error) {
+    const current = useAppStore.getState();
+    if (current.search === activeQuery) {
+      current.setSearchPhase('error');
+      current.setSearchError(describeError(error));
+    }
+  }
 }
 
 /** Send the browse selection into the Query tab and run it. */

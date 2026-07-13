@@ -56,4 +56,4 @@ jobs:
             sleep 1
           done
       - name: Run engine spike
-        run: pnpm --filter @omc/core spike
+        run: pnpm --filter @mibbeacon/core spike

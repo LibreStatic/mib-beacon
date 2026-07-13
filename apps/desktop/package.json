@@ -1,10 +1,10 @@
 {
-  "name": "@omc/desktop",
+  "name": "@mibbeacon/desktop",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "Open MIB Catalog — desktop (Electron + react-native-web)",
-  "desktopName": "com.librestatic.openmibcatalog",
+  "description": "MIB Beacon — SNMP toolkit for desktop (Electron + react-native-web)",
+  "desktopName": "com.librestatic.mibbeacon",
   "author": {
     "name": "LibreStatic",
     "url": "https://librestatic.com"
@@ -13,7 +13,7 @@
   "packageManager": "pnpm@10.33.2",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LibreStatic/openmibcatalog.git"
+    "url": "https://github.com/LibreStatic/mibbeacon.git"
   },
   "main": "out/main/index.js",
   "scripts": {
@@ -29,10 +29,10 @@
     "spike:crypto": "electron-vite build && electron out/main/index.js --probe-crypto"
   },
   "build": {
-    "appId": "com.librestatic.openmibcatalog",
+    "appId": "com.librestatic.mibbeacon",
     "electronVersion": "37.10.3",
-    "executableName": "open-mib-catalog",
-    "productName": "Open MIB Catalog",
+    "executableName": "mib-beacon",
+    "productName": "MIB Beacon",
     "asar": true,
     "directories": {
       "output": "release"
@@ -41,7 +41,7 @@
       "out/**/*",
       "package.json"
     ],
-    "artifactName": "Open-MIB-Catalog-${version}-${os}-${arch}.${ext}",
+    "artifactName": "MIB-Beacon-${version}-${os}-${arch}.${ext}",
     "fileAssociations": [
       {
         "ext": "mib",
@@ -71,10 +71,10 @@
       "syncDesktopName": true
     },
     "deb": {
-      "packageName": "open-mib-catalog"
+      "packageName": "mib-beacon"
     },
     "rpm": {
-      "packageName": "open-mib-catalog"
+      "packageName": "mib-beacon"
     },
     "win": {
       "target": [
@@ -97,10 +97,10 @@
     }
   },
   "dependencies": {
-    "@omc/app": "workspace:*",
-    "@omc/core": "workspace:*",
-    "@omc/transport": "workspace:*",
-    "@omc/ui": "workspace:*",
+    "@mibbeacon/app": "workspace:*",
+    "@mibbeacon/core": "workspace:*",
+    "@mibbeacon/transport": "workspace:*",
+    "@mibbeacon/ui": "workspace:*",
     "net-snmp": "^3.26.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",

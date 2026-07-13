@@ -4,7 +4,7 @@ import os from 'node:os';
 import type { FileStore } from '../types';
 
 export function createNodeFileStore(dataDir?: string): FileStore {
-  const base = dataDir ?? path.join(os.homedir(), '.openmibcatalog');
+  const base = dataDir ?? path.join(os.homedir(), '.mibbeacon');
   return {
     async readText(p) {
       return fs.readFile(p, 'utf8');

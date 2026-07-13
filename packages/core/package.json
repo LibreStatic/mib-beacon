@@ -1,5 +1,5 @@
 {
-  "name": "@omc/core",
+  "name": "@mibbeacon/core",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
@@ -15,9 +15,9 @@
     "spike": "node --import tsx src/spike/run-spike.ts"
   },
   "dependencies": {
-    "@omc/resolver": "workspace:*",
-    "@omc/smi": "workspace:*",
-    "@omc/transport": "workspace:*",
+    "@mibbeacon/resolver": "workspace:*",
+    "@mibbeacon/smi": "workspace:*",
+    "@mibbeacon/transport": "workspace:*",
     "net-snmp": "^3.26.3"
   },
   "devDependencies": {

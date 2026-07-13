@@ -18,13 +18,13 @@ import type {
   ModuleTreeNode,
   ModuleView,
   ResolvedName,
-} from '@omc/smi';
+} from '@mibbeacon/smi';
 import type {
   IanaEnterpriseRecord,
   OidBaseRecord,
   OidRefRecord,
   SourceConfig,
-} from '@omc/resolver';
+} from '@mibbeacon/resolver';
 
 /**
  * The single seam between UI and engine (docs/plans/01). Everything is async

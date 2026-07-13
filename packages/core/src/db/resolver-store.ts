@@ -1,4 +1,4 @@
-import type { FileStore, SecretStore, StorageAdapter, Transport } from '@omc/transport';
+import type { FileStore, SecretStore, StorageAdapter, Transport } from '@mibbeacon/transport';
 import {
   BUILTIN_SOURCE_CONFIGS,
   FtpSource,
@@ -14,7 +14,7 @@ import {
   type SourceConfig,
   type SourceIndexStore,
   type SourceIndexSnapshot,
-} from '@omc/resolver';
+} from '@mibbeacon/resolver';
 import type {
   ResolverCacheStats,
   ResolverSourceDraft,

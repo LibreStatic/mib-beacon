@@ -2,7 +2,7 @@
 import { Buffer } from 'buffer';
 import snmp from 'net-snmp';
 import type { Varbind } from 'net-snmp';
-import { OmcError } from '../errors';
+import { MibBeaconError } from '../errors';
 import type { SnmpVarbindInput } from './types';
 import { validateVarbindInput } from './wire-types';
 
@@ -11,7 +11,7 @@ const MAX_U32 = 4_294_967_295;
 const MAX_U64 = (1n << 64n) - 1n;
 
 function invalid(message: string): never {
-  throw new OmcError('SET_WRONG_TYPE', message);
+  throw new MibBeaconError('SET_WRONG_TYPE', message);
 }
 
 function integer(value: string, min: number, max: number): number {

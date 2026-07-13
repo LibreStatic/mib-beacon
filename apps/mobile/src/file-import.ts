@@ -2,7 +2,7 @@ import { Buffer } from 'buffer';
 import { Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { EncodingType, StorageAccessFramework, getInfoAsync, readAsStringAsync } from 'expo-file-system/legacy';
-import { pickNativeDirectory, pickNativeFiles, type AcquisitionResult } from '@omc/app';
+import { pickNativeDirectory, pickNativeFiles, type AcquisitionResult } from '@mibbeacon/app';
 
 const readBytes = async (uri: string) => {
   const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });

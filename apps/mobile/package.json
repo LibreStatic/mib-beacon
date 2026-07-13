@@ -1,9 +1,9 @@
 {
-  "name": "@omc/mobile",
+  "name": "@mibbeacon/mobile",
   "version": "0.0.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "Open MIB Catalog — mobile (Expo, Android/iOS)",
+  "description": "MIB Beacon — SNMP toolkit for mobile (Expo, Android/iOS)",
   "main": "index.js",
   "scripts": {
     "android": "expo run:android",
@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@omc/app": "workspace:*",
-    "@omc/core": "workspace:*",
-    "@omc/transport": "workspace:*",
-    "@omc/ui": "workspace:*",
+    "@mibbeacon/app": "workspace:*",
+    "@mibbeacon/core": "workspace:*",
+    "@mibbeacon/transport": "workspace:*",
+    "@mibbeacon/ui": "workspace:*",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
     "events": "^3.3.0",

@@ -1,5 +1,5 @@
-import type { StorageAdapter, Transport } from '@omc/transport';
-import type { ImportResult, MibStore } from '@omc/smi';
+import type { StorageAdapter, Transport } from '@mibbeacon/transport';
+import type { ImportResult, MibStore } from '@mibbeacon/smi';
 import {
   IanaEnterpriseClient,
   MibResolver,
@@ -10,7 +10,7 @@ import {
   type MibCache,
   type ResolverProgress,
   type ResolverResult,
-} from '@omc/resolver';
+} from '@mibbeacon/resolver';
 import type {
   MibStartImportRequest,
   OidLookupResult,
@@ -22,7 +22,7 @@ import type {
   ResolverSettings,
 } from './api/engine-api';
 import type { EventBus } from './events';
-import { OmcError } from './errors';
+import { MibBeaconError } from './errors';
 import { getSetting, setSetting } from './db/migrate';
 import { PersistentMibCache, ResolverSourceStore } from './db/resolver-store';
 import { validateMibFileBatch } from './mib-file-limits';
@@ -418,7 +418,7 @@ export class ResolverService {
   ): Promise<{ name: string; content: string }[]> {
     if ('files' in request && request.files) return request.files.map((file) => ({ ...file }));
     const response = await this.transport.http.fetch({ url: request.url, maxBytes: URL_MAX_BYTES, signal });
-    if (!response.ok) throw new OmcError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${response.status}`);
+    if (!response.ok) throw new MibBeaconError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${response.status}`);
     validateMibResponse(response.text);
     return [{ name: request.url.split('/').pop() || 'downloaded-mib', content: response.text }];
   }
@@ -738,7 +738,7 @@ function redactPayload(value: unknown): unknown {
 function validateMibResponse(content: string): void {
   const head = content.slice(0, 2048);
   if (/<html|<!doctype/i.test(head) || !/DEFINITIONS\s*::=\s*BEGIN/.test(content)) {
-    throw new OmcError('CONTENT_VALIDATION_FAILED', 'response is not a MIB module');
+    throw new MibBeaconError('CONTENT_VALIDATION_FAILED', 'response is not a MIB module');
   }
 }
 

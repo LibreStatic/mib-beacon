@@ -5,7 +5,7 @@
  * no node builtins — safe for the browser bundle.
  */
 import { EventBus, type EngineEvent } from './events';
-import { OmcError, type OmcErrorCode } from './errors';
+import { MibBeaconError, type MibBeaconErrorCode } from './errors';
 import type { EngineAPI } from './api/engine-api';
 
 /** Serialized result of an engine method call crossing a process/network boundary. */
@@ -32,8 +32,8 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
   async function call<T>(method: string, ...args: unknown[]): Promise<T> {
     const res = await adapter.invoke(method, ...args);
     if (!res.ok) {
-      throw new OmcError(
-        (res.error?.code as OmcErrorCode) ?? 'INTERNAL',
+      throw new MibBeaconError(
+        (res.error?.code as MibBeaconErrorCode) ?? 'INTERNAL',
         res.error?.message ?? 'engine call failed',
         { hint: res.error?.hint },
       );

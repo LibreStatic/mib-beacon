@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { OmcError, mapSnmpError } from './errors';
+import { MibBeaconError, mapSnmpError } from './errors';
 
 describe('mapSnmpError', () => {
-  it('passes through an existing OmcError', () => {
-    const e = new OmcError('TIMEOUT', 'x');
+  it('passes through an existing MibBeaconError', () => {
+    const e = new MibBeaconError('TIMEOUT', 'x');
     expect(mapSnmpError(e)).toBe(e);
   });
 
@@ -41,7 +41,7 @@ describe('mapSnmpError', () => {
   });
 
   it('serializes to a structured-clone-safe JSON shape', () => {
-    const json = new OmcError('V3_WRONG_AUTH', 'nope', { hint: 'check auth' }).toJSON();
+    const json = new MibBeaconError('V3_WRONG_AUTH', 'nope', { hint: 'check auth' }).toJSON();
     expect(json).toEqual({
       code: 'V3_WRONG_AUTH',
       message: 'nope',

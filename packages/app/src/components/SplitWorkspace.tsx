@@ -7,7 +7,7 @@ import {
   View,
   type LayoutChangeEvent,
 } from 'react-native';
-import { useTheme } from '@omc/ui';
+import { useTheme } from '@mibbeacon/ui';
 import {
   adjustSplitRatio,
   clampSplitRatio,
@@ -21,7 +21,7 @@ function readRatio(key: string, fallback: number): number {
   const memory = memoryRatios.get(key);
   if (memory !== undefined) return memory;
   if (Platform.OS !== 'web' || typeof window === 'undefined') return fallback;
-  const stored = window.localStorage?.getItem(`omc:split:${key}`);
+  const stored = window.localStorage?.getItem(`mibbeacon:split:${key}`);
   const parsed = stored == null ? Number.NaN : Number(stored);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -29,7 +29,7 @@ function readRatio(key: string, fallback: number): number {
 function writeRatio(key: string, ratio: number): void {
   memoryRatios.set(key, ratio);
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    window.localStorage?.setItem(`omc:split:${key}`, String(ratio));
+    window.localStorage?.setItem(`mibbeacon:split:${key}`, String(ratio));
   }
 }
 

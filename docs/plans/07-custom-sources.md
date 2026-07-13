@@ -18,7 +18,7 @@ All custom sources implement the `MibSource` interface from plan 06 and pass thr
 
 ### 2. FTP source
 - Config: `{ host, port=21, secure: none|ftps-explicit, anonymous: bool, username?, passwordRef?, pathTemplate }` — `pathTemplate` uses `@mib@` (e.g. `/pub/mibs/@mib@` or `/mibs/@mib@.txt`); variant probing applies.
-- Client: `basic-ftp` (pure JS over `net`/`tls`) on desktop. On mobile, `net`→`react-native-tcp-socket` alias (it also provides TLS) — validate during implementation with a real FTP server; if `basic-ftp`'s socket usage doesn't survive the shim, implement a minimal FTP-retrieve client (`USER/PASS/TYPE I/PASV/RETR` is a few hundred lines) in `@omc/resolver` — decision + outcome recorded here.
+- Client: `basic-ftp` (pure JS over `net`/`tls`) on desktop. On mobile, `net`→`react-native-tcp-socket` alias (it also provides TLS) — validate during implementation with a real FTP server; if `basic-ftp`'s socket usage doesn't survive the shim, implement a minimal FTP-retrieve client (`USER/PASS/TYPE I/PASV/RETR` is a few hundred lines) in `@mibbeacon/resolver` — decision + outcome recorded here.
 - Passive mode only (NAT-friendly). Timeout + one retry like HTTP. Directory listing NOT required (RETR by constructed path); a "browse server" nicety is post-v1.
 
 ### 3. JSON catalog source

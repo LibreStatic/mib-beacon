@@ -1,4 +1,4 @@
-import type { TcpSocket, TcpSocketFactory } from '@omc/transport';
+import type { TcpSocket, TcpSocketFactory } from '@mibbeacon/transport';
 import type { FtpSourceConfig, MibSource, SecretResolver, SourceFetchResult } from './sources/types';
 import { validateMibContent } from './sources/validator';
 
@@ -194,7 +194,7 @@ export class PassiveFtpClient implements FtpClient {
       const username = request.username ?? 'anonymous';
       const userReply = await command(control, replies, `USER ${username}`, timeoutMs, request.signal);
       if (userReply.code === 331) {
-        const password = request.password ?? 'openmibcatalog@';
+        const password = request.password ?? 'mibbeacon@';
         expectCode(await command(control, replies, `PASS ${password}`, timeoutMs, request.signal), [230], 'login');
       } else {
         expectCode(userReply, [230], 'login');
