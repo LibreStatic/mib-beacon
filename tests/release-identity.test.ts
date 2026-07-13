@@ -8,6 +8,13 @@ function read(path: string): string {
 }
 
 describe('release identity', () => {
+  it('loads the preload bundle using electron-vite output filename', () => {
+    const main = read('apps/desktop/src/main/index.ts');
+    expect(main).toContain("../preload/index.js");
+    expect(main).not.toContain("../preload/index.mjs");
+    expect(main).toContain('!app.isPackaged && process.env.ELECTRON_RENDERER_URL');
+  });
+
   it('uses the LibreStatic application id across mobile and desktop packaging', () => {
     const mobile = JSON.parse(read('apps/mobile/app.json')) as {
       expo: { android: { package: string }; ios: { bundleIdentifier: string } };
