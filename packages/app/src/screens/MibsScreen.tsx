@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, ScrollView, StyleSheet } from 'react-native';
 import {
   Card,
   SectionTitle,
@@ -16,10 +16,14 @@ import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { cancelImport, focusModule, importPastedText, importUrl, unloadModule } from '../actions';
 import { FileImportFlow } from '../components/FileImportFlow';
+import { SplitWorkspace } from '../components/SplitWorkspace';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { useResponsiveLayout } from '../responsive-context';
 
 export function MibsScreen() {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const modules = useAppStore((s) => s.modules);
   const busy = useAppStore((s) => s.importBusy);
   const lastImport = useAppStore((s) => s.lastImport);
@@ -29,6 +33,7 @@ export function MibsScreen() {
   const total = useAppStore((s) => s.importTotal);
   const [url, setUrl] = useState('');
   const [paste, setPaste] = useState('');
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const submittedPaste = useRef(false);
   const userCount = modules.filter((m) => !m.isBase).length;
 
@@ -42,6 +47,182 @@ export function MibsScreen() {
     }
   }, [importStatus]);
 
+  const importCard = (
+    <Card style={styles.card}>
+      <View style={styles.eyebrowRow}>
+        <SectionTitle>Import MIB</SectionTitle>
+        <Pill text="handled by engine" color={t.ok} />
+      </View>
+      <FileImportFlow busy={busy} />
+      <Field
+        label="From URL"
+        placeholder="https://…/IF-MIB.txt"
+        value={url}
+        onChangeText={setUrl}
+      />
+      <Button
+        title={busy ? 'Working…' : 'Fetch & import'}
+        small
+        disabled={busy || !url.trim()}
+        onPress={() => void importUrl(engine, url)}
+      />
+      <Label tone="dim" size={11}>
+        Pasted text is sent only to the connected engine for parsing. URL imports and enabled
+        resolver sources make network requests from that engine (the LAN server in the web app).
+      </Label>
+      <Field label="Or paste MIB text" value={paste} onChangeText={setPaste} multiline />
+      <Button
+        title={busy ? 'Working…' : 'Import pasted text'}
+        small
+        variant="ghost"
+        disabled={busy || !paste.trim()}
+        onPress={() => {
+          submittedPaste.current = true;
+          void importPastedText(engine, 'pasted.mib', paste);
+        }}
+      />
+      {busy || importStatus ? (
+        <View
+          style={[styles.progressPanel, { borderColor: t.border, backgroundColor: t.surfaceAlt }]}
+        >
+          <View style={styles.eyebrowRow}>
+            <Label tone={importStatus?.state === 'error' ? 'error' : 'dim'} size={11}>
+              {busy
+                ? (importStatus?.state ?? 'starting resolver')
+                : (importStatus?.state ?? 'finished')}
+            </Label>
+            {total > 0 ? <Pill text={`${completed}/${total}`} color={t.accent} /> : null}
+          </View>
+          {progress.slice(-6).map((item) => (
+            <View key={item.id} style={styles.progressRow}>
+              <Pill text={item.kind.replaceAll('-', ' ')} />
+              <Mono dim size={10} numberOfLines={1}>
+                {[item.module, item.sourceId, item.location ?? item.message]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Mono>
+            </View>
+          ))}
+          {importStatus?.loadedModules.length ? (
+            <Label tone="ok" size={11}>
+              Resolved: {importStatus.loadedModules.join(', ')}
+            </Label>
+          ) : null}
+          {importStatus?.failures.map((failure, index) => (
+            <Label key={`${failure.module}-${index}`} tone="error" size={11}>
+              {failure.module ? `${failure.module}: ` : ''}
+              {failure.message}
+            </Label>
+          ))}
+          {busy ? (
+            <Button
+              title="Cancel resolution"
+              small
+              variant="danger"
+              onPress={() => void cancelImport(engine)}
+            />
+          ) : null}
+        </View>
+      ) : null}
+      {lastImport ? (
+        <View style={styles.importResult}>
+          {lastImport.loaded.length ? (
+            <Label tone="ok" size={12}>
+              Loaded: {lastImport.loaded.join(', ')}
+            </Label>
+          ) : null}
+          {lastImport.errors.map((e, i) => (
+            <Label key={i} tone="error" size={12}>
+              {e.name}: {e.message}
+            </Label>
+          ))}
+        </View>
+      ) : null}
+    </Card>
+  );
+
+  if (supportsSplitView) {
+    const selected = modules.find((module) => module.name === selectedModule) ?? null;
+    return (
+      <View style={styles.workspace}>
+        <WorkspaceHeader
+          title="MIB catalog"
+          subtitle="LOAD MODULES · REVIEW DEPENDENCIES · OPEN A FOCUSED OID TREE"
+          actions={<Pill text={`${modules.length} LOADED`} color={t.kind.module} />}
+        />
+        <SplitWorkspace
+          workspace="mibs"
+          minPrimary={300}
+          minSecondary={420}
+          primary={
+            <View style={styles.modulePane}>
+              <View
+                style={[
+                  styles.modulePaneHead,
+                  { backgroundColor: t.surface, borderBottomColor: t.border },
+                ]}
+              >
+                <SectionTitle>Loaded modules</SectionTitle>
+                <Label tone="dim" size={10}>
+                  {userCount} user · {modules.length - userCount} base
+                </Label>
+              </View>
+              <FlatList
+                data={modules}
+                keyExtractor={(module) => module.name}
+                ListEmptyComponent={<EmptyState title="No modules" />}
+                renderItem={({ item }) => (
+                  <ModuleRow
+                    mod={item}
+                    selected={item.name === selected?.name}
+                    onSelect={() => setSelectedModule(item.name)}
+                  />
+                )}
+              />
+            </View>
+          }
+          secondary={
+            <ScrollView style={styles.importPane} contentContainerStyle={styles.importPaneContent}>
+              {selected ? (
+                <Card style={styles.selectedModuleCard}>
+                  <View style={styles.eyebrowRow}>
+                    <SectionTitle>Selected module</SectionTitle>
+                    <Pill
+                      text={selected.isBase ? 'base' : 'user'}
+                      color={selected.isBase ? t.textDim : t.kind.module}
+                    />
+                  </View>
+                  <Text style={[styles.selectedModuleName, { color: t.text }]}>
+                    {selected.name}
+                  </Text>
+                  <Mono dim size={11}>
+                    {selected.objectCount} definitions indexed in the catalog
+                  </Mono>
+                  <View style={styles.moduleActions}>
+                    <Button
+                      title="Open focused tree"
+                      small
+                      onPress={() => void focusModule(engine, selected.name)}
+                    />
+                    {!selected.isBase ? (
+                      <Button
+                        title="Unload"
+                        small
+                        variant="danger"
+                        onPress={() => void unloadModule(engine, selected.name)}
+                      />
+                    ) : null}
+                  </View>
+                </Card>
+              ) : null}
+              {importCard}
+            </ScrollView>
+          }
+        />
+      </View>
+    );
+  }
+
   return (
     <FlatList
       style={styles.list}
@@ -52,87 +233,7 @@ export function MibsScreen() {
       ListEmptyComponent={<EmptyState title="No modules" />}
       ListHeaderComponent={
         <>
-          <Card style={styles.card}>
-            <View style={styles.eyebrowRow}>
-              <SectionTitle>Import MIB</SectionTitle>
-              <Pill text="handled by engine" color={t.ok} />
-            </View>
-            <FileImportFlow busy={busy} />
-            <Field
-              label="From URL"
-              placeholder="https://…/IF-MIB.txt"
-              value={url}
-              onChangeText={setUrl}
-            />
-            <Button
-              title={busy ? 'Working…' : 'Fetch & import'}
-              small
-              disabled={busy || !url.trim()}
-              onPress={() => void importUrl(engine, url)}
-            />
-            <Label tone="dim" size={11}>
-              Pasted text is sent only to the connected engine for parsing. URL imports and enabled
-              resolver sources make network requests from that engine (the LAN server in the web app).
-            </Label>
-            <Field label="Or paste MIB text" value={paste} onChangeText={setPaste} multiline />
-            <Button
-              title={busy ? 'Working…' : 'Import pasted text'}
-              small
-              variant="ghost"
-              disabled={busy || !paste.trim()}
-              onPress={() => {
-                submittedPaste.current = true;
-                void importPastedText(engine, 'pasted.mib', paste);
-              }}
-            />
-            {busy || importStatus ? (
-              <View style={[styles.progressPanel, { borderColor: t.border, backgroundColor: t.surfaceAlt }]}>
-                <View style={styles.eyebrowRow}>
-                  <Label tone={importStatus?.state === 'error' ? 'error' : 'dim'} size={11}>
-                    {busy ? importStatus?.state ?? 'starting resolver' : importStatus?.state ?? 'finished'}
-                  </Label>
-                  {total > 0 ? <Pill text={`${completed}/${total}`} color={t.accent} /> : null}
-                </View>
-                {progress.slice(-6).map((item) => (
-                  <View key={item.id} style={styles.progressRow}>
-                    <Pill text={item.kind.replaceAll('-', ' ')} />
-                    <Mono dim size={10} numberOfLines={1}>
-                      {[item.module, item.sourceId, item.location ?? item.message]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </Mono>
-                  </View>
-                ))}
-                {importStatus?.loadedModules.length ? (
-                  <Label tone="ok" size={11}>
-                    Resolved: {importStatus.loadedModules.join(', ')}
-                  </Label>
-                ) : null}
-                {importStatus?.failures.map((failure, index) => (
-                  <Label key={`${failure.module}-${index}`} tone="error" size={11}>
-                    {failure.module ? `${failure.module}: ` : ''}{failure.message}
-                  </Label>
-                ))}
-                {busy ? (
-                  <Button title="Cancel resolution" small variant="danger" onPress={() => void cancelImport(engine)} />
-                ) : null}
-              </View>
-            ) : null}
-            {lastImport ? (
-              <View style={styles.importResult}>
-                {lastImport.loaded.length ? (
-                  <Label tone="ok" size={12}>
-                    Loaded: {lastImport.loaded.join(', ')}
-                  </Label>
-                ) : null}
-                {lastImport.errors.map((e, i) => (
-                  <Label key={i} tone="error" size={12}>
-                    {e.name}: {e.message}
-                  </Label>
-                ))}
-              </View>
-            ) : null}
-          </Card>
+          {importCard}
           <View style={styles.listHead}>
             <View>
               <SectionTitle>Loaded modules</SectionTitle>
@@ -152,7 +253,15 @@ export function MibsScreen() {
   );
 }
 
-function ModuleRow({ mod }: { mod: ModuleInfo }) {
+function ModuleRow({
+  mod,
+  selected,
+  onSelect,
+}: {
+  mod: ModuleInfo;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
   const engine = useEngine();
   const t = useTheme();
   return (
@@ -160,10 +269,11 @@ function ModuleRow({ mod }: { mod: ModuleInfo }) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Open ${mod.name} tree`}
-        onPress={() => void focusModule(engine, mod.name)}
+        accessibilityState={{ selected: Boolean(selected) }}
+        onPress={onSelect ?? (() => void focusModule(engine, mod.name))}
         style={({ pressed }) => [
           styles.openArea,
-          { backgroundColor: pressed ? t.accentSoft : 'transparent' },
+          { backgroundColor: selected || pressed ? t.accentSoft : 'transparent' },
         ]}
       >
         <View style={[styles.moduleMark, { borderColor: mod.isBase ? t.textDim : t.kind.module }]}>
@@ -200,6 +310,14 @@ function ModuleRow({ mod }: { mod: ModuleInfo }) {
 }
 
 const styles = StyleSheet.create({
+  workspace: { flex: 1, minWidth: 0, minHeight: 0 },
+  modulePane: { flex: 1, minWidth: 0, minHeight: 0 },
+  modulePaneHead: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, gap: 3 },
+  importPane: { flex: 1 },
+  importPaneContent: { padding: 14, paddingBottom: 30 },
+  selectedModuleCard: { marginBottom: 12 },
+  selectedModuleName: { fontSize: 19, fontWeight: '800' },
+  moduleActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   list: { flex: 1 },
   content: { padding: 12 },
   card: { marginBottom: 18 },

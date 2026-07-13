@@ -139,11 +139,18 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       },
 
       async importTexts(files) {
-        return mibMutations.run(() => {
+        const result = await mibMutations.run(() => {
           const result = mibStore.importTexts(files);
           if (result.loaded.length > 0) persistCatalog();
           return result;
         });
+        if (result.loaded.length > 0)
+          bus.emit({
+            channel: 'tools',
+            kind: 'catalog-changed',
+            payload: { action: 'import', modules: result.loaded },
+          });
+        return result;
       },
 
       async importUrl(url) {
@@ -159,11 +166,18 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
           });
         }
         const name = url.split('/').pop() || 'downloaded-mib';
-        return mibMutations.run(() => {
+        const result = await mibMutations.run(() => {
           const result = mibStore.importTexts([{ name, content: res.text }]);
           if (result.loaded.length > 0) persistCatalog();
           return result;
         });
+        if (result.loaded.length > 0)
+          bus.emit({
+            channel: 'tools',
+            kind: 'catalog-changed',
+            payload: { action: 'import', modules: result.loaded },
+          });
+        return result;
       },
 
       async startImport(request) {
@@ -187,6 +201,11 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         await mibMutations.run(() => {
           mibStore.unload(moduleName);
           persistCatalog();
+        });
+        bus.emit({
+          channel: 'tools',
+          kind: 'catalog-changed',
+          payload: { action: 'unload', moduleName },
         });
       },
 
@@ -291,7 +310,9 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         );
         const { port } = receiver.start(cfg);
         receiverPort = port;
-        return { running: true, port, count: traps.length };
+        const status = { running: true, port, count: traps.length };
+        bus.emit({ channel: 'traps', kind: 'status', payload: status });
+        return status;
       },
 
       async stopReceiver() {
@@ -300,6 +321,11 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
           receiver = null;
           receiverPort = undefined;
         }
+        bus.emit({
+          channel: 'traps',
+          kind: 'status',
+          payload: { running: false, count: traps.length },
+        });
       },
 
       async status() {
@@ -312,6 +338,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
 
       async clear() {
         traps.length = 0;
+        bus.emit({ channel: 'traps', kind: 'cleared', payload: { count: 0 } });
       },
 
       async send(req) {

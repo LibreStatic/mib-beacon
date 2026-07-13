@@ -16,11 +16,15 @@ import {
   trapFromNode,
 } from '../actions';
 import { OidLookupPanel } from '../components/OidLookupPanel';
+import { SplitWorkspace } from '../components/SplitWorkspace';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { useResponsiveLayout } from '../responsive-context';
 import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } from './browse-tree';
 
 export function BrowseScreen() {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const cache = useAppStore((s) => s.childrenCache);
   const expanded = useAppStore((s) => s.expanded);
   const selected = useAppStore((s) => s.selected);
@@ -48,8 +52,8 @@ export function BrowseScreen() {
     await selectNode(engine, oid);
   };
 
-  return (
-    <View style={styles.container}>
+  const navigator = (
+    <View style={[styles.navigator, { borderRightColor: t.border }]}>
       {moduleFocus ? (
         <View
           style={[styles.focusBanner, { backgroundColor: t.surface, borderBottomColor: t.border }]}
@@ -231,13 +235,53 @@ export function BrowseScreen() {
           }}
         />
       )}
+    </View>
+  );
 
-      {selected ? <DetailPanel /> : null}
+  if (!supportsSplitView) {
+    return (
+      <View style={styles.container}>
+        {navigator}
+        {selected ? <DetailPanel /> : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <WorkspaceHeader
+        title="MIB explorer"
+        subtitle="EXPLORE THE OID TREE · INSPECT DEFINITIONS · LAUNCH OPERATIONS"
+        actions={
+          selected?.module ? <Pill text={selected.module} color={t.kind.module} /> : undefined
+        }
+      />
+      <SplitWorkspace
+        workspace="browse"
+        minPrimary={300}
+        minSecondary={380}
+        primary={navigator}
+        secondary={selected ? <DetailPanel embedded /> : <BrowseInspectorEmpty />}
+      />
     </View>
   );
 }
 
-function DetailPanel() {
+function BrowseInspectorEmpty() {
+  const t = useTheme();
+  return (
+    <View style={[styles.inspectorEmpty, { backgroundColor: t.bg }]}>
+      <Text style={[styles.inspectorGlyph, { color: t.kind.subtree }]}>⌬</Text>
+      <Text style={[styles.inspectorEmptyTitle, { color: t.text }]}>Select a MIB object</Text>
+      <Text style={[styles.inspectorEmptyHint, { color: t.textDim }]}>
+        Expand the tree or search by name, OID, or description. Object metadata and actions stay
+        visible here while you continue browsing.
+      </Text>
+    </View>
+  );
+}
+
+function DetailPanel({ embedded = false }: { embedded?: boolean }) {
   const engine = useEngine();
   const t = useTheme();
   const selected = useAppStore((s) => s.selected)!;
@@ -245,53 +289,66 @@ function DetailPanel() {
     selected.access === 'read-write' ||
     selected.access === 'read-create' ||
     selected.access === 'write-only';
-  return (
-    <Card style={styles.detail}>
-      <ScrollView>
-        <View style={styles.detailHead}>
-          <Text style={[styles.detailName, { color: t.text }]}>{selected.name}</Text>
-          <Pill text={selected.kind} color={t.accent} />
-          {selected.module ? <Pill text={selected.module} /> : null}
-        </View>
-        <Mono size={12}>{selected.oid}</Mono>
-        {selected.syntax ? <KV k="Syntax" v={selected.syntax} /> : null}
-        {selected.access ? <KV k="Access" v={selected.access} /> : null}
-        {selected.status ? <KV k="Status" v={selected.status} /> : null}
-        {selected.indexes?.length ? <KV k="Index" v={selected.indexes.join(', ')} /> : null}
-        {selected.objects?.length ? <KV k="Objects" v={selected.objects.join(', ')} /> : null}
-        {selected.description ? (
-          <Text style={[styles.desc, { color: t.textDim }]}>{selected.description}</Text>
+  const content = (
+    <>
+      <View style={styles.detailHead}>
+        <Text style={[styles.detailName, { color: t.text }]}>{selected.name}</Text>
+        <Pill text={selected.kind} color={t.accent} />
+        {selected.module ? <Pill text={selected.module} /> : null}
+      </View>
+      <Mono size={12}>{selected.oid}</Mono>
+      {selected.syntax ? <KV k="Syntax" v={selected.syntax} /> : null}
+      {selected.access ? <KV k="Access" v={selected.access} /> : null}
+      {selected.status ? <KV k="Status" v={selected.status} /> : null}
+      {selected.indexes?.length ? <KV k="Index" v={selected.indexes.join(', ')} /> : null}
+      {selected.objects?.length ? <KV k="Objects" v={selected.objects.join(', ')} /> : null}
+      {selected.description ? (
+        <Text style={[styles.desc, { color: t.textDim }]}>{selected.description}</Text>
+      ) : null}
+      <View style={styles.detailActions}>
+        <Button title="Walk here" small onPress={() => walkFromNode(engine, selected.oid)} />
+        {(selected.kind === 'scalar' || selected.kind === 'column') &&
+        selected.access !== 'not-accessible' ? (
+          <Button title="Get" small variant="ghost" onPress={() => getFromNode(engine, selected)} />
         ) : null}
-        <View style={styles.detailActions}>
-          <Button title="Walk here" small onPress={() => walkFromNode(engine, selected.oid)} />
-          {(selected.kind === 'scalar' || selected.kind === 'column') &&
-          selected.access !== 'not-accessible' ? (
-            <Button
-              title="Get"
-              small
-              variant="ghost"
-              onPress={() => getFromNode(engine, selected)}
-            />
-          ) : null}
-          {writable ? (
-            <Button title="Set value" small variant="ghost" onPress={() => setFromNode(selected)} />
-          ) : null}
-          {selected.kind === 'notification' ? (
-            <Button
-              title="Send this trap"
-              small
-              variant="ghost"
-              onPress={() => void trapFromNode(engine, selected)}
-            />
-          ) : null}
+        {writable ? (
+          <Button title="Set value" small variant="ghost" onPress={() => setFromNode(selected)} />
+        ) : null}
+        {selected.kind === 'notification' ? (
           <Button
-            title="Close"
+            title="Send this trap"
             small
             variant="ghost"
-            onPress={() => useAppStore.getState().setSelected(null)}
+            onPress={() => void trapFromNode(engine, selected)}
           />
+        ) : null}
+        <Button
+          title="Close"
+          small
+          variant="ghost"
+          onPress={() => useAppStore.getState().setSelected(null)}
+        />
+      </View>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <View style={[styles.inspector, { backgroundColor: t.bg }]}>
+        <View style={[styles.inspectorEyebrow, { borderBottomColor: t.border }]}>
+          <Text style={[styles.inspectorEyebrowText, { color: t.textDim }]}>OBJECT INSPECTOR</Text>
+          <Text style={[styles.inspectorAccess, { color: writable ? t.warn : t.ok }]}>
+            {writable ? 'WRITABLE' : 'READ ONLY'}
+          </Text>
         </View>
-      </ScrollView>
+        <ScrollView contentContainerStyle={styles.inspectorContent}>{content}</ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <Card style={styles.detail}>
+      <ScrollView>{content}</ScrollView>
     </Card>
   );
 }
@@ -308,6 +365,7 @@ function KV({ k, v }: { k: string; v: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  navigator: { flex: 1, minWidth: 0, minHeight: 0 },
   focusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -359,6 +417,28 @@ const styles = StyleSheet.create({
   treeText: { flex: 1 },
   treeName: { fontSize: 14 },
   detail: { margin: 12, maxHeight: '45%' },
+  inspector: { flex: 1, minWidth: 0, minHeight: 0 },
+  inspectorEyebrow: {
+    height: 38,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inspectorEyebrowText: { fontSize: 9, fontWeight: '900', letterSpacing: 1.25 },
+  inspectorAccess: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  inspectorContent: { padding: 20, paddingBottom: 32 },
+  inspectorEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36 },
+  inspectorGlyph: { fontSize: 42, marginBottom: 12 },
+  inspectorEmptyTitle: { fontSize: 17, fontWeight: '800' },
+  inspectorEmptyHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    maxWidth: 360,
+    marginTop: 7,
+  },
   detailHead: {
     flexDirection: 'row',
     alignItems: 'center',

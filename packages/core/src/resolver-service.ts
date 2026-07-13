@@ -455,6 +455,11 @@ export class ResolverService {
     });
     // The in-memory swap is non-throwing and occurs only after SQLite commits.
     this.mibStore.adopt(stagedStore);
+    this.bus.emit({
+      channel: 'tools',
+      kind: 'catalog-changed',
+      payload: { action: 'import', modules: [...operation.status.loadedModules] },
+    });
   }
 
   private readSettings(): ResolverSettings {

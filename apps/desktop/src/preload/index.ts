@@ -14,6 +14,15 @@ const bridge = {
     ipcRenderer.on('omc:event', handler);
     return () => ipcRenderer.removeListener('omc:event', handler);
   },
+  newWindow(): Promise<number> {
+    return ipcRenderer.invoke('omc:window:new') as Promise<number>;
+  },
+  windowId(): Promise<number | null> {
+    return ipcRenderer.invoke('omc:window:id') as Promise<number | null>;
+  },
+  setWindowTitle(title: string): Promise<void> {
+    return ipcRenderer.invoke('omc:window:title', title) as Promise<void>;
+  },
 };
 
 contextBridge.exposeInMainWorld('omcBridge', bridge);

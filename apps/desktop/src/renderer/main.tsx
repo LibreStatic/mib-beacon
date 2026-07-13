@@ -7,7 +7,13 @@ const engine = makeEngineProxy();
 function Root() {
   return (
     <EngineProvider engine={engine}>
-      <AppRoot />
+      <AppRoot
+        host={{
+          canOpenWindow: true,
+          newWindow: () => void window.omcBridge.newWindow(),
+          setWindowTitle: (title) => void window.omcBridge.setWindowTitle(title),
+        }}
+      />
     </EngineProvider>
   );
 }

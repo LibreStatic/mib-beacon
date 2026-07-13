@@ -40,6 +40,8 @@ import {
   toggleResolverSource,
   updateResolverSettings,
 } from '../actions';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { useResponsiveLayout } from '../responsive-context';
 
 const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'http-template', label: 'HTTP template' },
@@ -51,6 +53,7 @@ const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
 export function SettingsScreen() {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const settings = useAppStore((s) => s.resolverSettings);
   const sources = useAppStore((s) => s.resolverSources);
   const cache = useAppStore((s) => s.resolverCache);
@@ -99,12 +102,31 @@ export function SettingsScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      contentInsetAdjustmentBehavior="automatic"
-    >
+    <View style={styles.workspace}>
+      {supportsSplitView ? (
+        <WorkspaceHeader
+          title="Resolver settings"
+          subtitle="PRIVACY · SOURCE PRIORITY · CACHE · EXTERNAL EVIDENCE"
+          actions={<Pill text={settings?.enabled ? 'ONLINE' : 'DISABLED'} color={settings?.enabled ? t.ok : t.textDim} />}
+        />
+      ) : null}
+      <View style={[styles.settingsBody, supportsSplitView ? styles.desktopSettingsBody : null]}>
+        {supportsSplitView ? (
+          <View style={[styles.settingsIndex, { backgroundColor: t.surface, borderRightColor: t.border }]}> 
+            <SectionTitle>Categories</SectionTitle>
+            {['Privacy & automation', 'Dependency cache', 'Source priority', 'Import / export', 'Recent activity'].map((label) => (
+              <View key={label} style={[styles.settingsIndexItem, { borderColor: 'transparent' }]}> 
+                <Text style={{ color: t.textDim, fontSize: 11, fontWeight: '700' }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        <ScrollView
+          style={styles.screen}
+          contentContainerStyle={[styles.content, supportsSplitView ? styles.desktopContent : null]}
+          keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
+        >
       <View style={styles.hero}>
         <View>
           <Text style={[styles.heroTitle, { color: t.text }]}>Resolver control room</Text>
@@ -254,7 +276,9 @@ export function SettingsScreen() {
         visible={editing !== null}
         onClose={closeEditor}
       />
-    </ScrollView>
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
@@ -655,7 +679,13 @@ function sourceLocation(source: SourceConfig): string {
 }
 
 const styles = StyleSheet.create({
+  workspace: { flex: 1, minWidth: 0, minHeight: 0 },
+  settingsBody: { flex: 1, minWidth: 0, minHeight: 0 },
+  desktopSettingsBody: { flexDirection: 'row' },
+  settingsIndex: { width: 176, borderRightWidth: 1, paddingHorizontal: 12, paddingVertical: 16, gap: 7 },
+  settingsIndexItem: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
   screen: { flex: 1 }, content: { padding: 12, gap: 12 },
+  desktopContent: { width: '100%', maxWidth: 980, alignSelf: 'center', padding: 18, paddingBottom: 38 },
   hero: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
   heroTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },

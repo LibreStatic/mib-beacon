@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, ScrollView, StyleSheet } from 'react-native';
 import {
   Card,
   SectionTitle,
@@ -27,6 +27,9 @@ import { useAppStore, type QueryOperation } from '../store';
 import { runGet, runGetNext, runSet, runWalk, stopWalk, resolveOidHint } from '../actions';
 import { VarbindEditor } from '../components/VarbindEditor';
 import { OidLookupPanel } from '../components/OidLookupPanel';
+import { SplitWorkspace } from '../components/SplitWorkspace';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { useResponsiveLayout } from '../responsive-context';
 
 const VERSIONS: SnmpVersion[] = ['v1', 'v2c', 'v3'];
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
@@ -42,6 +45,7 @@ const OPERATIONS: { key: QueryOperation; label: string }[] = [
 export function QueryScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const oid = useAppStore((s) => s.oid);
   const oidName = useAppStore((s) => s.oidName);
   const results = useAppStore((s) => s.results);
@@ -70,6 +74,155 @@ export function QueryScreen({ info }: { info: EngineInfo | null }) {
     else useAppStore.getState().setSetReview(true);
   };
 
+  const operationCard = (
+    <Card style={styles.card}>
+      <View style={styles.targetHead}>
+        <SectionTitle>Operation</SectionTitle>
+        {oidName ? <Pill text={oidName} color={t.accent} /> : null}
+      </View>
+      <Row style={styles.wrap}>
+        {OPERATIONS.map((item) => (
+          <Chip
+            key={item.key}
+            label={item.label}
+            active={operation === item.key}
+            onPress={() => {
+              const s = useAppStore.getState();
+              s.setQueryOperation(item.key);
+              if (item.key === 'set') {
+                s.updateSetDraft({ oid });
+                void resolveOidHint(engine, oid);
+              }
+            }}
+          />
+        ))}
+      </Row>
+      <Field label="OID" value={oid} onChangeText={onOid} placeholder="1.3.6.1.2.1.1.1.0" />
+      {oidName ? (
+        <Label tone="dim" size={12}>
+          Resolved as <Text style={{ color: t.accent }}>{oidName}</Text>
+        </Label>
+      ) : null}
+      {operation === 'set' ? (
+        <VarbindEditor
+          value={setDraft}
+          onChange={(patch) => {
+            useAppStore.getState().updateSetDraft(patch);
+            if (patch.oid !== undefined) onOid(patch.oid);
+          }}
+        />
+      ) : null}
+      {operation === 'walk' && running ? (
+        <Button title="Stop walk" variant="danger" onPress={() => void stopWalk(engine)} />
+      ) : (
+        <Button
+          title={
+            operation === 'set'
+              ? 'Review Set request'
+              : `Run ${OPERATIONS.find((x) => x.key === operation)?.label}`
+          }
+          onPress={run}
+          disabled={!!running || (operation === 'set' && !!setValidationError)}
+        />
+      )}
+      {operation === 'set' && review ? (
+        <View style={[styles.review, { borderColor: t.warn, backgroundColor: t.surfaceAlt }]}>
+          <Label tone="warn" size={11}>
+            WRITE CONFIRMATION
+          </Label>
+          <Mono size={12}>{setDraft.oid}</Mono>
+          <Text style={{ color: t.text, fontSize: 13 }}>
+            {setDraft.type} → {setDraft.value || '∅'}
+          </Text>
+          <Label tone="dim" size={11}>
+            This changes state on the remote agent and cannot be undone automatically.
+          </Label>
+          <Row>
+            <Button title="Send Set" small onPress={() => void runSet(engine)} />
+            <Button
+              title="Cancel"
+              small
+              variant="ghost"
+              onPress={() => useAppStore.getState().setSetReview(false)}
+            />
+          </Row>
+        </View>
+      ) : null}
+    </Card>
+  );
+
+  const resultsHeader = (
+    <>
+      <View style={styles.resultsHead}>
+        <SectionTitle>Results</SectionTitle>
+        <Text style={{ color: t.textDim, fontSize: 12 }}>
+          {stats.count} varbinds · {stats.batches} batches · {stats.ms} ms
+          {running ? ' · running…' : ''}
+        </Text>
+      </View>
+      {error ? (
+        <View style={styles.error}>
+          <Label tone="error">{error}</Label>
+        </View>
+      ) : null}
+      {results.length === 0 && !error ? (
+        <EmptyState title="No results yet" hint="Choose an operation, agent, and OID." />
+      ) : null}
+    </>
+  );
+
+  if (supportsSplitView) {
+    return (
+      <View style={styles.workspace}>
+        <WorkspaceHeader
+          title="SNMP query"
+          subtitle="CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS"
+          actions={
+            running ? (
+              <Pill text="OPERATION RUNNING" color={t.ok} />
+            ) : (
+              <Pill text={operation.toUpperCase()} color={t.accent} />
+            )
+          }
+        />
+        <SplitWorkspace
+          workspace="query"
+          minPrimary={340}
+          minSecondary={420}
+          primary={
+            <ScrollView
+              style={styles.configuration}
+              contentContainerStyle={styles.configurationContent}
+            >
+              <AgentCard info={info} />
+              {operationCard}
+            </ScrollView>
+          }
+          secondary={
+            <View style={styles.resultsPane}>
+              <View
+                style={[
+                  styles.resultsToolbar,
+                  { backgroundColor: t.surface, borderBottomColor: t.border },
+                ]}
+              >
+                {resultsHeader}
+              </View>
+              <FlatList
+                style={styles.resultList}
+                contentContainerStyle={styles.resultListContent}
+                data={results}
+                keyExtractor={(vb, i) => vb.oid + '#' + i}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => <VarbindRow vb={item} />}
+              />
+            </View>
+          }
+        />
+      </View>
+    );
+  }
+
   return (
     <FlatList
       style={styles.list}
@@ -80,99 +233,8 @@ export function QueryScreen({ info }: { info: EngineInfo | null }) {
       ListHeaderComponent={
         <>
           <AgentCard info={info} />
-          <Card style={styles.card}>
-            <View style={styles.targetHead}>
-              <SectionTitle>Operation</SectionTitle>
-              {oidName ? <Pill text={oidName} color={t.accent} /> : null}
-            </View>
-            <Row style={styles.wrap}>
-              {OPERATIONS.map((item) => (
-                <Chip
-                  key={item.key}
-                  label={item.label}
-                  active={operation === item.key}
-                  onPress={() => {
-                    const s = useAppStore.getState();
-                    s.setQueryOperation(item.key);
-                    if (item.key === 'set') {
-                      s.updateSetDraft({ oid });
-                      void resolveOidHint(engine, oid);
-                    }
-                  }}
-                />
-              ))}
-            </Row>
-            <Field label="OID" value={oid} onChangeText={onOid} placeholder="1.3.6.1.2.1.1.1.0" />
-            {oidName ? (
-              <Label tone="dim" size={12}>
-                Resolved as <Text style={{ color: t.accent }}>{oidName}</Text>
-              </Label>
-            ) : null}
-
-            {operation === 'set' ? (
-              <VarbindEditor
-                value={setDraft}
-                onChange={(patch) => {
-                  useAppStore.getState().updateSetDraft(patch);
-                  if (patch.oid !== undefined) onOid(patch.oid);
-                }}
-              />
-            ) : null}
-
-            {operation === 'walk' && running ? (
-              <Button title="Stop walk" variant="danger" onPress={() => void stopWalk(engine)} />
-            ) : (
-              <Button
-                title={
-                  operation === 'set'
-                    ? 'Review Set request'
-                    : `Run ${OPERATIONS.find((x) => x.key === operation)?.label}`
-                }
-                onPress={run}
-                disabled={!!running || (operation === 'set' && !!setValidationError)}
-              />
-            )}
-
-            {operation === 'set' && review ? (
-              <View style={[styles.review, { borderColor: t.warn, backgroundColor: t.surfaceAlt }]}>
-                <Label tone="warn" size={11}>
-                  WRITE CONFIRMATION
-                </Label>
-                <Mono size={12}>{setDraft.oid}</Mono>
-                <Text style={{ color: t.text, fontSize: 13 }}>
-                  {setDraft.type} → {setDraft.value || '∅'}
-                </Text>
-                <Label tone="dim" size={11}>
-                  This changes state on the remote agent and cannot be undone automatically.
-                </Label>
-                <Row>
-                  <Button title="Send Set" small onPress={() => void runSet(engine)} />
-                  <Button
-                    title="Cancel"
-                    small
-                    variant="ghost"
-                    onPress={() => useAppStore.getState().setSetReview(false)}
-                  />
-                </Row>
-              </View>
-            ) : null}
-          </Card>
-
-          <View style={styles.resultsHead}>
-            <SectionTitle>Results</SectionTitle>
-            <Text style={{ color: t.textDim, fontSize: 12 }}>
-              {stats.count} varbinds · {stats.batches} batches · {stats.ms} ms
-              {running ? ' · running…' : ''}
-            </Text>
-          </View>
-          {error ? (
-            <View style={styles.error}>
-              <Label tone="error">{error}</Label>
-            </View>
-          ) : null}
-          {results.length === 0 && !error ? (
-            <EmptyState title="No results yet" hint="Choose an operation, agent, and OID." />
-          ) : null}
+          {operationCard}
+          {resultsHeader}
         </>
       }
       renderItem={({ item }) => <VarbindRow vb={item} />}
@@ -304,12 +366,23 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
         </View>
         <Pill text={vb.typeName} />
       </View>
-      {!vb.name ? <View style={styles.lookup}><OidLookupPanel oid={vb.oid} compact /></View> : null}
+      {!vb.name ? (
+        <View style={styles.lookup}>
+          <OidLookupPanel oid={vb.oid} compact />
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  workspace: { flex: 1, minWidth: 0, minHeight: 0 },
+  configuration: { flex: 1 },
+  configurationContent: { padding: 14, paddingBottom: 28 },
+  resultsPane: { flex: 1, minWidth: 0, minHeight: 0 },
+  resultsToolbar: { paddingHorizontal: 16, paddingVertical: 11, borderBottomWidth: 1 },
+  resultList: { flex: 1 },
+  resultListContent: { paddingHorizontal: 16, paddingBottom: 24 },
   list: { flex: 1 },
   content: { padding: 12 },
   card: { marginBottom: 12 },

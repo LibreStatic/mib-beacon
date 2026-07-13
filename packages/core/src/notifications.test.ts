@@ -13,6 +13,19 @@ async function freeUdpPort(): Promise<number> {
 }
 
 describe('notification sender', () => {
+  it('publishes capture-clear events for every connected view', async () => {
+    const engine = createEngine(createNodeTransport({ dataDir: tmpdir() }), { dbPath: ':memory:' });
+    const events: Array<{ kind: string; payload: unknown }> = [];
+    const unsubscribe = engine.events.subscribe('traps', (event) => events.push(event));
+
+    await engine.traps.clear();
+    unsubscribe();
+
+    expect(events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'cleared', payload: { count: 0 } })]),
+    );
+  });
+
   it('round-trips a v2c trap through the engine receiver on a custom port', async () => {
     const port = await freeUdpPort();
     const engine = createEngine(createNodeTransport({ dataDir: tmpdir() }), { dbPath: ':memory:' });

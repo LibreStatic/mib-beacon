@@ -85,7 +85,11 @@ describe('engine mibs domain', () => {
     const resolved = await engine.mibs.resolve('1.3.6.1.4.1.99999.1.0');
     expect(resolved?.name).toBe('toyValue.0');
 
+    const catalogEvents: string[] = [];
+    const unsubscribe = engine.events.subscribe('tools', (event) => catalogEvents.push(event.kind));
     await engine.mibs.unload('TOY-MIB');
+    unsubscribe();
+    expect(catalogEvents).toContain('catalog-changed');
     expect(await engine.mibs.node('toyValue')).toBeNull();
   });
 

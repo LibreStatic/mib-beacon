@@ -27,6 +27,9 @@ import { useAppStore, type AgentForm, type NotificationHistoryItem } from '../st
 import { repeatNotification, sendNotification, toggleReceiver } from '../actions';
 import { VarbindEditor } from '../components/VarbindEditor';
 import { OidLookupPanel } from '../components/OidLookupPanel';
+import { SplitWorkspace } from '../components/SplitWorkspace';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { useResponsiveLayout } from '../responsive-context';
 
 const VERSIONS: SnmpVersion[] = ['v1', 'v2c', 'v3'];
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
@@ -35,14 +38,28 @@ const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
 
 export function TrapsScreen({ info }: { info: EngineInfo | null }) {
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const mode = useAppStore((s) => s.trapMode);
   return (
     <View style={styles.root}>
+      {supportsSplitView ? (
+        <WorkspaceHeader
+          title="Notification console"
+          subtitle="CAPTURE · INSPECT · CRAFT · REPLAY SNMP NOTIFICATIONS"
+          actions={<Pill text={mode === 'receive' ? 'RECEIVER' : 'SENDER'} color={t.accent} />}
+        />
+      ) : null}
       <View style={[styles.modeBar, { backgroundColor: t.surface, borderBottomColor: t.border }]}>
-        <View>
-          <Text style={[styles.consoleTitle, { color: t.text }]}>Notification console</Text>
-          <Text style={{ color: t.textDim, fontSize: 10 }}>CAPTURE / CRAFT / REPLAY</Text>
-        </View>
+        {!supportsSplitView ? (
+          <View>
+            <Text style={[styles.consoleTitle, { color: t.text }]}>Notification console</Text>
+            <Text style={{ color: t.textDim, fontSize: 10 }}>CAPTURE / CRAFT / REPLAY</Text>
+          </View>
+        ) : (
+          <Label tone="dim" size={10}>
+            WORKSPACE MODE
+          </Label>
+        )}
         <Row>
           <Chip
             label="Receive"
@@ -64,10 +81,12 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
 function ReceiveWorkspace() {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const receiver = useAppStore((s) => s.receiver);
   const records = useAppStore((s) => s.records);
   const [port, setPort] = useState('1162');
   const [err, setErr] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const onToggle = async () => {
     setErr(null);
     try {
@@ -77,6 +96,95 @@ function ReceiveWorkspace() {
       setErr(`${x.message ?? String(e)}${x.hint ? ' — ' + x.hint : ''}`);
     }
   };
+  const receiverCard = (
+    <Card style={styles.card}>
+      <View style={styles.cardTitle}>
+        <SectionTitle>Trap receiver</SectionTitle>
+        <Pill
+          text={receiver.running ? 'LIVE' : 'OFFLINE'}
+          color={receiver.running ? t.ok : t.textDim}
+        />
+      </View>
+      <Row>
+        <Field
+          label="Listen port"
+          value={port}
+          onChangeText={setPort}
+          keyboardType="number-pad"
+          editable={!receiver.running}
+        />
+        <View style={{ justifyContent: 'flex-end', flex: 1 }}>
+          <Button
+            title={receiver.running ? `Stop (:${receiver.port})` : 'Start receiver'}
+            variant={receiver.running ? 'danger' : 'primary'}
+            onPress={() => void onToggle()}
+          />
+        </View>
+      </Row>
+      {err ? (
+        <Label tone="error" size={12}>
+          {err}
+        </Label>
+      ) : null}
+      <Label tone="dim" size={11}>
+        Ports below 1024 need elevated privileges; 1162 works unprivileged.
+      </Label>
+    </Card>
+  );
+
+  if (supportsSplitView) {
+    const selected = records.find((record) => record.id === selectedId) ?? null;
+    return (
+      <SplitWorkspace
+        workspace="traps"
+        minPrimary={340}
+        minSecondary={400}
+        primary={
+          <View style={styles.capturePane}>
+            <View style={styles.captureControls}>{receiverCard}</View>
+            <View
+              style={[
+                styles.captureHead,
+                { backgroundColor: t.surface, borderBottomColor: t.border },
+              ]}
+            >
+              <View>
+                <SectionTitle>Captured notifications</SectionTitle>
+                <Label tone="dim" size={10}>
+                  {records.length} in this session
+                </Label>
+              </View>
+              {records.length ? (
+                <Pressable onPress={() => useAppStore.getState().clearTraps()}>
+                  <Text style={{ color: t.accent, fontSize: 11, fontWeight: '700' }}>Clear</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <FlatList
+              style={styles.captureList}
+              data={records}
+              keyExtractor={(record) => record.id}
+              ListEmptyComponent={
+                <EmptyState
+                  title={receiver.running ? 'Listening for traps…' : 'No traps received'}
+                  hint="Start the receiver, then send a test notification to this host."
+                />
+              }
+              renderItem={({ item }) => (
+                <TrapSummaryRow
+                  rec={item}
+                  selected={item.id === selected?.id}
+                  onPress={() => setSelectedId(item.id)}
+                />
+              )}
+            />
+          </View>
+        }
+        secondary={selected ? <TrapDetail rec={selected} /> : <TrapInspectorEmpty />}
+      />
+    );
+  }
+
   return (
     <FlatList
       style={styles.list}
@@ -85,39 +193,7 @@ function ReceiveWorkspace() {
       keyExtractor={(record) => record.id}
       ListHeaderComponent={
         <>
-          <Card style={styles.card}>
-            <View style={styles.cardTitle}>
-              <SectionTitle>Trap receiver</SectionTitle>
-              <Pill
-                text={receiver.running ? 'LIVE' : 'OFFLINE'}
-                color={receiver.running ? t.ok : t.textDim}
-              />
-            </View>
-            <Row>
-              <Field
-                label="Listen port"
-                value={port}
-                onChangeText={setPort}
-                keyboardType="number-pad"
-                editable={!receiver.running}
-              />
-              <View style={{ justifyContent: 'flex-end', flex: 1 }}>
-                <Button
-                  title={receiver.running ? `Stop (:${receiver.port})` : 'Start receiver'}
-                  variant={receiver.running ? 'danger' : 'primary'}
-                  onPress={() => void onToggle()}
-                />
-              </View>
-            </Row>
-            {err ? (
-              <Label tone="error" size={12}>
-                {err}
-              </Label>
-            ) : null}
-            <Label tone="dim" size={11}>
-              Ports below 1024 need elevated privileges; 1162 works unprivileged.
-            </Label>
-          </Card>
+          {receiverCard}
           {records.length ? (
             <Row style={styles.listHead}>
               <Text style={{ color: t.textDim, fontSize: 12 }}>{records.length} received</Text>
@@ -142,9 +218,116 @@ function ReceiveWorkspace() {
   );
 }
 
+function TrapInspectorEmpty() {
+  const t = useTheme();
+  return (
+    <View style={[styles.trapInspectorEmpty, { backgroundColor: t.bg }]}>
+      <Text style={[styles.trapInspectorGlyph, { color: t.kind.notification }]}>⚑</Text>
+      <Text style={[styles.trapInspectorTitle, { color: t.text }]}>Select a notification</Text>
+      <Text style={[styles.trapInspectorHint, { color: t.textDim }]}>
+        Source, timestamps, decoded OIDs, and varbind values remain visible here while capture
+        continues.
+      </Text>
+    </View>
+  );
+}
+
+function TrapSummaryRow({
+  rec,
+  selected,
+  onPress,
+}: {
+  rec: TrapRecord;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[
+        styles.trapSummaryRow,
+        { backgroundColor: selected ? t.accentSoft : 'transparent', borderBottomColor: t.border },
+      ]}
+    >
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Text style={{ color: t.text, fontWeight: '700', flex: 1 }} numberOfLines={1}>
+          {rec.trapName ?? rec.trapOid ?? 'trap'}
+        </Text>
+        <Text style={{ color: t.textDim, fontSize: 10 }}>
+          {new Date(rec.receivedAt).toLocaleTimeString()}
+        </Text>
+      </Row>
+      <Row style={{ justifyContent: 'space-between', marginTop: 3 }}>
+        <Mono dim size={10}>
+          {rec.sourceAddress}:{rec.sourcePort}
+        </Mono>
+        <Pill text={`${rec.varbinds.length} VB`} />
+      </Row>
+    </Pressable>
+  );
+}
+
+function TrapDetail({ rec }: { rec: TrapRecord }) {
+  const t = useTheme();
+  return (
+    <View style={[styles.trapDetail, { backgroundColor: t.bg }]}>
+      <View
+        style={[styles.trapDetailHead, { backgroundColor: t.surface, borderBottomColor: t.border }]}
+      >
+        <View style={{ flex: 1 }}>
+          <SectionTitle>Notification inspector</SectionTitle>
+          <Text style={[styles.trapDetailTitle, { color: t.text }]} numberOfLines={1}>
+            {rec.trapName ?? rec.trapOid ?? 'trap'}
+          </Text>
+        </View>
+        <Pill text={new Date(rec.receivedAt).toLocaleTimeString()} color={t.ok} />
+      </View>
+      <FlatList
+        contentContainerStyle={styles.trapDetailContent}
+        data={rec.varbinds}
+        keyExtractor={(vb, index) => `${vb.oid}-${index}`}
+        ListHeaderComponent={
+          <View style={styles.trapMeta}>
+            <Label tone="dim" size={10}>
+              SOURCE
+            </Label>
+            <Mono size={12}>
+              {rec.sourceAddress}:{rec.sourcePort}
+            </Mono>
+            {rec.trapOid ? (
+              <Mono dim size={11}>
+                {rec.trapOid}
+              </Mono>
+            ) : null}
+            {rec.trapOid && !rec.trapName ? <OidLookupPanel oid={rec.trapOid} compact /> : null}
+          </View>
+        }
+        renderItem={({ item }) => (
+          <View style={[styles.trapVarbind, { borderTopColor: t.border }]}>
+            <Mono size={11}>{item.name ?? item.oid}</Mono>
+            {item.name ? (
+              <Mono dim size={9}>
+                {item.oid}
+              </Mono>
+            ) : null}
+            <Text style={{ color: item.isError ? t.error : t.text, fontSize: 12, marginTop: 3 }}>
+              {item.isError ? item.errorText : String(item.value)}
+            </Text>
+            {!item.name ? <OidLookupPanel oid={item.oid} compact /> : null}
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+
 function SendWorkspace({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
+  const { supportsSplitView } = useResponsiveLayout();
   const form = useAppStore((s) => s.notification);
   const busy = useAppStore((s) => s.sendBusy);
   const error = useAppStore((s) => s.sendError);
@@ -201,13 +384,14 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
   return (
     <FlatList
       style={styles.list}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, supportsSplitView ? styles.sendDesktopContent : null]}
       data={history}
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <>
-          <Card style={styles.card}>
+          <View style={supportsSplitView ? styles.sendTopGrid : undefined}>
+            <Card style={[styles.card, supportsSplitView ? styles.sendGridCard : undefined]}>
             <View style={styles.cardTitle}>
               <SectionTitle>Destination</SectionTitle>
               <Pill text="UDP" color={t.accent} />
@@ -309,9 +493,9 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
                 ) : null}
               </>
             )}
-          </Card>
+            </Card>
 
-          <Card style={styles.card}>
+            <Card style={[styles.card, supportsSplitView ? styles.sendGridCard : undefined]}>
             <SectionTitle>Notification envelope</SectionTitle>
             <Row>
               <Chip
@@ -357,7 +541,8 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
               Tip: open a NOTIFICATION-TYPE node in Browse and choose “Send this trap” to prefill
               its OID and OBJECTS payload.
             </Label>
-          </Card>
+            </Card>
+          </View>
 
           <View style={styles.payloadHead}>
             <View>
@@ -502,6 +687,9 @@ const styles = StyleSheet.create({
   consoleTitle: { fontSize: 14, fontWeight: '800' },
   list: { flex: 1 },
   content: { padding: 12 },
+  sendDesktopContent: { width: '100%', maxWidth: 980, alignSelf: 'center', padding: 18 },
+  sendTopGrid: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  sendGridCard: { flex: 1, minWidth: 0 },
   card: { marginBottom: 12 },
   cardTitle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wrap: { flexWrap: 'wrap' },
@@ -532,4 +720,44 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   vbs: { marginTop: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#4f8ef7' },
+  capturePane: { flex: 1, minWidth: 0, minHeight: 0 },
+  captureControls: { padding: 12, paddingBottom: 0 },
+  captureHead: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  captureList: { flex: 1 },
+  trapSummaryRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  trapInspectorEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 36 },
+  trapInspectorGlyph: { fontSize: 40, marginBottom: 12 },
+  trapInspectorTitle: { fontSize: 17, fontWeight: '800' },
+  trapInspectorHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    maxWidth: 360,
+    textAlign: 'center',
+    marginTop: 7,
+  },
+  trapDetail: { flex: 1, minWidth: 0, minHeight: 0 },
+  trapDetailHead: {
+    minHeight: 64,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  trapDetailTitle: { fontSize: 16, fontWeight: '800', marginTop: 3 },
+  trapDetailContent: { padding: 16, paddingBottom: 30 },
+  trapMeta: { gap: 5, marginBottom: 14 },
+  trapVarbind: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 10 },
 });
