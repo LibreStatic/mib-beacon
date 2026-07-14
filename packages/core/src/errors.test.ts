@@ -25,6 +25,12 @@ describe('mapSnmpError', () => {
     expect(err.hint).toMatch(/cap_net_bind_service|privile/i);
   });
 
+  it('maps UDP bind conflicts to SOCKET_ERROR', () => {
+    const err = mapSnmpError({ message: 'bind EADDRINUSE 0.0.0.0:1162' });
+    expect(err.code).toBe('SOCKET_ERROR');
+    expect(err.message).toMatch(/socket|address|port/i);
+  });
+
   it('maps host unreachable', () => {
     expect(mapSnmpError({ message: 'connect EHOSTUNREACH' }).code).toBe('HOST_UNREACHABLE');
   });

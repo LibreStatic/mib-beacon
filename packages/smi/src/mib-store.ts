@@ -84,14 +84,28 @@ function parseImports(content: string): ParsedImport[] {
 
 function definedModules(content: string): Set<string> {
   return new Set(
-    [...smiStructure(content).matchAll(/\b([A-Za-z][A-Za-z0-9-]*)\s+DEFINITIONS\s*::=\s*BEGIN\b/gi)].flatMap(
-      (match) => (match[1] ? [match[1]] : []),
-    ),
+    [
+      ...smiStructure(content).matchAll(
+        /\b([A-Za-z][A-Za-z0-9-]*)\s+DEFINITIONS\s*::=\s*BEGIN\b/gi,
+      ),
+    ].flatMap((match) => (match[1] ? [match[1]] : [])),
   );
 }
 
+function displayHints(content: string): Record<string, string> {
+  const hints: Record<string, string> = {};
+  for (const match of content.matchAll(
+    /\b([A-Za-z][A-Za-z0-9-]*)\s*::=\s*TEXTUAL-CONVENTION\b[\s\S]*?\bDISPLAY-HINT\s+"([^"]+)"[\s\S]*?\bSYNTAX\b/gi,
+  )) {
+    if (match[1] && match[2]) hints[match[1]] = match[2];
+  }
+  return hints;
+}
+
 function splitModuleTexts(content: string): { module: string; content: string }[] {
-  const matches = [...smiStructure(content).matchAll(/\b([A-Za-z][A-Za-z0-9-]*)\s+DEFINITIONS\s*::=\s*BEGIN\b/gi)];
+  const matches = [
+    ...smiStructure(content).matchAll(/\b([A-Za-z][A-Za-z0-9-]*)\s+DEFINITIONS\s*::=\s*BEGIN\b/gi),
+  ];
   return matches.map((match, index) => ({
     module: match[1]!,
     content: content.slice(match.index!, matches[index + 1]?.index ?? content.length),
@@ -254,9 +268,7 @@ export class MibStore {
 
     const before = new Set(this.store.getModuleNames(true));
     try {
-      const documents = orderModuleTexts(
-        files.flatMap((file) => splitModuleTexts(file.content)),
-      );
+      const documents = orderModuleTexts(files.flatMap((file) => splitModuleTexts(file.content)));
       if (documents.length === 0) {
         for (const file of files) {
           this.store.parser.ParseModule(file.name.replace(/\.[^.]*$/, ''), file.content);
@@ -268,34 +280,34 @@ export class MibStore {
       }
       this.store.parser.Serialize();
       const addedRaw = this.store.getModuleNames(true).filter((m) => !before.has(m));
-        // The parser registers a phantom empty module (even named "undefined")
-        // for unparseable input — prune those instead of reporting them loaded.
+      // The parser registers a phantom empty module (even named "undefined")
+      // for unparseable input — prune those instead of reporting them loaded.
       const added = addedRaw.filter((m) => {
-          const symbols = this.store.getModule(m);
-          const real = m !== 'undefined' && symbols && Object.keys(symbols).length > 0;
-          if (!real) delete this.store.parser.Modules[m];
-          return real;
+        const symbols = this.store.getModule(m);
+        const real = m !== 'undefined' && symbols && Object.keys(symbols).length > 0;
+        if (!real) delete this.store.parser.Modules[m];
+        return real;
       });
       if (added.length === 0) throw new Error('no MIB module definition found in file');
       for (const moduleName of added) {
-          try {
-            this.store.addTranslationsForModule(moduleName);
-          } catch {
-            /* translation table is best-effort; the index below is authoritative */
-          }
+        try {
+          this.store.addTranslationsForModule(moduleName);
+        } catch {
+          /* translation table is best-effort; the index below is authoritative */
+        }
         const owner = files.find((file) => definedModules(file.content).has(moduleName));
         if (owner) this.sources.set(moduleName, owner.content);
         loaded.push(moduleName);
       }
     } catch (e) {
-        // ParseModule/Serialize mutate node-net-snmp's parser before throwing.
-        // Rebuild from known-good retained sources so a failed import cannot
-        // leak an empty/partial module into the catalog.
-        this.rebuildFromSources();
+      // ParseModule/Serialize mutate node-net-snmp's parser before throwing.
+      // Rebuild from known-good retained sources so a failed import cannot
+      // leak an empty/partial module into the catalog.
+      this.rebuildFromSources();
       errors.push({
-          name: files.map((file) => file.name).join(', '),
-          code: 'MIB_PARSE_FAILED',
-          message: (e as Error).message ?? String(e),
+        name: files.map((file) => file.name).join(', '),
+        code: 'MIB_PARSE_FAILED',
+        message: (e as Error).message ?? String(e),
       });
     }
     if (loaded.length > 0) this.reindex();
@@ -403,17 +415,21 @@ export class MibStore {
       if (!incoming.has(moduleName)) {
         return {
           loaded: [],
-          errors: [{
-            name: files.map((file) => file.name).join(', '),
-            code: 'MIB_PARSE_FAILED',
-            message: `replacement batch does not define ${moduleName}`,
-          }],
+          errors: [
+            {
+              name: files.map((file) => file.name).join(', '),
+              code: 'MIB_PARSE_FAILED',
+              message: `replacement batch does not define ${moduleName}`,
+            },
+          ],
         };
       }
     }
     const retained = [...this.sources.entries()]
       .filter(([moduleName]) => !requested.has(moduleName))
-      .filter((entry, index, entries) => entries.findIndex((other) => other[1] === entry[1]) === index)
+      .filter(
+        (entry, index, entries) => entries.findIndex((other) => other[1] === entry[1]) === index,
+      )
       .map(([name, content]) => ({ name, content }));
     const candidate = new MibStore();
     const result = candidate.importTexts([...retained, ...files]);
@@ -509,13 +525,32 @@ export class MibStore {
   listModules(): ModuleInfo[] {
     return this.store
       .getModuleNames(true)
-      .map((name) => ({
-        name,
-        objectCount: Object.values(this.store.getModule(name) ?? {}).filter(
-          (e) => e && typeof e === 'object' && e.OID,
-        ).length,
-        isBase: this.baseModuleNames.has(name),
-      }))
+      .map((name) => {
+        const entries = Object.values(this.store.getModule(name) ?? {});
+        const identity = entries.find(
+          (entry) => entry && typeof entry === 'object' && entry.MACRO === 'MODULE-IDENTITY',
+        );
+        const revisions = identity?.['REVISIONS-DESCRIPTIONS'];
+        const revision = Array.isArray(revisions)
+          ? revisions.find(
+              (item): item is { type: string; value: string } =>
+                !!item &&
+                typeof item === 'object' &&
+                item.type === 'REVISION' &&
+                typeof item.value === 'string',
+            )?.value
+          : undefined;
+        const lastUpdated = identity?.['LAST-UPDATED'];
+        const organization = identity?.ORGANIZATION;
+        return {
+          name,
+          objectCount: entries.filter((e) => e && typeof e === 'object' && e.OID).length,
+          isBase: this.baseModuleNames.has(name),
+          ...(typeof lastUpdated === 'string' ? { lastUpdated } : {}),
+          ...(revision ? { revision } : {}),
+          ...(typeof organization === 'string' ? { organization } : {}),
+        };
+      })
       .sort((a, b) => Number(a.isBase) - Number(b.isBase) || a.name.localeCompare(b.name));
   }
 
@@ -547,6 +582,11 @@ export class MibStore {
   }
 
   private reindex(): void {
-    this.index.rebuild(this.store.getModules(true));
+    const hints = Object.assign(
+      {},
+      ...BASE_MIBS.map((mib) => displayHints(mib.content)),
+      ...[...new Set(this.sources.values())].map(displayHints),
+    ) as Record<string, string>;
+    this.index.rebuild(this.store.getModules(true), hints);
   }
 }

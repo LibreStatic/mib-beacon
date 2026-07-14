@@ -31,6 +31,7 @@ export type MibBeaconErrorCode =
   | 'SOURCE_AUTH_FAILED'
   | 'MODULE_NOT_FOUND'
   | 'CONTENT_VALIDATION_FAILED'
+  | 'SECRET_STORAGE_UNAVAILABLE'
   // generic
   | 'NOT_IMPLEMENTED'
   | 'CANCELLED'
@@ -85,6 +86,12 @@ export function mapSnmpError(err: unknown): MibBeaconError {
       cause: err,
     });
   }
+  if (/EADDRINUSE|EADDRNOTAVAIL|bind failed/i.test(msg)) {
+    return new MibBeaconError('SOCKET_ERROR', 'Socket address or port is unavailable', {
+      hint: 'Choose another listen address or port, or stop the process that is already using it.',
+      cause: err,
+    });
+  }
   // v3 USM report signatures (node-net-snmp surfaces these in the message)
   if (/usmStatsWrongDigests|wrong digest|authentication failure/i.test(msg)) {
     return new MibBeaconError('V3_WRONG_AUTH', 'SNMPv3 authentication failed', {
@@ -99,7 +106,9 @@ export function mapSnmpError(err: unknown): MibBeaconError {
     });
   }
   if (/usmStatsUnknownUserNames|unknown user/i.test(msg)) {
-    return new MibBeaconError('V3_UNKNOWN_USER', 'SNMPv3 user unknown to the agent', { cause: err });
+    return new MibBeaconError('V3_UNKNOWN_USER', 'SNMPv3 user unknown to the agent', {
+      cause: err,
+    });
   }
   if (/usmStatsNotInTimeWindows|not in time window/i.test(msg)) {
     return new MibBeaconError('V3_NOT_IN_TIME_WINDOW', 'SNMPv3 time window error (will resync)', {
@@ -112,10 +121,14 @@ export function mapSnmpError(err: unknown): MibBeaconError {
     });
   }
   if (/notwritable|not writable|readonly|read-only/i.test(msg)) {
-    return new MibBeaconError('SET_NOT_WRITABLE', 'The agent reports that this object is not writable', {
-      hint: 'Choose an object whose MIB access is read-write/read-create and verify the agent write community or VACM view.',
-      cause: err,
-    });
+    return new MibBeaconError(
+      'SET_NOT_WRITABLE',
+      'The agent reports that this object is not writable',
+      {
+        hint: 'Choose an object whose MIB access is read-write/read-create and verify the agent write community or VACM view.',
+        cause: err,
+      },
+    );
   }
   if (/wrongtype|wrong type|bad value|wrongvalue|wrong value/i.test(msg)) {
     return new MibBeaconError('SET_WRONG_TYPE', 'The agent rejected the Set value or wire type', {

@@ -64,7 +64,9 @@ export class GitHubTreeIndex {
       await this.persist();
       return;
     }
-    if (response.status === 403 || response.status === 429) throw new GitHubHttpError(response);
+    if (response.status === 401 || response.status === 403 || response.status === 429) {
+      throw new GitHubHttpError(response);
+    }
     if (!response.ok) throw new Error(`GitHub tree request failed with HTTP ${response.status}`);
 
     const parsed = JSON.parse(response.text) as GitTreeResponse;
@@ -158,10 +160,17 @@ export class GitHubTreeSource implements MibSource {
       signal: context.signal,
     };
     const response = await this.http.fetch(request);
-    if (response.status === 403 || response.status === 429) return this.notFound(module, response);
+    if (response.status === 401 || response.status === 403 || response.status === 429) {
+      return this.notFound(module, response);
+    }
     if (!response.ok) return { status: 'not-found', module, sourceId: this.id };
     const validation = validateMibContent(module, response.text);
-    if (!validation.ok) return { status: 'not-found', module, sourceId: this.id };
+    if (!validation.ok)
+      return {
+        status: 'not-found', module, sourceId: this.id, stage: 'validation',
+        reason: `Validation failed: ${validation.message}`,
+        responseExcerpt: response.text.slice(0, 240),
+      };
     return {
       status: 'found',
       module,

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "corpora": {
+    "netdisco": {
+      "repository": "https://github.com/netdisco/netdisco-mibs.git",
+      "revision": "e981548ffb72c92517631b37e4fc17b64d8da3a1",
+      "paths": ["."]
+    },
+    "librenms": {
+      "repository": "https://github.com/librenms/librenms.git",
+      "revision": "d38b35f2c09447e6b90067052772901fe0eed215",
+      "paths": ["mibs/arista", "mibs/cisco", "mibs/juniper", "mibs/mikrotik"]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 /// <reference path="./net-snmp.d.ts" />
 import type { MibModuleEntry } from 'net-snmp';
-import { formatSyntax } from './format-syntax';
+import { enumValues, formatSyntax } from './format-syntax';
 import type {
   MibNodeDetail,
   MibNodeKind,
@@ -8,6 +8,7 @@ import type {
   MibSearchHit,
   ModuleTreeNode,
   ResolvedName,
+  OidTranslation,
 } from './types';
 
 interface TrieNode {
@@ -38,8 +39,13 @@ export class OidIndex {
   };
   private byName = new Map<string, TrieNode>();
   private byModuleName = new Map<string, TrieNode>();
+  private textualConventions = new Map<string, MibModuleEntry>();
+  private displayHints = new Map<string, string>();
 
-  rebuild(modules: Record<string, Record<string, MibModuleEntry>>): void {
+  rebuild(
+    modules: Record<string, Record<string, MibModuleEntry>>,
+    displayHints: Record<string, string> = {},
+  ): void {
     this.root = {
       arc: -1,
       oid: '',
@@ -49,9 +55,18 @@ export class OidIndex {
     };
     this.byName = new Map();
     this.byModuleName = new Map();
+    this.textualConventions = new Map();
+    this.displayHints = new Map(Object.entries(displayHints));
 
     for (const symbols of Object.values(modules)) {
-      for (const entry of Object.values(symbols)) {
+      for (const [symbol, entry] of Object.entries(symbols)) {
+        if (
+          entry &&
+          typeof entry === 'object' &&
+          (entry.MACRO === 'TEXTUAL-CONVENTION' || entry['DISPLAY-HINT'])
+        ) {
+          this.textualConventions.set(entry.ObjectName ?? symbol, entry);
+        }
         if (!entry || typeof entry !== 'object' || !entry.OID) continue;
         this.insert(entry);
       }
@@ -83,11 +98,10 @@ export class OidIndex {
       }
       node = child;
     }
-    // Prefer a real definition over a previously synthesized node.
-    if (!node.entry) {
-      node.entry = entry;
-      if (entry.ObjectName) node.label = entry.ObjectName;
-    }
+    // The most recently loaded definition wins display, while entries retains
+    // every module assignment for diagnostics and module-focused navigation.
+    node.entry = entry;
+    if (entry.ObjectName) node.label = entry.ObjectName;
     if (entry.ModuleName) node.entries.set(entry.ModuleName, entry);
     if (entry.ObjectName && !this.byName.has(entry.ObjectName)) {
       this.byName.set(entry.ObjectName, node);
@@ -211,15 +225,65 @@ export class OidIndex {
         : (this.byName.get(oidOrName) ?? null);
     if (!node) return null;
     const e = (moduleName ? node.entries.get(moduleName) : undefined) ?? node.entry;
+    const rawIndexes = e?.INDEX?.map(String) ?? [];
+    const syntaxMetadata = this.resolveSyntaxMetadata(formatSyntax(e?.SYNTAX));
+    const definitions = [...node.entries.entries()].map(([module, entry]) => ({
+      module,
+      name: entry.ObjectName ?? node.label ?? node.oid,
+    }));
     return {
       ...this.summarize(node, e),
       namedPath: e?.NameSpace,
       syntax: formatSyntax(e?.SYNTAX),
       status: e?.STATUS,
+      units: e?.UNITS,
       description: e?.DESCRIPTION,
-      indexes: e?.INDEX?.map(String),
+      indexes:
+        rawIndexes.length > 0
+          ? rawIndexes.map((index) => index.replace(/^IMPLIED\s+/i, ''))
+          : undefined,
+      impliedIndexes: rawIndexes.some((index) => /^IMPLIED\s+/i.test(index))
+        ? rawIndexes
+            .filter((index) => /^IMPLIED\s+/i.test(index))
+            .map((index) => index.replace(/^IMPLIED\s+/i, ''))
+        : undefined,
+      augments: e?.AUGMENTS?.map(String),
+      textualConventionChain: syntaxMetadata.chain,
+      displayHint: syntaxMetadata.displayHint,
+      enumValues: enumValues(e?.SYNTAX),
+      definitions: definitions.length > 1 ? definitions : undefined,
+      warnings:
+        definitions.length > 1
+          ? [
+              `Duplicate OID ${node.oid} is defined by ${definitions.map(({ module }) => module).join(' and ')}`,
+            ]
+          : undefined,
       objects: e?.OBJECTS?.map(String),
     };
+  }
+
+  private resolveSyntaxMetadata(syntax?: string): { chain?: string[]; displayHint?: string } {
+    if (!syntax) return {};
+    const chain: string[] = [];
+    let current = syntax;
+    let displayHint: string | undefined;
+    const visited = new Set<string>();
+    while (true) {
+      const name = current.match(/^[A-Za-z][A-Za-z0-9-]*/)?.[0];
+      if (!name || visited.has(name)) break;
+      const convention = this.textualConventions.get(name);
+      if (!convention) break;
+      visited.add(name);
+      chain.push(name);
+      displayHint ??= convention['DISPLAY-HINT'] ?? this.displayHints.get(name);
+      current = formatSyntax(convention.SYNTAX) ?? '';
+    }
+    if (chain.length === 0) return {};
+    const primitive = current.match(
+      /^(?:OCTET STRING|OBJECT IDENTIFIER|INTEGER|BITS|IpAddress|Counter\d*|Gauge\d*|Unsigned\d*|TimeTicks)/i,
+    )?.[0];
+    if (primitive) chain.push(primitive);
+    return { chain, ...(displayHint ? { displayHint } : {}) };
   }
 
   /** Longest-prefix resolution of (instance) OIDs to definition names. */
@@ -246,76 +310,199 @@ export class OidIndex {
     };
   }
 
+  /** Bidirectional exact/instance translation between numeric and symbolic OIDs. */
+  translate(oidOrName: string): OidTranslation | null {
+    const value = oidOrName.trim().replace(/^\./, '');
+    if (/^[0-9.]+$/.test(value)) {
+      const resolved = this.resolve(value);
+      return resolved ? { oid: value, name: resolved.name, module: resolved.module } : null;
+    }
+    const qualified = value.match(
+      /^(?:([A-Za-z][A-Za-z0-9-]*)::)?([A-Za-z][A-Za-z0-9-]*)(?:\.(\d+(?:\.\d+)*))?$/,
+    );
+    if (!qualified) return null;
+    const [, moduleName, symbol, suffix] = qualified;
+    const node = this.node(symbol!, moduleName);
+    if (!node) return null;
+    return {
+      oid: suffix ? `${node.oid}.${suffix}` : node.oid,
+      name: suffix ? `${node.name}.${suffix}` : node.name,
+      ...(node.module ? { module: node.module } : {}),
+    };
+  }
+
   search(query: string, limit = 30): MibSearchHit[] {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    const hits: MibSearchHit[] = [];
+    const hits: { hit: MibSearchHit; score: number }[] = [];
     const isOidQuery = /^[0-9.]+$/.test(q);
-    const visit = (node: TrieNode): boolean => {
-      if (hits.length >= limit) return false;
-      if (isOidQuery) {
-        if (node.oid.startsWith(q) && node.entry) {
-          hits.push(this.hit(node, 'oid'));
-        }
-      } else if (node.label) {
-        if (node.label.toLowerCase().includes(q)) hits.push(this.hit(node, 'name'));
-        else if (node.entry?.DESCRIPTION?.toLowerCase().includes(q)) {
-          hits.push(this.hit(node, 'description'));
-        }
+    const visit = (node: TrieNode): void => {
+      if (node.entry) {
+        const match = this.matchSearch(node, node.entry, q, isOidQuery);
+        if (match) hits.push(match);
       }
-      for (const child of node.children.values()) if (!visit(child)) return false;
-      return true;
+      for (const child of node.children.values()) visit(child);
     };
     visit(this.root);
-    // exact/prefix name matches first
-    return hits.sort((a, b) => {
-      const rank = (h: MibSearchHit) =>
-        h.name.toLowerCase() === q
-          ? 0
-          : h.name.toLowerCase().startsWith(q)
-            ? 1
-            : h.matched === 'name'
-              ? 2
-              : 3;
-      return rank(a) - rank(b);
-    });
+    return hits
+      .sort(
+        (left, right) =>
+          left.score - right.score ||
+          left.hit.name.localeCompare(right.hit.name) ||
+          left.hit.oid.localeCompare(right.hit.oid),
+      )
+      .slice(0, Math.max(0, limit))
+      .map(({ hit }) => hit);
   }
 
   searchModule(moduleName: string, query: string, limit = 30): MibSearchHit[] {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    const hits: MibSearchHit[] = [];
+    const hits: { hit: MibSearchHit; score: number }[] = [];
     const isOidQuery = /^\d+(?:\.\d+)*$/.test(q);
-    const visit = (node: TrieNode): boolean => {
-      if (hits.length >= limit) return false;
+    const visit = (node: TrieNode): void => {
       const entry = node.entries.get(moduleName);
       if (entry) {
-        const name = entry.ObjectName ?? node.label ?? String(node.arc);
-        if (isOidQuery && node.oid.startsWith(q)) hits.push(this.hit(node, 'oid', entry));
-        else if (!isOidQuery && name.toLowerCase().includes(q)) {
-          hits.push(this.hit(node, 'name', entry));
-        } else if (!isOidQuery && entry.DESCRIPTION?.toLowerCase().includes(q)) {
-          hits.push(this.hit(node, 'description', entry));
-        }
+        const match = this.matchSearch(node, entry, q, isOidQuery);
+        if (match) hits.push(match);
       }
-      for (const child of node.children.values()) if (!visit(child)) return false;
-      return true;
+      for (const child of node.children.values()) visit(child);
     };
     visit(this.root);
-    return hits.sort((a, b) => {
-      const rank = (hit: MibSearchHit) =>
-        hit.name.toLowerCase() === q ? 0 : hit.name.toLowerCase().startsWith(q) ? 1 : 2;
-      return rank(a) - rank(b);
-    });
+    return hits
+      .sort(
+        (left, right) =>
+          left.score - right.score ||
+          left.hit.name.localeCompare(right.hit.name) ||
+          left.hit.oid.localeCompare(right.hit.oid),
+      )
+      .slice(0, Math.max(0, limit))
+      .map(({ hit }) => hit);
   }
 
-  private hit(node: TrieNode, matched: MibSearchHit['matched'], entry = node.entry): MibSearchHit {
+  private matchSearch(
+    node: TrieNode,
+    entry: MibModuleEntry,
+    query: string,
+    isOidQuery: boolean,
+  ): { hit: MibSearchHit; score: number } | null {
+    if (isOidQuery) {
+      if (!node.oid.startsWith(query)) return null;
+      return {
+        hit: this.hit(node, 'oid', entry, [{ field: 'oid', start: 0, end: query.length }]),
+        score: 300 + (node.oid.length - query.length),
+      };
+    }
+    const name = entry.ObjectName ?? node.label ?? String(node.arc);
+    const lowerName = name.toLowerCase();
+    if (lowerName === query) {
+      return {
+        hit: this.hit(node, 'name', entry, [{ field: 'name', start: 0, end: name.length }]),
+        score: 0,
+      };
+    }
+    if (lowerName.startsWith(query)) {
+      return {
+        hit: this.hit(node, 'name', entry, [{ field: 'name', start: 0, end: query.length }]),
+        score: 100 + (name.length - query.length),
+      };
+    }
+    const containedAt = lowerName.indexOf(query);
+    if (containedAt >= 0) {
+      return {
+        hit: this.hit(node, 'name', entry, [
+          { field: 'name', start: containedAt, end: containedAt + query.length },
+        ]),
+        score: 200 + containedAt,
+      };
+    }
+    const subsequence = subsequencePositions(lowerName, query);
+    if (subsequence) {
+      return {
+        hit: this.hit(node, 'name', entry, positionsToHighlights('name', subsequence)),
+        score:
+          220 +
+          subsequence[0]! * 2 +
+          (subsequence.at(-1)! - subsequence[0]! + 1 - query.length) +
+          (name.length - query.length),
+      };
+    }
+    const distance = levenshtein(lowerName, query);
+    if (distance <= Math.max(2, Math.floor(query.length * 0.35))) {
+      return {
+        hit: this.hit(node, 'name', entry, [{ field: 'name', start: 0, end: name.length }]),
+        score: 250 + distance,
+      };
+    }
+    const description = entry.DESCRIPTION ?? '';
+    const descriptionAt = description.toLowerCase().indexOf(query);
+    if (descriptionAt >= 0) {
+      return {
+        hit: this.hit(node, 'description', entry, [
+          { field: 'description', start: descriptionAt, end: descriptionAt + query.length },
+        ]),
+        score: 400 + descriptionAt,
+      };
+    }
+    return null;
+  }
+
+  private hit(
+    node: TrieNode,
+    matched: MibSearchHit['matched'],
+    entry = node.entry,
+    highlights?: MibSearchHit['highlights'],
+  ): MibSearchHit {
     return {
       oid: node.oid,
       name: entry?.ObjectName ?? node.label ?? String(node.arc),
       module: entry?.ModuleName,
       kind: node.kind,
       matched,
+      ...(highlights && highlights.length > 0 ? { highlights } : {}),
     };
   }
+}
+
+function subsequencePositions(value: string, query: string): number[] | null {
+  const positions: number[] = [];
+  let offset = 0;
+  for (const character of query) {
+    const found = value.indexOf(character, offset);
+    if (found < 0) return null;
+    positions.push(found);
+    offset = found + 1;
+  }
+  return positions;
+}
+
+function positionsToHighlights(
+  field: 'name',
+  positions: number[],
+): NonNullable<MibSearchHit['highlights']> {
+  const highlights: NonNullable<MibSearchHit['highlights']> = [];
+  for (const position of positions) {
+    const previous = highlights.at(-1);
+    if (previous && previous.end === position) previous.end = position + 1;
+    else highlights.push({ field, start: position, end: position + 1 });
+  }
+  return highlights;
+}
+
+function levenshtein(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+    const current = [leftIndex + 1];
+    for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
+      current.push(
+        Math.min(
+          current[rightIndex]! + 1,
+          previous[rightIndex + 1]! + 1,
+          previous[rightIndex]! + (left[leftIndex] === right[rightIndex] ? 0 : 1),
+        ),
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length]!;
 }

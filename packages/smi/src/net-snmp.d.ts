@@ -25,6 +25,7 @@ declare module 'net-snmp' {
     type: number;
     varbinds: Varbind[];
     community?: string;
+    user?: string;
     contextEngineID?: string;
     contextName?: string;
     // v1 trap fields
@@ -107,9 +108,11 @@ declare module 'net-snmp' {
     'MAX-ACCESS'?: string;
     ACCESS?: string;
     STATUS?: string;
+    UNITS?: string;
     DESCRIPTION?: string;
     INDEX?: string[];
     AUGMENTS?: string[];
+    'DISPLAY-HINT'?: string;
     OBJECTS?: string[];
     'OBJECT IDENTIFIER'?: string;
     OID?: string;
@@ -146,6 +149,8 @@ declare module 'net-snmp' {
     options: {
       port?: number;
       transport?: 'udp4' | 'udp6';
+      address?: string;
+      sockets?: { transport: 'udp4' | 'udp6'; address?: string; port: number }[];
       disableAuthorization?: boolean;
       includeAuthentication?: boolean;
       engineID?: string;

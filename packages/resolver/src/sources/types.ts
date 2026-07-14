@@ -13,6 +13,8 @@ export interface SourceConfigBase {
   testModule?: string;
   /** Set only when a persisted source was disabled because its configuration is invalid. */
   validationError?: string;
+  /** Runtime usage counters kept separately from editable source configuration. */
+  stats?: { lastUsedAt?: number; lastResult?: string; cacheHits: number };
 }
 
 export interface CacheSourceConfig extends SourceConfigBase {
@@ -92,6 +94,8 @@ export interface SourceFetchNotFound {
   httpStatus?: number;
   retryAfterMs?: number;
   reason?: string;
+  stage?: 'configuration' | 'connect' | 'auth' | 'index' | 'fetch' | 'validation' | 'not-found' | 'retrieve';
+  responseExcerpt?: string;
 }
 
 export type SourceFetchResult = SourceFetchFound | SourceFetchNotFound;

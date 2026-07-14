@@ -26,6 +26,7 @@ export async function previewJsonCatalog(
   resolveSecret?: SecretResolver,
   signal?: AbortSignal,
   limit = 20,
+  onRaw?: (snippet: string) => void,
 ): Promise<JsonCatalogPreviewEntry[]> {
   const headers = await buildHttpHeaders(config, resolveSecret);
   const response = await http.fetch({
@@ -36,6 +37,7 @@ export async function previewJsonCatalog(
     signal,
   });
   if (!response.ok) throw new Error(`Catalog request failed with HTTP ${response.status}`);
+  onRaw?.(response.text.slice(0, 4_096));
   return extractCatalogEntries(config, JSON.parse(response.text) as unknown).slice(0, limit);
 }
 
@@ -115,10 +117,17 @@ export class JsonCatalogSource implements MibSource {
       signal: context.signal,
     };
     const response = await this.http.fetch(request);
-    if (response.status === 403 || response.status === 429) return this.notFound(module, response);
+    if (response.status === 401 || response.status === 403 || response.status === 429) {
+      return this.notFound(module, response);
+    }
     if (!response.ok) return { status: 'not-found', module, sourceId: this.id };
     const validation = validateMibContent(module, response.text);
-    if (!validation.ok) return { status: 'not-found', module, sourceId: this.id };
+    if (!validation.ok)
+      return {
+        status: 'not-found', module, sourceId: this.id, stage: 'validation',
+        reason: `Validation failed: ${validation.message}`,
+        responseExcerpt: response.text.slice(0, 240),
+      };
     return {
       status: 'found',
       module,
@@ -155,7 +164,9 @@ export class JsonCatalogSource implements MibSource {
       });
       return;
     }
-    if (response.status === 403 || response.status === 429) throw new CatalogHttpError(response);
+    if (response.status === 401 || response.status === 403 || response.status === 429) {
+      throw new CatalogHttpError(response);
+    }
     if (!response.ok) throw new Error(`Catalog request failed with HTTP ${response.status}`);
     const entries = extractCatalogEntries(this.config, JSON.parse(response.text) as unknown);
     const next = new Map<string, string>();

@@ -6,11 +6,22 @@ import { MibBeaconError } from './errors';
 import { SnmpSession } from './snmp/session';
 import { TrapReceiver, type TrapRecord } from './snmp/receiver';
 import { runMigrations } from './db/migrate';
-import type { DecodedVarbind } from './snmp/types';
-import type { EngineAPI, EngineInfo, StubDomain } from './api/engine-api';
+import type { AgentSpec, DecodedVarbind } from './snmp/types';
+import type { EngineAPI, EngineInfo, OperationStartRequest } from './api/engine-api';
 import { ResolverService } from './resolver-service';
 import { validateMibFileBatch } from './mib-file-limits';
 import { AsyncMutationQueue } from './async-mutex';
+import { persistMibCatalog } from './db/mib-catalog-store';
+import { AgentStore } from './db/agent-store';
+import { SerializedSessionPool } from './ops/session-pool';
+import { formatVarbindWithMib } from './snmp/varbind-format';
+import { QueryArtifactStore } from './db/query-artifact-store';
+import { createRowWithFallback } from './ops/row-status';
+import { TrapStore } from './db/trap-store';
+import { evaluateTrapRules } from './traps/rules';
+import { ToolService } from './tools/service';
+import { ENGINE_VERSION } from './generated/version';
+import { LogService } from './logs';
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/mibbeacon.db. Pass ':memory:' for tests. */
@@ -18,16 +29,15 @@ export interface EngineOptions {
   resolver?: {
     now?: () => number;
     consentTtlMs?: number;
+    /** Defaults to the oid-base operator-friendly minimum of one second. */
+    oidBaseIntervalMs?: number;
   };
+  tools?: { now?: () => number };
+  /** Deterministic test seam; production uses SnmpSession.get. */
+  agentTester?: (agent: AgentSpec, oids: string[]) => Promise<DecodedVarbind[]>;
 }
 
-const ENGINE_VERSION = '0.0.0';
-const TRAP_RING_CAP = 5000;
 const MIB_URL_MAX_BYTES = 5 * 1024 * 1024;
-
-function stub(plannedIn: string): StubDomain {
-  return { plannedIn };
-}
 
 function netSnmpVersion(): string {
   return (netSnmpPkg as { version?: string }).version ?? 'unknown';
@@ -35,6 +45,7 @@ function netSnmpVersion(): string {
 
 export function createEngine(transport: Transport, opts: EngineOptions = {}): EngineAPI {
   const bus = new EventBus();
+  const logService = new LogService(bus, Date.now, 1_000, transport.files);
   const dbPath = opts.dbPath ?? transport.files.join(transport.files.dataDir(), 'mibbeacon.db');
   let db: StorageAdapter | null = null;
   try {
@@ -44,7 +55,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     runMigrations(db);
   } catch (e) {
     // The UI must still work if the DB can't open; log and continue.
-    bus.emit({ channel: 'logs', kind: 'error', payload: `DB init failed: ${String(e)}` });
+    logService.write('error', `DB init failed: ${String(e)}`);
     try {
       db = transport.storage.open(':memory:');
       runMigrations(db);
@@ -65,39 +76,39 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         mibStore.importTexts(rows.map((r) => ({ name: r.name, content: r.content })));
       }
     } catch (e) {
-      bus.emit({ channel: 'logs', kind: 'error', payload: `MIB reload failed: ${String(e)}` });
+      logService.write('error', `MIB reload failed: ${String(e)}`);
     }
   }
 
-  function persistCatalog(): void {
+  async function persistCatalog(): Promise<void> {
     if (!db) return;
-    db.transaction(() => {
-      db!.run('DELETE FROM mib_modules');
-      for (const document of mibStore.userSourceDocuments()) {
-        db!.run(
-          'INSERT INTO mib_modules (name, content, loaded_at) VALUES (?, ?, ?)',
-          [document.name, document.content, Date.now()],
-        );
-      }
-    });
+    await persistMibCatalog(db, transport.files, mibStore);
   }
 
   /** Decorate decoded varbinds with MIB-resolved display names. */
   function named(varbinds: DecodedVarbind[]): DecodedVarbind[] {
     for (const vb of varbinds) {
       const r = mibStore.index.resolve(vb.oid);
-      if (r) vb.name = r.name;
+      if (r) {
+        vb.name = r.name;
+        Object.assign(vb, formatVarbindWithMib(vb, mibStore.index.node(r.definitionOid)));
+      }
     }
     return varbinds;
   }
 
-  // --- trap receiver state (in-memory ring; SQLite store lands in plan 05) ---
+  // --- trap receiver state; records and configuration live in SQLite. ---
   let receiver: TrapReceiver | null = null;
   let receiverPort: number | undefined;
-  const traps: TrapRecord[] = [];
+  let receiverTransports: ('udp4' | 'udp6')[] = [];
+  let receiverDrops = 0;
+  let receiverRingCap = 50_000;
 
   // --- active walk sessions, keyed by handleId, for cancellation ---
-  const walks = new Map<string, SnmpSession>();
+  const activeOperations = new Map<string, Map<string, SnmpSession>>();
+  const operationKeys = new Map<string, Set<string>>();
+  const cancelledOperations = new Set<string>();
+  const sessions = new SerializedSessionPool<SnmpSession>();
   let walkSeq = 0;
 
   const ciphers = {
@@ -115,6 +126,313 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     mibMutations,
     opts.resolver,
   );
+  const agentStore = new AgentStore(db, transport);
+  const queryArtifacts = new QueryArtifactStore(db, transport);
+  const trapStore = new TrapStore(db, transport);
+  const toolService = new ToolService(
+    transport,
+    db,
+    bus,
+    agentStore,
+    mibStore,
+    queryArtifacts,
+    opts.agentTester,
+    opts.tools?.now,
+  );
+
+  function decorateAndStoreTrap(record: TrapRecord): TrapRecord {
+    named(record.varbinds);
+    if (record.trapOid) {
+      const definition = mibStore.index.node(record.trapOid);
+      if (definition) {
+        record.trapName = definition.name;
+        record.trapDescription = definition.description;
+        const expected = (definition.objects ?? []).map((objectName) => {
+          const node = mibStore.index.node(objectName);
+          return node ? `${node.name}|${node.oid}` : objectName;
+        });
+        const expectedOids = expected.map((item) => item.split('|').at(-1)!);
+        const payload = record.varbinds.filter(
+          ({ oid }) => oid !== '1.3.6.1.2.1.1.3.0' && oid !== '1.3.6.1.6.3.1.1.4.1.0',
+        );
+        record.expectedObjects = expected;
+        record.missingObjects = expected.filter(
+          (item, index) =>
+            !payload.some(
+              ({ oid }) => oid === expectedOids[index] || oid.startsWith(`${expectedOids[index]}.`),
+            ),
+        );
+        record.extraObjects = payload
+          .filter(
+            ({ oid }) =>
+              !expectedOids.some(
+                (expectedOid) => oid === expectedOid || oid.startsWith(`${expectedOid}.`),
+              ),
+          )
+          .map(({ name, oid }) => name ?? oid);
+      }
+    }
+    const evaluation = evaluateTrapRules(trapStore.listRules(), record);
+    record.matchedRuleIds = evaluation.matchedRuleIds;
+    if (evaluation.actions.severity) record.severity = evaluation.actions.severity;
+    if (evaluation.actions.color) record.color = evaluation.actions.color;
+    trapStore.insert(record, receiverRingCap);
+    if (evaluation.notifyRules.length > 0) {
+      bus.emit({
+        channel: 'traps',
+        kind: 'rule-notification',
+        payload: {
+          record,
+          rules: evaluation.notifyRules.map(({ id, name }) => ({ id, name })),
+        },
+      });
+    }
+    return record;
+  }
+
+  async function operationAgent(target: {
+    agent?: AgentSpec;
+    agentId?: string;
+  }): Promise<{ agent: AgentSpec; sessionKey: string }> {
+    if (target.agentId) {
+      const agent = await agentStore.resolve(target.agentId);
+      await agentStore.api.markUsed(target.agentId);
+      return { agent, sessionKey: `saved:${target.agentId}` };
+    }
+    if (target.agent) {
+      return { agent: target.agent, sessionKey: `adhoc:${JSON.stringify(target.agent)}` };
+    }
+    throw new MibBeaconError('REQ_FAILED', 'An ad-hoc agent or saved agent id is required');
+  }
+
+  async function withSession<R>(
+    target: { agent?: AgentSpec; agentId?: string },
+    task: (session: SnmpSession, agent: AgentSpec) => Promise<R>,
+  ): Promise<R> {
+    const { agent, sessionKey } = await operationAgent(target);
+    return sessions.run(
+      sessionKey,
+      () => new SnmpSession(agent),
+      (session) => task(session, agent),
+    );
+  }
+
+  async function startOperation(req: OperationStartRequest) {
+    const handleId = `op-${Date.now()}-${walkSeq++}`;
+    const startedAt = Date.now();
+    let count = 0;
+    let pduCount = 0;
+    const keys = new Set<string>();
+    operationKeys.set(handleId, keys);
+    const emitBatch = (
+      batch: DecodedVarbind[],
+      identity?: { agentId: string; agentName: string },
+    ) => {
+      if (batch.length === 0 || cancelledOperations.has(handleId)) return;
+      pduCount += 1;
+      count += batch.length;
+      const decorated = named(batch).map((varbind) =>
+        identity ? { ...varbind, ...identity } : varbind,
+      );
+      for (let offset = 0; offset < decorated.length; offset += 50) {
+        bus.emit({
+          channel: 'ops',
+          handleId,
+          kind: 'batch',
+          payload: decorated.slice(offset, offset + 50),
+        });
+      }
+    };
+
+    const execute = async (
+      target: { agent?: AgentSpec; agentId?: string },
+      identity?: { agentId: string; agentName: string },
+    ): Promise<number> => {
+      const { agent, sessionKey } = await operationAgent(target);
+      keys.add(sessionKey);
+      let agentCount = 0;
+      const agentBatch = (batch: DecodedVarbind[]) => {
+        agentCount += batch.length;
+        bus.emit({
+          channel: 'ops',
+          handleId,
+          kind: 'pdu',
+          payload: {
+            direction: 'response',
+            operation: req.kind,
+            ...(identity ?? {}),
+            varbinds: batch,
+          },
+        });
+        emitBatch(batch, identity);
+      };
+      await sessions.run(
+        sessionKey,
+        () => new SnmpSession(agent),
+        async (session) => {
+          let active = activeOperations.get(handleId);
+          if (!active) {
+            active = new Map();
+            activeOperations.set(handleId, active);
+          }
+          active.set(sessionKey, session);
+          if (cancelledOperations.has(handleId)) return;
+          bus.emit({
+            channel: 'ops',
+            handleId,
+            kind: 'pdu',
+            payload: {
+              direction: 'request',
+              operation: req.kind,
+              ...(identity ?? {}),
+              security: {
+                version: agent.version,
+                ...(agent.v3
+                  ? {
+                      user: agent.v3.user,
+                      level: agent.v3.level,
+                      authProtocol: agent.v3.authProtocol,
+                      privProtocol: agent.v3.privProtocol,
+                      context: agent.v3.context,
+                    }
+                  : {}),
+              },
+              ...('oids' in req ? { oids: req.oids } : {}),
+              ...('baseOid' in req ? { baseOid: req.baseOid } : {}),
+              ...('varbinds' in req
+                ? {
+                    varbinds: req.varbinds.map(({ oid, type, value, encoding }) => ({
+                      oid,
+                      type,
+                      value,
+                      encoding,
+                    })),
+                  }
+                : {}),
+            },
+          });
+          if (req.kind === 'get') {
+            agentBatch(
+              opts.agentTester
+                ? await opts.agentTester(agent, req.oids)
+                : await session.get(req.oids),
+            );
+          } else if (req.kind === 'getNext') {
+            agentBatch(await session.getNext(req.oids));
+          } else if (req.kind === 'getBulk') {
+            agentBatch(await session.getBulk(req.oids, req.nonRepeaters, req.maxRepetitions));
+          } else if (req.kind === 'set') {
+            agentBatch(await session.set(req.varbinds));
+          } else if (
+            req.kind === 'walk' ||
+            req.kind === 'subtree-fetch' ||
+            req.kind === 'table-fetch'
+          ) {
+            const bases =
+              req.kind === 'table-fetch' && req.columnOids?.length ? req.columnOids : [req.baseOid];
+            for (const baseOid of bases) {
+              await session.walk(baseOid, agentBatch, {
+                maxRepetitions: req.maxRepetitions,
+                maxVarbinds: req.maxVarbinds,
+              });
+            }
+          }
+          active.delete(sessionKey);
+        },
+      );
+      return agentCount;
+    };
+
+    const runSingle = async () => {
+      await execute(req);
+      return { succeeded: 1, failed: 0 };
+    };
+
+    const runGroup = async (groupId: string, concurrency?: number) => {
+      const group = await agentStore.api.groups.get(groupId);
+      if (!group) throw new MibBeaconError('REQ_FAILED', `Agent group ${groupId} does not exist`);
+      const targets = await Promise.all(
+        group.agentIds.map(async (agentId) => {
+          const profile = await agentStore.api.get(agentId);
+          if (!profile) throw new MibBeaconError('REQ_FAILED', `Agent ${agentId} does not exist`);
+          return { agentId, agentName: profile.name };
+        }),
+      );
+      let next = 0;
+      let succeeded = 0;
+      let failed = 0;
+      const worker = async () => {
+        while (next < targets.length && !cancelledOperations.has(handleId)) {
+          const target = targets[next++]!;
+          bus.emit({
+            channel: 'ops',
+            handleId,
+            kind: 'agent-status',
+            payload: { ...target, state: 'running' },
+          });
+          try {
+            const agentCount = await execute(
+              { agentId: target.agentId },
+              { agentId: target.agentId, agentName: target.agentName },
+            );
+            succeeded += 1;
+            bus.emit({
+              channel: 'ops',
+              handleId,
+              kind: 'agent-status',
+              payload: { ...target, state: 'done', count: agentCount },
+            });
+          } catch (error) {
+            failed += 1;
+            const detail =
+              error instanceof MibBeaconError ? error.toJSON() : { message: String(error) };
+            bus.emit({
+              channel: 'ops',
+              handleId,
+              kind: 'agent-status',
+              payload: { ...target, state: 'error', error: detail },
+            });
+          }
+        }
+      };
+      const width = Math.max(1, Math.min(20, concurrency ?? 5, targets.length || 1));
+      await Promise.all(Array.from({ length: width }, worker));
+      return { succeeded, failed };
+    };
+
+    const run = async () => {
+      if (cancelledOperations.has(handleId)) return;
+      const aggregate =
+        'groupId' in req ? await runGroup(req.groupId, req.concurrency) : await runSingle();
+      return aggregate;
+    };
+
+    void run()
+      .then((aggregate) => {
+        if (cancelledOperations.has(handleId)) return;
+        bus.emit({
+          channel: 'ops',
+          handleId,
+          kind: 'done',
+          payload: { count, pduCount, durationMs: Date.now() - startedAt, ...aggregate },
+        });
+      })
+      .catch((err) => {
+        if (cancelledOperations.has(handleId)) return;
+        bus.emit({
+          channel: 'ops',
+          handleId,
+          kind: 'error',
+          payload: err instanceof MibBeaconError ? err.toJSON() : { message: String(err) },
+        });
+      })
+      .finally(() => {
+        activeOperations.delete(handleId);
+        operationKeys.delete(handleId);
+        cancelledOperations.delete(handleId);
+      });
+    return { handleId };
+  }
 
   return {
     system: {
@@ -139,9 +457,9 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       },
 
       async importTexts(files) {
-        const result = await mibMutations.run(() => {
+        const result = await mibMutations.run(async () => {
           const result = mibStore.importTexts(files);
-          if (result.loaded.length > 0) persistCatalog();
+          if (result.loaded.length > 0) await persistCatalog();
           return result;
         });
         if (result.loaded.length > 0)
@@ -166,9 +484,9 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
           });
         }
         const name = url.split('/').pop() || 'downloaded-mib';
-        const result = await mibMutations.run(() => {
+        const result = await mibMutations.run(async () => {
           const result = mibStore.importTexts([{ name, content: res.text }]);
-          if (result.loaded.length > 0) persistCatalog();
+          if (result.loaded.length > 0) await persistCatalog();
           return result;
         });
         if (result.loaded.length > 0)
@@ -198,9 +516,9 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       },
 
       async unload(moduleName) {
-        await mibMutations.run(() => {
+        await mibMutations.run(async () => {
           mibStore.unload(moduleName);
-          persistCatalog();
+          await persistCatalog();
         });
         bus.emit({
           channel: 'tools',
@@ -228,123 +546,229 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       async resolve(oid) {
         return mibStore.index.resolve(oid);
       },
+
+      async translate(oidOrName) {
+        return mibStore.index.translate(oidOrName);
+      },
     },
 
     ops: {
       async get(req) {
-        const session = new SnmpSession(req.agent);
-        try {
-          return named(await session.get(req.oids));
-        } finally {
-          session.close();
+        if (opts.agentTester) {
+          const { agent } = await operationAgent(req);
+          return named(await opts.agentTester(agent, req.oids));
         }
+        return withSession(req, async (session) => named(await session.get(req.oids)));
       },
 
       async getNext(req) {
-        const session = new SnmpSession(req.agent);
-        try {
-          return named(await session.getNext(req.oids));
-        } finally {
-          session.close();
-        }
+        return withSession(req, async (session) => named(await session.getNext(req.oids)));
+      },
+
+      async getBulk(req) {
+        return withSession(req, async (session) =>
+          named(await session.getBulk(req.oids, req.nonRepeaters, req.maxRepetitions)),
+        );
       },
 
       async set(req) {
-        const session = new SnmpSession(req.agent);
-        try {
-          return named(await session.set(req.varbinds));
-        } finally {
-          session.close();
-        }
+        return withSession(req, async (session) => named(await session.set(req.varbinds)));
+      },
+
+      async start(req) {
+        return startOperation(req);
       },
 
       async startWalk(req) {
-        const handleId = `walk-${Date.now()}-${walkSeq++}`;
-        const session = new SnmpSession(req.agent);
-        walks.set(handleId, session);
-        // Run detached; results stream over the bus.
-        session
-          .walk(
-            req.baseOid,
-            (batch) => bus.emit({ channel: 'ops', handleId, kind: 'batch', payload: named(batch) }),
-            { maxRepetitions: req.maxRepetitions },
-          )
-          .then((count) => bus.emit({ channel: 'ops', handleId, kind: 'done', payload: { count } }))
-          .catch((err) =>
-            bus.emit({
-              channel: 'ops',
-              handleId,
-              kind: 'error',
-              payload: err instanceof MibBeaconError ? err.toJSON() : { message: String(err) },
-            }),
-          )
-          .finally(() => {
-            walks.get(handleId)?.close();
-            walks.delete(handleId);
-          });
-        return { handleId };
+        return startOperation({ ...req, kind: 'walk' });
       },
 
       async cancel(handleId) {
-        const session = walks.get(handleId);
-        if (session) {
-          session.close();
-          walks.delete(handleId);
+        const active = activeOperations.get(handleId);
+        const sessionKeys = operationKeys.get(handleId);
+        if (sessionKeys) {
+          cancelledOperations.add(handleId);
+          if (active) {
+            for (const session of active.values()) session.close();
+            activeOperations.delete(handleId);
+          }
+          for (const sessionKey of sessionKeys) sessions.invalidate(sessionKey);
           bus.emit({ channel: 'ops', handleId, kind: 'error', payload: { code: 'CANCELLED' } });
         }
+      },
+      bookmarks: {
+        list: async () => queryArtifacts.listBookmarks(),
+        create: async (input) => queryArtifacts.createBookmark(input),
+        delete: async (id) => queryArtifacts.deleteBookmark(id),
+      },
+      snapshots: {
+        list: async () => queryArtifacts.listSnapshots(),
+        create: async (input) => queryArtifacts.createSnapshot(input),
+        get: async (id) => queryArtifacts.getSnapshot(id),
+        delete: async (id) => queryArtifacts.deleteSnapshot(id),
+      },
+      async createTableRow(req) {
+        return withSession(req, async (session) => {
+          const result = await createRowWithFallback(
+            (varbinds) => session.set(varbinds),
+            req.rowStatusOid,
+            req.requiredColumns,
+          );
+          return { ...result, varbinds: named(result.varbinds) };
+        });
+      },
+      async deleteTableRow(req) {
+        return withSession(req, async (session) =>
+          named(await session.set([{ oid: req.rowStatusOid, type: 'Integer', value: '6' }])),
+        );
       },
     },
 
     traps: {
       async startReceiver(cfg) {
         if (receiver) await receiver.stop();
-        receiver = new TrapReceiver(
+        const storedUsers = await trapStore.resolveV3Users();
+        receiverRingCap = Math.max(100, Math.min(500_000, Math.trunc(cfg.ringCap ?? 50_000)));
+        const nextReceiver = new TrapReceiver(
           (rec) => {
-            named(rec.varbinds);
-            if (rec.trapOid) rec.trapName = mibStore.index.resolve(rec.trapOid)?.name;
-            traps.unshift(rec);
-            if (traps.length > TRAP_RING_CAP) traps.length = TRAP_RING_CAP;
-            bus.emit({ channel: 'traps', kind: 'trap', payload: rec });
+            const stored = decorateAndStoreTrap(rec);
+            bus.emit({ channel: 'traps', kind: 'trap', payload: stored });
           },
           (err) => bus.emit({ channel: 'traps', kind: 'error', payload: String(err) }),
         );
-        const { port } = receiver.start(cfg);
-        receiverPort = port;
-        const status = { running: true, port, count: traps.length };
-        bus.emit({ channel: 'traps', kind: 'status', payload: status });
-        return status;
+        const requestedPort = cfg.port ?? (transport.platform === 'node' ? 162 : 1162);
+        try {
+          let bound: { port: number; transports: ('udp4' | 'udp6')[] };
+          try {
+            bound = await nextReceiver.start({
+              ...cfg,
+              port: requestedPort,
+              v3Users: [...storedUsers, ...(cfg.v3Users ?? [])],
+            });
+          } catch (error) {
+            if (
+              cfg.port === undefined &&
+              transport.platform === 'node' &&
+              error instanceof MibBeaconError &&
+              error.code === 'PORT_BIND_DENIED'
+            ) {
+              bound = await nextReceiver.start({
+                ...cfg,
+                port: 1162,
+                v3Users: [...storedUsers, ...(cfg.v3Users ?? [])],
+              });
+            } else {
+              throw error;
+            }
+          }
+          receiver = nextReceiver;
+          receiverPort = bound.port;
+          receiverTransports = bound.transports;
+          receiverDrops = nextReceiver.dropCount;
+          const status = {
+            running: true,
+            port: bound.port,
+            count: trapStore.count(),
+            drops: receiverDrops,
+            transports: receiverTransports,
+          };
+          bus.emit({ channel: 'traps', kind: 'status', payload: status });
+          return status;
+        } catch (error) {
+          await nextReceiver.stop();
+          receiver = null;
+          receiverPort = undefined;
+          receiverTransports = [];
+          throw error;
+        }
       },
 
       async stopReceiver() {
         if (receiver) {
+          receiverDrops = receiver.dropCount;
           await receiver.stop();
           receiver = null;
           receiverPort = undefined;
+          receiverTransports = [];
         }
         bus.emit({
           channel: 'traps',
           kind: 'status',
-          payload: { running: false, count: traps.length },
+          payload: { running: false, count: trapStore.count(), drops: receiverDrops },
         });
       },
 
       async status() {
-        return { running: receiver !== null, port: receiverPort, count: traps.length };
+        if (receiver) receiverDrops = receiver.dropCount;
+        return {
+          running: receiver !== null,
+          port: receiverPort,
+          count: trapStore.count(),
+          drops: receiverDrops,
+          ...(receiverTransports.length ? { transports: receiverTransports } : {}),
+        };
       },
 
       async list() {
-        return traps.slice();
+        return trapStore.list();
+      },
+
+      async query(query) {
+        return trapStore.query(query);
+      },
+
+      async markRead(ids, read = true) {
+        trapStore.markRead(ids, read);
+      },
+
+      async delete(ids) {
+        trapStore.delete(ids);
+        bus.emit({ channel: 'traps', kind: 'removed', payload: { ids } });
+      },
+
+      async unreadCount() {
+        return trapStore.unreadCount();
       },
 
       async clear() {
-        traps.length = 0;
+        trapStore.clear();
         bus.emit({ channel: 'traps', kind: 'cleared', payload: { count: 0 } });
       },
 
+      v3Users: {
+        list: async () => trapStore.listV3Users(),
+        upsert: async (draft) => trapStore.upsertV3User(draft),
+        remove: async (name) => trapStore.removeV3User(name),
+      },
+
+      savedFilters: {
+        list: async () => trapStore.listFilters(),
+        save: async (name, query) => trapStore.saveFilter(name, query),
+        remove: async (id) => trapStore.removeFilter(id),
+      },
+
+      presets: {
+        list: async () => trapStore.listPresets(),
+        save: async (name, agentId, payload) => trapStore.savePreset(name, agentId, payload),
+        remove: async (id) => trapStore.removePreset(id),
+      },
+
+      rules: {
+        list: async () => trapStore.listRules(),
+        create: async (draft) => trapStore.createRule(draft),
+        update: async (id, draft) => trapStore.updateRule(id, draft),
+        remove: async (id) => trapStore.removeRule(id),
+      },
+
       async send(req) {
-        const session = new SnmpSession(req.target);
+        const target = 'agentId' in req ? await agentStore.resolve(req.agentId) : req.target;
+        if ('agentId' in req) await agentStore.api.markUsed(req.agentId);
+        const session = new SnmpSession(target);
         try {
-          const { target: _target, ...payload } = req;
+          const payload =
+            'agentId' in req
+              ? (({ agentId: _agentId, ...value }) => value)(req)
+              : (({ target: _target, ...value }) => value)(req);
           return await session.sendNotification(payload);
         } finally {
           session.close();
@@ -356,9 +780,37 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       subscribe: (channel, listener) => bus.subscribe(channel, listener),
     },
 
-    agents: stub('plan 04'),
+    agents: {
+      ...agentStore.api,
+      async update(id, draft) {
+        const profile = await agentStore.api.update(id, draft);
+        sessions.invalidate(`saved:${id}`);
+        return profile;
+      },
+      async delete(id) {
+        await agentStore.api.delete(id);
+        sessions.invalidate(`saved:${id}`);
+      },
+      async test(id) {
+        const agent = await agentStore.resolve(id);
+        const oids = ['1.3.6.1.2.1.1.1.0', '1.3.6.1.2.1.1.3.0', '1.3.6.1.2.1.1.2.0'];
+        const started = Date.now();
+        let varbinds: DecodedVarbind[];
+        if (opts.agentTester) varbinds = await opts.agentTester(agent, oids);
+        else {
+          const session = new SnmpSession(agent);
+          try {
+            varbinds = await session.get(oids);
+          } finally {
+            session.close();
+          }
+        }
+        await agentStore.api.markUsed(id);
+        return { latencyMs: Math.max(0, Date.now() - started), varbinds: named(varbinds) };
+      },
+    },
     resolver: resolverService.api,
-    tools: stub('plan 08'),
-    logs: stub('plan 04'),
+    tools: toolService.api,
+    logs: logService.api,
   };
 }

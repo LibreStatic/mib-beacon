@@ -13,14 +13,46 @@ export {
 } from './events';
 export { MibBeaconError, type MibBeaconErrorCode } from './errors';
 export { inferWireType, validateVarbindInput } from './snmp/wire-types';
+export type { RowStatusCreateResult } from './ops/row-status';
+export { decodeTableIndex } from '@mibbeacon/smi/client';
 export type {
   EngineAPI,
   EngineInfo,
   GetRequest,
   SetRequest,
   WalkRequest,
+  AgentTarget,
+  OperationTarget,
+  AgentProfileInput,
+  AgentV3Input,
+  AgentSecretsInput,
+  AgentProfile,
+  AgentCreateDraft,
+  AgentUpdateDraft,
+  AgentGroup,
+  AgentTestResult,
   OperationHandle,
+  OperationStartRequest,
+  OperationStats,
+  BookmarkOperation,
+  OperationBookmarkInput,
+  OperationBookmark,
+  WalkSnapshotInput,
+  WalkSnapshotSummary,
+  WalkSnapshot,
+  TableRowCreateRequest,
+  TableRowDeleteRequest,
   TrapReceiverStatus,
+  TrapQuery,
+  TrapSavedFilter,
+  TrapV3UserProfile,
+  TrapV3UserDraft,
+  TrapSendPreset,
+  TrapRuleCondition,
+  TrapRuleActions,
+  TrapRule,
+  TrapRuleDraft,
+  NotificationAgentSendRequest,
   MibsAPI,
   MibStartImportRequest,
   ResolverAPI,
@@ -37,6 +69,17 @@ export type {
   OidLookupRequest,
   OidLookupResult,
   ResolverHistoryEntry,
+  PollMode,
+  PollSeries,
+  PollSeriesDraft,
+  PollSample,
+  PollWatch,
+  PollChart,
+  DiscoveryCredential,
+  DiscoveryResult,
+  WalkDiffRow,
+  PortViewRow,
+  ToolsAPI,
 } from './api/engine-api';
 export type { SourceConfig, SourceKind } from '@mibbeacon/resolver';
 export type {
@@ -57,6 +100,7 @@ export type {
   MibFileInspection,
   MibFilesInspection,
 } from '@mibbeacon/smi';
+export type { TableIndexDescriptor } from '@mibbeacon/smi/client';
 export type {
   AgentSpec,
   V3Credentials,

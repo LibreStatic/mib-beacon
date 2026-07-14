@@ -1,0 +1,7 @@
+FIXTURE-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS enterprises FROM SNMPv2-SMI;
+
+fixtureRoot OBJECT IDENTIFIER ::= { enterprises 424242 }
+
+END

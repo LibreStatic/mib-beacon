@@ -246,7 +246,7 @@ describe('JsonCatalogSource', () => {
     expect(http.requests.filter(({ url }) => url === CONFIG.catalogUrl)).toHaveLength(2);
   });
 
-  it.each([403, 429])('returns HTTP %s catalog failures as retry metadata', async (status) => {
+  it.each([401, 403, 429])('returns HTTP %s catalog failures as retry metadata', async (status) => {
     const http = new FixtureHttpClient({
       [CONFIG.catalogUrl]: { status, ok: false, headers: { 'retry-after': '5' } },
     });

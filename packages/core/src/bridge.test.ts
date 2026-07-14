@@ -3,6 +3,32 @@ import type { EngineAPI } from './api/engine-api';
 import { dispatchEngineCall } from './bridge';
 
 describe('engine bridge', () => {
+  it('dispatches the in-memory logs query, level, and export methods', async () => {
+    const query = vi.fn().mockResolvedValue([{ id: 'log-1', level: 'error' }]);
+    const setLevel = vi.fn().mockResolvedValue(undefined);
+    const exportLogs = vi.fn().mockResolvedValue({ path: '/tmp/logs.jsonl', count: 1 });
+    const engine = {
+      logs: { query, setLevel, export: exportLogs },
+    } as unknown as EngineAPI;
+    const filter = { minLevel: 'warn' as const, limit: 10 };
+
+    await expect(dispatchEngineCall(engine, 'logs.query', [filter])).resolves.toEqual({
+      ok: true,
+      value: [{ id: 'log-1', level: 'error' }],
+    });
+    await expect(dispatchEngineCall(engine, 'logs.setLevel', ['warn'])).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(dispatchEngineCall(engine, 'logs.export', ['/tmp/logs.jsonl'])).resolves.toEqual({
+      ok: true,
+      value: { path: '/tmp/logs.jsonl', count: 1 },
+    });
+    expect(query).toHaveBeenCalledWith(filter);
+    expect(setLevel).toHaveBeenCalledWith('warn');
+    expect(exportLogs).toHaveBeenCalledWith('/tmp/logs.jsonl');
+  });
+
   it('dispatches typed Set requests', async () => {
     const set = vi.fn().mockResolvedValue([{ oid: '1.3.6.1', value: 7 }]);
     const engine = { ops: { set } } as unknown as EngineAPI;
@@ -89,5 +115,25 @@ describe('engine bridge', () => {
       value: { handleId: 'preview-1' },
     });
     expect(preview).toHaveBeenCalledWith(draft);
+  });
+
+  it('dispatches agent profile and group methods without exposing a credential resolver', async () => {
+    const list = vi.fn().mockResolvedValue([]);
+    const createGroup = vi.fn().mockResolvedValue({ id: 'group-1', name: 'Lab', agentIds: [] });
+    const engine = {
+      agents: { list, groups: { create: createGroup } },
+    } as unknown as EngineAPI;
+
+    await expect(dispatchEngineCall(engine, 'agents.list', [])).resolves.toEqual({
+      ok: true,
+      value: [],
+    });
+    await expect(
+      dispatchEngineCall(engine, 'agents.groups.create', [{ name: 'Lab', agentIds: [] }]),
+    ).resolves.toMatchObject({ ok: true, value: { id: 'group-1' } });
+    await expect(dispatchEngineCall(engine, 'agents.resolve', ['agent-1'])).resolves.toMatchObject({
+      ok: false,
+      error: { message: expect.stringMatching(/unknown method/i) },
+    });
   });
 });

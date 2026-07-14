@@ -25,6 +25,21 @@ function num(
   return typeof v === 'number' ? v : fallback;
 }
 
+/**
+ * node-net-snmp falls back to process.uptime() when upTime is absent or zero.
+ * React Native's process shim has no uptime function, so always provide a
+ * positive TimeTicks value. One tick is the closest value the dependency can
+ * encode when callers explicitly request zero.
+ */
+function notificationUptimeTicks(explicit?: number): number {
+  if (explicit !== undefined) return Math.max(1, explicit);
+  const runtimeMs =
+    typeof globalThis.performance?.now === 'function'
+      ? globalThis.performance.now()
+      : Date.now() % 42_949_672_960;
+  return Math.max(1, Math.floor(runtimeMs / 10) % 4_294_967_296);
+}
+
 /** Decode a raw net-snmp varbind into a UI-friendly, structured-clone-safe shape. */
 export function decodeVarbind(vb: Varbind): DecodedVarbind {
   const typeName = snmp.ObjectType[vb.type] ?? String(vb.type);
@@ -41,12 +56,33 @@ export function decodeVarbind(vb: Varbind): DecodedVarbind {
   let value: string | number;
   const raw = vb.value;
   if (raw instanceof Uint8Array) {
+    if (vb.type === snmp.ObjectType.Counter64) {
+      let counter = 0n;
+      for (const byte of raw) counter = (counter << 8n) | BigInt(byte);
+      value = counter.toString();
+      return {
+        oid: vb.oid,
+        type: vb.type,
+        typeName,
+        value,
+        rawValue: value,
+        isError: false,
+      };
+    }
     // OCTET STRING etc. — expose printable text, fall back to hex.
     const bytes = Array.from(raw);
     const printable = bytes.every((b) => b === 9 || b === 10 || b === 13 || (b >= 32 && b < 127));
-    value = printable
-      ? new TextDecoder().decode(raw)
-      : bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+    const rawHex = bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+    value = printable ? new TextDecoder().decode(raw) : rawHex;
+    return {
+      oid: vb.oid,
+      type: vb.type,
+      typeName,
+      value,
+      rawValue: rawHex,
+      rawHex,
+      isError: false,
+    };
   } else if (typeof raw === 'bigint') {
     value = raw.toString();
   } else if (typeof raw === 'number' || typeof raw === 'string') {
@@ -54,7 +90,7 @@ export function decodeVarbind(vb: Varbind): DecodedVarbind {
   } else {
     value = String(raw);
   }
-  return { oid: vb.oid, type: vb.type, typeName, value, isError: false };
+  return { oid: vb.oid, type: vb.type, typeName, value, rawValue: value, isError: false };
 }
 
 export class SnmpSession {
@@ -106,11 +142,48 @@ export class SnmpSession {
     });
   }
 
+  getBulk(oids: string[], nonRepeaters = 0, maxRepetitions = 20): Promise<DecodedVarbind[]> {
+    if (this.version === 'v1') {
+      return Promise.reject(new MibBeaconError('REQ_FAILED', 'GetBulk requires SNMP v2c or v3'));
+    }
+    return new Promise((resolve, reject) => {
+      const bulkSession = this.session as Session & {
+        getBulk(
+          requestOids: string[],
+          requestNonRepeaters: number,
+          requestMaxRepetitions: number,
+          callback: (error: Error | null, varbinds: Varbind[]) => void,
+        ): void;
+      };
+      bulkSession.getBulk(oids, nonRepeaters, maxRepetitions, (error, varbinds) => {
+        if (error) return reject(mapSnmpError(error));
+        resolve(varbinds.map(decodeVarbind));
+      });
+    });
+  }
+
   set(inputs: SnmpVarbindInput[]): Promise<DecodedVarbind[]> {
     const encoded = inputs.map(encodeVarbindInput);
     return new Promise((resolve, reject) => {
       this.session.set(encoded, (error, varbinds) => {
-        if (error) return reject(mapSnmpError(error));
+        if (error) {
+          const mapped = mapSnmpError(error);
+          const errorIndex = inputs.findIndex((input) => error.message.includes(input.oid));
+          if (errorIndex >= 0) {
+            return reject(
+              new MibBeaconError(mapped.code, mapped.message, {
+                hint: mapped.hint,
+                cause: error,
+                details: {
+                  ...mapped.details,
+                  errorIndex: errorIndex + 1,
+                  oid: inputs[errorIndex]!.oid,
+                },
+              }),
+            );
+          }
+          return reject(mapped);
+        }
         resolve(varbinds.map(decodeVarbind));
       });
     });
@@ -118,7 +191,9 @@ export class SnmpSession {
 
   sendNotification(input: NotificationPayload): Promise<NotificationSendResult> {
     if (!/^\d+(?:\.\d+)+$/.test(input.trapOid.trim())) {
-      return Promise.reject(new MibBeaconError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'));
+      return Promise.reject(
+        new MibBeaconError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'),
+      );
     }
     if (input.kind === 'inform' && this.version === 'v1') {
       return Promise.reject(new MibBeaconError('REQ_FAILED', 'SNMP informs require v2c or v3.'));
@@ -152,13 +227,44 @@ export class SnmpSession {
       'EgpNeighborLoss',
     ];
     const standardMatch = /^1\.3\.6\.1\.6\.3\.1\.1\.5\.([1-6])$/.exec(oid);
-    const typeOrOid =
-      this.version === 'v1' && standardMatch
-        ? snmp.TrapType[standardV1[Number(standardMatch[1]) - 1]!]!
-        : oid;
+    let typeOrOid: string | number = oid;
+    if (this.version === 'v1') {
+      if (input.v1Generic !== undefined) {
+        if (!Number.isInteger(input.v1Generic) || input.v1Generic < 0 || input.v1Generic > 6) {
+          return Promise.reject(
+            new MibBeaconError('REQ_FAILED', 'SNMPv1 generic trap must be 0 through 6.'),
+          );
+        }
+        if (input.v1Generic === 6) {
+          const enterprise = input.v1Enterprise?.trim();
+          const specific = input.v1Specific ?? 0;
+          if (
+            !enterprise ||
+            !/^\d+(?:\.\d+)+$/.test(enterprise) ||
+            !Number.isInteger(specific) ||
+            specific < 0
+          ) {
+            return Promise.reject(
+              new MibBeaconError(
+                'REQ_FAILED',
+                'Enterprise-specific v1 traps require a numeric enterprise OID and non-negative specific code.',
+              ),
+            );
+          }
+          typeOrOid = `${enterprise}.${specific}`;
+        } else {
+          typeOrOid = input.v1Generic;
+        }
+      } else if (standardMatch) {
+        typeOrOid = snmp.TrapType[standardV1[Number(standardMatch[1]) - 1]!]!;
+      } else {
+        const enterpriseSpecific = /^(.*)\.0\.(\d+)$/.exec(oid);
+        typeOrOid = enterpriseSpecific ? `${enterpriseSpecific[1]}.${enterpriseSpecific[2]}` : oid;
+      }
+    }
     const varbinds = input.varbinds.map(encodeVarbindInput);
     const options = {
-      ...(input.upTime !== undefined ? { upTime: input.upTime } : {}),
+      upTime: notificationUptimeTicks(input.upTime),
       ...(input.agentAddress ? { agentAddr: input.agentAddress } : {}),
     };
     const sentAt = Date.now();
@@ -190,16 +296,40 @@ export class SnmpSession {
   walk(
     baseOid: string,
     onBatch: (batch: DecodedVarbind[]) => void,
-    opts: { maxRepetitions?: number } = {},
+    opts: { maxRepetitions?: number; maxVarbinds?: number } = {},
   ): Promise<number> {
     return new Promise((resolve, reject) => {
       let total = 0;
+      let previousOid: string | null = null;
+      let guardError: MibBeaconError | null = null;
+      const maxVarbinds = opts.maxVarbinds ?? 100_000;
       const feed = (varbinds: Varbind[]) => {
+        if (guardError) return;
         const decoded = varbinds.map(decodeVarbind);
+        for (const varbind of decoded) {
+          if (previousOid && compareOids(varbind.oid, previousOid) <= 0) {
+            guardError = new MibBeaconError(
+              'REQ_OID_NOT_INCREASING',
+              `Agent returned non-increasing OID ${varbind.oid} after ${previousOid}`,
+              { hint: 'The agent is misbehaving; reduce GetBulk sizing or use GetNext.' },
+            );
+            return;
+          }
+          previousOid = varbind.oid;
+        }
+        if (total + decoded.length > maxVarbinds) {
+          guardError = new MibBeaconError(
+            'REQ_TOO_BIG',
+            `Walk hard cap of ${maxVarbinds} varbinds was reached`,
+            { hint: 'Narrow the subtree or explicitly raise the walk cap.' },
+          );
+          return;
+        }
         total += decoded.length;
         onBatch(decoded);
       };
       this.session.subtree(baseOid, opts.maxRepetitions ?? 20, feed, (error) => {
+        if (guardError) return reject(guardError);
         if (error) return reject(mapSnmpError(error));
         resolve(total);
       });
@@ -213,4 +343,15 @@ export class SnmpSession {
       /* already closed */
     }
   }
+}
+
+function compareOids(left: string, right: string): number {
+  const a = left.split('.').map(Number);
+  const b = right.split('.').map(Number);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if (a[index] === undefined) return -1;
+    if (b[index] === undefined) return 1;
+    if (a[index]! !== b[index]!) return a[index]! - b[index]!;
+  }
+  return 0;
 }

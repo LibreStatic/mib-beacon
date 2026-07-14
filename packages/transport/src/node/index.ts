@@ -6,6 +6,7 @@ import { createNodeFileStore } from './files';
 import { nodeStorageFactory } from './storage';
 import { createInMemorySecretStore } from './secrets';
 import { nodeHttpClient } from './http';
+import { nodeCommandRunner } from './commands';
 
 export { nodeUdpFactory } from './udp';
 export { nodeTcpFactory } from './tcp';
@@ -15,6 +16,7 @@ export { nodeStorageFactory } from './storage';
 export { createInMemorySecretStore, createPersistentSecretStore } from './secrets';
 export type { SecretCodec, PersistentSecretStoreOptions } from './secrets';
 export { nodeHttpClient } from './http';
+export { nodeCommandRunner } from './commands';
 
 export interface NodeTransportOptions {
   dataDir?: string;
@@ -31,6 +33,8 @@ export function createNodeTransport(opts: NodeTransportOptions = {}): Transport 
     storage: nodeStorageFactory,
     secrets: opts.secrets ?? createInMemorySecretStore(),
     http: nodeHttpClient,
+    commands: nodeCommandRunner,
     platform: 'node',
+    hostOs: process.platform,
   };
 }

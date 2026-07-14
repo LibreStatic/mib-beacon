@@ -25,9 +25,24 @@ export interface MibNodeDetail extends MibNodeSummary {
   namedPath?: string;
   syntax?: string;
   status?: string;
+  units?: string;
   description?: string;
   /** INDEX clause column names for entry rows. */
   indexes?: string[];
+  /** INDEX members marked IMPLIED for variable-length instance decoding. */
+  impliedIndexes?: string[];
+  /** Base entry named by an AUGMENTS clause. */
+  augments?: string[];
+  /** Resolved textual convention names followed by the primitive syntax. */
+  textualConventionChain?: string[];
+  /** RFC 2579 DISPLAY-HINT inherited from the resolved textual convention. */
+  displayHint?: string;
+  /** Enumeration labels retained from INTEGER/BITS syntax. */
+  enumValues?: Record<string, number>;
+  /** Every module definition retained when vendors assign the same numeric OID. */
+  definitions?: { module: string; name: string }[];
+  /** Non-fatal metadata conflicts relevant to display/decoding. */
+  warnings?: string[];
   /** OBJECTS clause of a NOTIFICATION-TYPE. */
   objects?: string[];
 }
@@ -36,6 +51,9 @@ export interface ModuleInfo {
   name: string;
   objectCount: number;
   isBase: boolean;
+  lastUpdated?: string;
+  revision?: string;
+  organization?: string;
 }
 
 export interface ModuleDependency {
@@ -103,6 +121,7 @@ export interface MibSearchHit {
   kind: MibNodeKind;
   /** which field matched */
   matched: 'name' | 'oid' | 'description';
+  highlights?: { field: 'name' | 'oid' | 'description'; start: number; end: number }[];
 }
 
 export interface ResolvedName {
@@ -111,4 +130,10 @@ export interface ResolvedName {
   module?: string;
   /** OID of the matched definition (prefix of the input). */
   definitionOid: string;
+}
+
+export interface OidTranslation {
+  oid: string;
+  name: string;
+  module?: string;
 }

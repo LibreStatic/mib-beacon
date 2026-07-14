@@ -22,6 +22,16 @@ describe('runMigrations', () => {
         'resolver_lookup_cache',
         'resolver_history',
         'resolver_cooldowns',
+        'traps',
+        'trap_v3_users',
+        'trap_saved_filters',
+        'trap_send_presets',
+        'trap_rules',
+        'resolver_source_stats',
+        'poll_series',
+        'poll_samples',
+        'poll_watches',
+        'poll_charts',
       ]),
     );
     db.close();

@@ -5,9 +5,11 @@ import {
   MibResolver,
   OidBaseClient,
   OidRefClient,
+  enterpriseNumberFromOid,
   type MibImport,
   type CachedMib,
   type MibCache,
+  type IanaEnterpriseRecord,
   type ResolverProgress,
   type ResolverResult,
 } from '@mibbeacon/resolver';
@@ -27,18 +29,20 @@ import { getSetting, setSetting } from './db/migrate';
 import { PersistentMibCache, ResolverSourceStore } from './db/resolver-store';
 import { validateMibFileBatch } from './mib-file-limits';
 import type { AsyncMutationQueue } from './async-mutex';
+import { persistMibCatalog } from './db/mib-catalog-store';
 
 const DEFAULT_CONSENT_TTL_MS = 5 * 60 * 1_000;
 const URL_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_SETTINGS: ResolverSettings = {
-  enabled: true,
-  autoResolveImports: true,
+  enabled: false,
+  autoResolveImports: false,
   externalConsentRemembered: false,
 };
 
 interface ResolverServiceOptions {
   now?: () => number;
   consentTtlMs?: number;
+  oidBaseIntervalMs?: number;
 }
 
 interface ImportOperation {
@@ -47,6 +51,7 @@ interface ImportOperation {
   request:
     | MibStartImportRequest
     | { modules: string[] }
+    | { cachedModules: string[] }
     | { sourceTest: { sourceId: string; module: string } }
     | { sourcePreview: ResolverSourceDraft }
     | { oidLookup: { oid: string; network: boolean } };
@@ -89,6 +94,9 @@ export class ResolverService {
   private readonly operations = new Map<string, ImportOperation>();
   private readonly now: () => number;
   private readonly consentTtlMs: number;
+  private readonly oidBaseIntervalMs: number;
+  private oidBaseLastRequestAt = Number.NEGATIVE_INFINITY;
+  private oidBaseQueue: Promise<void> = Promise.resolve();
   private sequence = 0;
 
   constructor(
@@ -101,6 +109,7 @@ export class ResolverService {
   ) {
     this.now = options.now ?? Date.now;
     this.consentTtlMs = options.consentTtlMs ?? DEFAULT_CONSENT_TTL_MS;
+    this.oidBaseIntervalMs = Math.max(0, options.oidBaseIntervalMs ?? 1_000);
     this.cache = new PersistentMibCache(db, transport.files);
     this.sourceStore = new ResolverSourceStore(db, transport.secrets, transport.platform, this.now);
     this.sourceStore.seedBuiltIns();
@@ -127,7 +136,8 @@ export class ResolverService {
         if (response.allow && !response.askAgain) {
           this.writeSettings({ externalConsentRemembered: true });
         }
-        if (!response.allow) this.finish(operation, 'cancelled', 'cancelled', { reason: 'External access denied' });
+        if (!response.allow)
+          this.finish(operation, 'cancelled', 'cancelled', { reason: 'External access denied' });
         const resume = operation.consent;
         operation.consent = undefined;
         resume(response.allow);
@@ -181,9 +191,16 @@ export class ResolverService {
       },
       resolveModules: async (modules) => {
         const operation = this.createOperation({ modules });
-          void this.mutationQueue
-            .run(() => this.runExplicitResolution(operation, modules))
-            .catch((error) => this.failUnexpected(operation, error));
+        void this.mutationQueue
+          .run(() => this.runExplicitResolution(operation, modules))
+          .catch((error) => this.failUnexpected(operation, error));
+        return { handleId: operation.status.handleId };
+      },
+      loadCachedModules: async (modules) => {
+        const operation = this.createOperation({ cachedModules: unique(modules) });
+        void this.mutationQueue
+          .run(() => this.runCachedResolution(operation, unique(modules)))
+          .catch((error) => this.failUnexpected(operation, error));
         return { handleId: operation.status.handleId };
       },
       lookupOid: async (request) => {
@@ -226,17 +243,20 @@ export class ResolverService {
     operation.stagedCache = new StagedMibCache(this.cache);
     const files = await this.materializeRequest(operation.request, operation.controller.signal);
     if (operation.controller.signal.aborted) return;
-    const replaceModules = 'files' in operation.request && operation.request.files
-      ? operation.request.replaceModules ?? []
-      : [];
+    const replaceModules =
+      'files' in operation.request && operation.request.files
+        ? (operation.request.replaceModules ?? [])
+        : [];
     const initial = this.importIntoStage(operation, files, replaceModules);
     operation.status.loadedModules.push(...initial.loaded);
     this.emit(operation, 'local-result', initial);
     const missing = collectMissing(initial);
     if (missing.length === 0) {
       const state = initial.errors.length === 0 ? 'done' : 'error';
-      operation.status.failures.push(...initial.errors.map((error) => ({ message: error.message })));
-      if (state === 'done') this.commitStage(operation);
+      operation.status.failures.push(
+        ...initial.errors.map((error) => ({ message: error.message })),
+      );
+      if (state === 'done') await this.commitStage(operation);
       this.finish(operation, state, state, initial);
       return;
     }
@@ -246,15 +266,21 @@ export class ResolverService {
         .map((error) => ({ message: error.message })),
     );
     const failedNames = new Set(
-      initial.errors.filter((error) => error.code === 'MIB_MISSING_IMPORTS').map((error) => error.name),
+      initial.errors
+        .filter((error) => error.code === 'MIB_MISSING_IMPORTS')
+        .map((error) => error.name),
     );
     // Batch parsing is atomic, so retry the exact submitted batch after its
     // external dependencies have been resolved.
-    const retryFiles = initial.loaded.length === 0 ? files : files.filter((file) => failedNames.has(file.name));
+    const retryFiles =
+      initial.loaded.length === 0 ? files : files.filter((file) => failedNames.has(file.name));
     await this.resolveAndRetry(operation, missing, retryFiles);
   }
 
-  private async runExplicitResolution(operation: ImportOperation, modules: string[]): Promise<void> {
+  private async runExplicitResolution(
+    operation: ImportOperation,
+    modules: string[],
+  ): Promise<void> {
     operation.stagedStore = this.mibStore.fork();
     operation.stagedCache = new StagedMibCache(this.cache);
     await this.resolveAndRetry(
@@ -265,6 +291,23 @@ export class ResolverService {
     );
   }
 
+  private async runCachedResolution(
+    operation: ImportOperation,
+    modules: string[],
+  ): Promise<void> {
+    operation.stagedStore = this.mibStore.fork();
+    operation.stagedCache = new StagedMibCache(this.cache);
+    this.transition(operation, 'resolving-cache');
+    const resolution = await this.runResolver(
+      operation,
+      modules.map((module) => ({ module, symbols: [] })),
+      [],
+    );
+    this.loadResolvedDocuments(operation, resolution);
+    if (operation.controller.signal.aborted) return;
+    await this.retryAndFinish(operation, [], resolution);
+  }
+
   private async resolveAndRetry(
     operation: ImportOperation,
     missing: MibImport[],
@@ -272,9 +315,14 @@ export class ResolverService {
     explicit = false,
   ): Promise<void> {
     if (!this.readSettings().enabled || (!explicit && !this.readSettings().autoResolveImports)) {
-      operation.status.failures.push(...missing.map(({ module }) => ({ module, message: 'Automatic resolution is disabled' })));
+      operation.status.failures.push(
+        ...missing.map(({ module }) => ({ module, message: 'Automatic resolution is disabled' })),
+      );
       operation.status.loadedModules = [];
-      this.finish(operation, 'error', 'error', {});
+      this.finish(operation, 'error', 'error', {
+        code: 'RESOLVER_DISABLED',
+        message: 'Resolver network access is disabled in Settings',
+      });
       return;
     }
     this.transition(operation, 'resolving-cache');
@@ -291,7 +339,10 @@ export class ResolverService {
     operation.status.sourceHosts = unique(sources.flatMap((source) => source.hosts));
     if (sources.length === 0) {
       operation.status.failures.push(
-        ...cacheResult.failed.map((failure) => ({ module: failure.module, message: failure.reason })),
+        ...cacheResult.failed.map((failure) => ({
+          module: failure.module,
+          message: failure.reason,
+        })),
       );
       operation.status.loadedModules = [];
       this.finish(operation, 'error', 'error', {
@@ -302,7 +353,8 @@ export class ResolverService {
     const settings = this.readSettings();
     if (!settings.externalConsentRemembered) {
       const allowed = await this.waitForConsent(operation);
-      if (!allowed || operation.controller.signal.aborted || isTerminal(operation.status.state)) return;
+      if (!allowed || operation.controller.signal.aborted || isTerminal(operation.status.state))
+        return;
     }
     this.transition(operation, 'resolving');
     const networkResult = await this.runResolver(operation, missing, sources);
@@ -315,13 +367,19 @@ export class ResolverService {
     const now = this.now();
     const cooling = new Set(
       this.db
-        .all<{ source_id: string }>('SELECT source_id FROM resolver_cooldowns WHERE until_at > ?', [now])
+        .all<{ source_id: string }>('SELECT source_id FROM resolver_cooldowns WHERE until_at > ?', [
+          now,
+        ])
         .map((row) => row.source_id),
     );
     return this.sourceStore.instantiate(this.transport).filter((source) => !cooling.has(source.id));
   }
 
-  private runResolver(operation: ImportOperation, missing: MibImport[], sources: ReturnType<ResolverService['availableSources']>): Promise<ResolverResult> {
+  private runResolver(
+    operation: ImportOperation,
+    missing: MibImport[],
+    sources: ReturnType<ResolverService['availableSources']>,
+  ): Promise<ResolverResult> {
     const resolver = new MibResolver({
       sources,
       cache: operation.stagedCache ?? this.cache,
@@ -329,13 +387,41 @@ export class ResolverService {
     });
     return resolver.resolve({
       missingImports: missing,
-      availableModules: this.requireStage(operation).listModules().map((module) => module.name),
+      availableModules: this.requireStage(operation)
+        .listModules()
+        .map((module) => module.name),
       signal: operation.controller.signal,
       onProgress: (progress) => this.onProgress(operation, progress),
     });
   }
 
   private onProgress(operation: ImportOperation, progress: ResolverProgress): void {
+    if (progress.type === 'cache-hit') {
+      this.db.run(
+        `INSERT INTO resolver_source_stats (source_id, last_used_at, last_result, cache_hits)
+         VALUES ('cache', ?, 'cache hit', 1) ON CONFLICT(source_id) DO UPDATE SET
+         last_used_at=excluded.last_used_at, last_result=excluded.last_result,
+         cache_hits=resolver_source_stats.cache_hits + 1`,
+        [this.now()],
+      );
+    } else if ('sourceId' in progress) {
+      const lastResult =
+        progress.type === 'source-attempt'
+          ? `Trying ${progress.module}`
+          : progress.type === 'source-found'
+            ? `Found ${progress.module}`
+            : progress.type === 'source-error'
+              ? `Error: ${progress.message}`
+              : progress.type === 'source-miss'
+                ? `Miss: ${progress.reason ?? progress.module}`
+                : `Cooldown until ${new Date(progress.until).toISOString()}`;
+      this.db.run(
+        `INSERT INTO resolver_source_stats (source_id, last_used_at, last_result, cache_hits)
+         VALUES (?, ?, ?, 0) ON CONFLICT(source_id) DO UPDATE SET
+         last_used_at=excluded.last_used_at, last_result=excluded.last_result`,
+        [progress.sourceId, this.now(), lastResult],
+      );
+    }
     if (progress.type === 'source-cooldown') {
       this.db.run(
         `INSERT INTO resolver_cooldowns (source_id, http_status, until_at, updated_at)
@@ -347,11 +433,28 @@ export class ResolverService {
     this.emit(operation, 'source-progress', progress);
   }
 
+  private recordSourceTest(
+    sourceId: string,
+    module: string,
+    ok: boolean,
+    message?: string,
+  ): void {
+    const result = ok ? `Found ${module}` : `Test failed: ${message ?? module}`;
+    this.db.run(
+      `INSERT INTO resolver_source_stats (source_id, last_used_at, last_result, cache_hits)
+       VALUES (?, ?, ?, 0) ON CONFLICT(source_id) DO UPDATE SET
+       last_used_at=excluded.last_used_at, last_result=excluded.last_result`,
+      [sourceId, this.now(), result],
+    );
+  }
+
   private loadResolvedDocuments(operation: ImportOperation, result: ResolverResult): void {
     const stagedStore = this.requireStage(operation);
     for (const document of result.documents) {
       if (stagedStore.listModules().some((module) => module.name === document.module)) continue;
-      const imported = stagedStore.importTexts([{ name: document.module, content: document.content }]);
+      const imported = stagedStore.importTexts([
+        { name: document.module, content: document.content },
+      ]);
       operation.status.loadedModules.push(...imported.loaded);
       operation.status.failures.push(
         ...imported.errors.map((error) => ({ module: document.module, message: error.message })),
@@ -364,9 +467,10 @@ export class ResolverService {
     retryFiles: { name: string; content: string }[],
     resolution: ResolverResult,
   ): Promise<void> {
-    const replaceModules = 'files' in operation.request && operation.request.files
-      ? operation.request.replaceModules ?? []
-      : [];
+    const replaceModules =
+      'files' in operation.request && operation.request.files
+        ? (operation.request.replaceModules ?? [])
+        : [];
     const retry = retryFiles.length
       ? this.importIntoStage(operation, retryFiles, replaceModules)
       : { loaded: [], errors: [] };
@@ -379,7 +483,7 @@ export class ResolverService {
     const state: ResolverOperationState = hasFailures ? 'error' : 'done';
     if (hasFailures) operation.status.loadedModules = [];
     if (state === 'done' && !operation.controller.signal.aborted) {
-      this.commitStage(operation);
+      await this.commitStage(operation);
       try {
         await operation.stagedCache?.commit();
       } catch (error) {
@@ -417,8 +521,13 @@ export class ResolverService {
     signal: AbortSignal,
   ): Promise<{ name: string; content: string }[]> {
     if ('files' in request && request.files) return request.files.map((file) => ({ ...file }));
-    const response = await this.transport.http.fetch({ url: request.url, maxBytes: URL_MAX_BYTES, signal });
-    if (!response.ok) throw new MibBeaconError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${response.status}`);
+    const response = await this.transport.http.fetch({
+      url: request.url,
+      maxBytes: URL_MAX_BYTES,
+      signal,
+    });
+    if (!response.ok)
+      throw new MibBeaconError('SOURCE_UNREACHABLE', `fetch failed with HTTP ${response.status}`);
     validateMibResponse(response.text);
     return [{ name: request.url.split('/').pop() || 'downloaded-mib', content: response.text }];
   }
@@ -440,19 +549,10 @@ export class ResolverService {
     return operation.stagedStore;
   }
 
-  private commitStage(operation: ImportOperation): void {
+  private async commitStage(operation: ImportOperation): Promise<void> {
     if (operation.controller.signal.aborted) throw new Error('Resolver operation aborted');
     const stagedStore = this.requireStage(operation);
-    const sources = stagedStore.userSourceDocuments();
-    this.db.transaction(() => {
-      this.db.run('DELETE FROM mib_modules');
-      for (const source of sources) {
-        this.db.run(
-          'INSERT INTO mib_modules (name, content, loaded_at) VALUES (?, ?, ?)',
-          [source.name, source.content, this.now()],
-        );
-      }
-    });
+    await persistMibCatalog(this.db, this.transport.files, stagedStore, this.now);
     // The in-memory swap is non-throwing and occurs only after SQLite commits.
     this.mibStore.adopt(stagedStore);
     this.bus.emit({
@@ -463,7 +563,10 @@ export class ResolverService {
   }
 
   private readSettings(): ResolverSettings {
-    return { ...DEFAULT_SETTINGS, ...(getSetting<Partial<ResolverSettings>>(this.db, 'resolver.settings') ?? {}) };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...(getSetting<Partial<ResolverSettings>>(this.db, 'resolver.settings') ?? {}),
+    };
   }
 
   private writeSettings(patch: Partial<ResolverSettings>): ResolverSettings {
@@ -479,22 +582,38 @@ export class ResolverService {
   ): Promise<OidLookupResult> {
     throwIfAborted(signal);
     const loaded = this.mibStore.index.resolve(oid);
+    const cachedMatch = await this.lookupCachedOid(oid);
+    throwIfAborted(signal);
     const cached = this.db.get<{ value_json: string; expires_at: number }>(
       "SELECT value_json, expires_at FROM resolver_lookup_cache WHERE kind = 'aggregate' AND lookup_key = ?",
       [oid],
     );
     if (cached && cached.expires_at > this.now()) {
-      return { ...(JSON.parse(cached.value_json) as OidLookupResult), loaded, fromCache: true };
+      return {
+        ...(JSON.parse(cached.value_json) as OidLookupResult),
+        loaded,
+        cached: cachedMatch,
+        fromCache: true,
+      };
     }
     const normalizedOid = oid.startsWith('.') ? oid.slice(1) : oid;
-    const localEvidence = loaded?.definitionOid === normalizedOid
-      ? [loaded.name, loaded.module ?? '']
-      : [];
+    const localEvidence =
+      loaded?.definitionOid === normalizedOid ? [loaded.name, loaded.module ?? ''] : [];
     const candidates = this.sourceStore.candidates(localEvidence);
-    if (!network) return { oid, loaded, enterprise: null, oidBase: null, oidRef: null, fromCache: false, candidates };
+    if (!network)
+      return {
+        oid,
+        loaded,
+        cached: cachedMatch,
+        enterprise: null,
+        oidBase: null,
+        oidRef: null,
+        fromCache: false,
+        candidates,
+      };
     const [enterprise, oidBase, oidRef] = await Promise.all([
-      new IanaEnterpriseClient(this.transport.http).lookupOid(oid, signal).catch(() => null),
-      new OidBaseClient(this.transport.http).lookup(oid, signal).catch(() => null),
+      this.lookupIanaEnterprise(oid, signal).catch(() => null),
+      this.lookupOidBase(oid, signal).catch(() => null),
       new OidRefClient(this.transport.http).lookup(oid, signal).catch(() => null),
     ]);
     throwIfAborted(signal);
@@ -507,6 +626,7 @@ export class ResolverService {
     const result: OidLookupResult = {
       oid,
       loaded,
+      cached: cachedMatch,
       enterprise,
       oidBase,
       oidRef,
@@ -520,6 +640,64 @@ export class ResolverService {
       [oid, JSON.stringify(result), this.now() + 7 * 24 * 60 * 60 * 1_000, this.now()],
     );
     return result;
+  }
+
+  private async lookupCachedOid(oid: string) {
+    const documents = await this.cache.list();
+    if (documents.length === 0) return null;
+    const loadedModules = new Set(this.mibStore.listModules().map((module) => module.name));
+    const unloaded = documents.filter((document) => !loadedModules.has(document.module));
+    if (unloaded.length === 0) return null;
+    const staged = this.mibStore.fork();
+    staged.importTexts(
+      unloaded.map((document) => ({ name: document.module, content: document.content })),
+    );
+    const match = staged.index.resolve(oid);
+    return match?.module && !loadedModules.has(match.module) ? match : null;
+  }
+
+  private async lookupIanaEnterprise(oid: string, signal?: AbortSignal) {
+    const number = enterpriseNumberFromOid(oid);
+    if (number === null) return null;
+    const row = this.db.get<{ value_json: string; expires_at: number }>(
+      "SELECT value_json, expires_at FROM resolver_lookup_cache WHERE kind = 'iana-registry' AND lookup_key = 'all'",
+    );
+    let records = row ? (JSON.parse(row.value_json) as IanaEnterpriseRecord[]) : null;
+    if (!records || row!.expires_at <= this.now()) {
+      try {
+        records = await new IanaEnterpriseClient(this.transport.http).fetchRegistry(signal);
+        this.db.run(
+          `INSERT INTO resolver_lookup_cache (kind, lookup_key, value_json, expires_at, stored_at)
+           VALUES ('iana-registry', 'all', ?, ?, ?) ON CONFLICT(kind, lookup_key) DO UPDATE SET
+           value_json=excluded.value_json, expires_at=excluded.expires_at, stored_at=excluded.stored_at`,
+          [JSON.stringify(records), this.now() + 30 * 24 * 60 * 60 * 1_000, this.now()],
+        );
+      } catch (error) {
+        if (!records) throw error;
+      }
+    }
+    return records.find((record) => record.number === number) ?? null;
+  }
+
+  private async lookupOidBase(oid: string, signal?: AbortSignal) {
+    const previous = this.oidBaseQueue;
+    let release!: () => void;
+    this.oidBaseQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      throwIfAborted(signal);
+      const waitMs = Math.max(
+        0,
+        this.oidBaseLastRequestAt + this.oidBaseIntervalMs - this.now(),
+      );
+      await abortableDelay(waitMs, signal);
+      this.oidBaseLastRequestAt = this.now();
+      return await new OidBaseClient(this.transport.http).lookup(oid, signal);
+    } finally {
+      release();
+    }
   }
 
   private transition(operation: ImportOperation, state: ResolverOperationState): void {
@@ -547,7 +725,14 @@ export class ResolverService {
       `INSERT INTO resolver_history
        (handle_id, status, requested_json, result_json, started_at, finished_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [operation.status.handleId, state, JSON.stringify(summarizeRequest(operation.request)), JSON.stringify(safeResult), operation.status.startedAt, this.now()],
+      [
+        operation.status.handleId,
+        state,
+        JSON.stringify(summarizeRequest(operation.request)),
+        JSON.stringify(safeResult),
+        operation.status.startedAt,
+        this.now(),
+      ],
     );
     operation.request = { modules: [] };
     operation.stagedStore = undefined;
@@ -577,9 +762,15 @@ export class ResolverService {
     sourceId: string,
     module: string,
   ): Promise<void> {
+    if (this.rejectExternalWhenDisabled(operation)) return;
     const source = this.availableSources().find((candidate) => candidate.id === sourceId);
     if (!source) {
-      this.finish(operation, 'error', 'error', { ok: false, sourceId, module, message: 'Source is disabled or unavailable' });
+      this.finish(operation, 'error', 'error', {
+        ok: false,
+        sourceId,
+        module,
+        message: 'Source is disabled or unavailable',
+      });
       return;
     }
     operation.status.missingModules = [module];
@@ -595,6 +786,7 @@ export class ResolverService {
       this.transport,
       operation.controller.signal,
     );
+    this.recordSourceTest(sourceId, module, result.ok, result.message);
     this.finish(operation, result.ok ? 'done' : 'error', result.ok ? 'done' : 'error', result);
   }
 
@@ -602,8 +794,11 @@ export class ResolverService {
     operation: ImportOperation,
     draft: ResolverSourceDraft,
   ): Promise<void> {
+    if (this.rejectExternalWhenDisabled(operation)) return;
     if (draft.config.kind !== 'json-catalog') {
-      this.finish(operation, 'error', 'error', { message: 'Only JSON catalog sources can be previewed' });
+      this.finish(operation, 'error', 'error', {
+        message: 'Only JSON catalog sources can be previewed',
+      });
       return;
     }
     let host: string;
@@ -640,6 +835,7 @@ export class ResolverService {
       this.finish(operation, 'done', 'done', preliminary);
       return;
     }
+    if (this.rejectExternalWhenDisabled(operation)) return;
     if (network && !this.readSettings().externalConsentRemembered) {
       operation.status.sourceHosts = ['www.iana.org', 'oid-base.com', 'oidref.com'];
       const allowed = await this.waitForConsent(operation);
@@ -648,6 +844,17 @@ export class ResolverService {
     this.transition(operation, 'resolving');
     const result = await this.lookupOid(oid, network, operation.controller.signal);
     this.finish(operation, 'done', 'done', result);
+  }
+
+  private rejectExternalWhenDisabled(operation: ImportOperation): boolean {
+    if (this.readSettings().enabled) return false;
+    const result = {
+      code: 'RESOLVER_DISABLED',
+      message: 'Resolver network access is disabled in Settings',
+    };
+    operation.status.failures.push({ message: result.message });
+    this.finish(operation, 'error', 'error', result);
+    return true;
   }
 
   private listHistory(limit: number) {
@@ -714,10 +921,16 @@ function unique(values: string[]): string[] {
 }
 
 function summarizeRequest(request: ImportOperation['request']): unknown {
+  if ('cachedModules' in request) return { cachedModules: request.cachedModules };
   if ('modules' in request) return { modules: request.modules };
   if ('sourceTest' in request) return request;
   if ('sourcePreview' in request) {
-    return { sourcePreview: { id: request.sourcePreview.config.id, kind: request.sourcePreview.config.kind } };
+    return {
+      sourcePreview: {
+        id: request.sourcePreview.config.id,
+        kind: request.sourcePreview.config.kind,
+      },
+    };
   }
   if ('oidLookup' in request) return request;
   if ('url' in request) return { url: request.url };
@@ -753,4 +966,24 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
   if (typeof timer !== 'object' || timer === null || !('unref' in timer)) return;
   const unref = (timer as { unref?: () => void }).unref;
   if (typeof unref === 'function') unref.call(timer);
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    throwIfAborted(signal);
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      const error = new Error('Resolver operation aborted');
+      error.name = 'AbortError';
+      reject(error);
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }

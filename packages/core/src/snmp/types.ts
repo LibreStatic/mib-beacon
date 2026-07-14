@@ -32,6 +32,16 @@ export interface DecodedVarbind {
   typeName: string;
   /** Best-effort JS value (string/number/hex for buffers). */
   value: string | number;
+  /** Lossless structured-clone-safe wire value before MIB presentation formatting. */
+  rawValue?: string | number;
+  /** Exact octets for binary values. */
+  rawHex?: string;
+  /** DISPLAY-HINT / enum / units-aware presentation value. */
+  formattedValue?: string;
+  enumLabel?: string;
+  /** Present for group operations. */
+  agentId?: string;
+  agentName?: string;
   isError: boolean;
   errorText?: string;
   /** MIB-resolved display name (e.g. ifOperStatus.3), when a module matches. */
@@ -66,6 +76,10 @@ export interface NotificationPayload {
   upTime?: number;
   /** v1 agent-addr field; ignored by v2c/v3. */
   agentAddress?: string;
+  /** Optional explicit SNMPv1 envelope fields. Generic 6 means enterprise-specific. */
+  v1Enterprise?: string;
+  v1Generic?: number;
+  v1Specific?: number;
 }
 
 export interface NotificationSendRequest extends NotificationPayload {

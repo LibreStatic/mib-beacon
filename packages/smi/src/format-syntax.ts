@@ -53,3 +53,19 @@ export function enumLabel(syntax: MibModuleEntry['SYNTAX'], value: number): stri
   }
   return undefined;
 }
+
+export function enumValues(
+  syntax: MibModuleEntry['SYNTAX'],
+): Record<string, number> | undefined {
+  if (!syntax || typeof syntax === 'string') return undefined;
+  const typeName = Object.keys(syntax)[0];
+  if (!typeName) return undefined;
+  const detail = (syntax as Record<string, unknown>)[typeName];
+  if (!detail || typeof detail !== 'object') return undefined;
+  const values = Object.fromEntries(
+    Object.entries(detail as Record<string, unknown>).filter(
+      (entry): entry is [string, number] => typeof entry[1] === 'number',
+    ),
+  );
+  return Object.keys(values).length > 0 ? values : undefined;
+}

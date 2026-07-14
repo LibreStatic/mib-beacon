@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { createNodeTransport, nodeStorageFactory } from '@mibbeacon/transport/node';
 import { createEngine } from './engine';
 
@@ -84,6 +84,12 @@ describe('engine mibs domain', () => {
 
     const resolved = await engine.mibs.resolve('1.3.6.1.4.1.99999.1.0');
     expect(resolved?.name).toBe('toyValue.0');
+    expect(await engine.mibs.translate('1.3.6.1.2.1.2.2.1.8')).toEqual(
+      expect.objectContaining({ oid: '1.3.6.1.2.1.2.2.1.8', name: 'ifOperStatus' }),
+    );
+    expect(await engine.mibs.translate('ifOperStatus.3')).toEqual(
+      expect.objectContaining({ oid: '1.3.6.1.2.1.2.2.1.8.3', name: 'ifOperStatus.3' }),
+    );
 
     const catalogEvents: string[] = [];
     const unsubscribe = engine.events.subscribe('tools', (event) => catalogEvents.push(event.kind));
@@ -109,6 +115,22 @@ describe('engine mibs domain', () => {
     await engine2.mibs.unload('TOY-MIB');
     const engine3 = makeEngine(dbPath);
     expect(await engine3.mibs.node('toyValue')).toBeNull();
+  });
+
+  it('stores a content-addressed private copy for every persisted source document', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mibbeacon-content-addressed-'));
+    const dbPath = join(dir, 'mibbeacon.db');
+    const engine = createEngine(createNodeTransport({ dataDir: dir }), { dbPath });
+    await engine.mibs.importTexts([{ name: 'TOY-MIB', content: TOY_MIB }]);
+
+    const db = nodeStorageFactory.open(dbPath);
+    const row = db.get<{ content_key: string }>(
+      'SELECT content_key FROM mib_modules WHERE name = ?',
+      ['TOY-MIB'],
+    );
+    db.close();
+    expect(row?.content_key).toMatch(/^[0-9a-f]+-[0-9a-f]{8}$/);
+    expect(await readFile(join(dir, 'mibs', `${row!.content_key}.mib`), 'utf8')).toBe(TOY_MIB);
   });
 
   it('persists a multi-module source once and preserves ownership across replacement restart', async () => {

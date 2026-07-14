@@ -147,6 +147,19 @@ export interface HttpClient {
   fetch(req: HttpRequest): Promise<HttpResponse>;
 }
 
+export interface CommandResult {
+  exitCode: number | null;
+  signal?: string;
+}
+
+export interface CommandRunner {
+  run(
+    command: string,
+    args: string[],
+    options?: { signal?: AbortSignal; onLine?: (line: string, stream: 'stdout' | 'stderr') => void },
+  ): Promise<CommandResult>;
+}
+
 // ---------------------------------------------------------------------------
 // The complete platform surface handed to the engine.
 // ---------------------------------------------------------------------------
@@ -159,8 +172,12 @@ export interface Transport {
   storage: StorageFactory;
   secrets: SecretStore;
   http: HttpClient;
+  /** Present only on hosts allowed to spawn a fixed system command. */
+  commands?: CommandRunner;
   /** Which platform backend is active (for diagnostics/logging only). */
   readonly platform: 'node' | 'react-native';
+  /** Host OS used only for fixed platform command argument selection. */
+  readonly hostOs?: string;
 }
 
 export const USER_AGENT = 'MIBBeacon/0.0.0 (+https://github.com/LibreStatic/mibbeacon)';

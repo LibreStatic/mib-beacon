@@ -28,6 +28,8 @@ export interface MibSourceMiss {
   reason?: string;
   httpStatus?: number;
   retryAfterMs?: number;
+  stage?: 'configuration' | 'connect' | 'auth' | 'index' | 'fetch' | 'validation' | 'not-found' | 'retrieve';
+  responseExcerpt?: string;
 }
 
 export type MibSourceResult = MibSourceFound | MibSourceMiss;

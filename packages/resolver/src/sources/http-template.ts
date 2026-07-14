@@ -39,6 +39,7 @@ export class HttpTemplateSource implements MibSource {
     }
 
     const headers = await buildHttpHeaders(this.config, this.resolveSecret);
+    let validationFailure: { reason: string; responseExcerpt: string } | undefined;
     for (const filename of getMibFilenameVariants(module, this.config.fixedExtension)) {
       const url = expandUrlTemplate(this.config.urlTemplate, filename, module);
       const request: HttpRequest & { signal?: AbortSignal } = {
@@ -50,13 +51,19 @@ export class HttpTemplateSource implements MibSource {
         signal: context.signal,
       };
       const response = await this.http.fetch(request);
-      if (response.status === 403 || response.status === 429) {
+      if (response.status === 401 || response.status === 403 || response.status === 429) {
         return this.notFound(module, response);
       }
       if (!response.ok) continue;
 
       const validation = validateMibContent(module, response.text);
-      if (!validation.ok) continue;
+      if (!validation.ok) {
+        validationFailure = {
+          reason: `Validation failed: ${validation.message}`,
+          responseExcerpt: response.text.slice(0, 240),
+        };
+        continue;
+      }
       return {
         status: 'found',
         module,
@@ -67,7 +74,12 @@ export class HttpTemplateSource implements MibSource {
         warnings: validation.warnings,
       };
     }
-    return this.notFound(module);
+    return validationFailure
+      ? {
+          status: 'not-found', module, sourceId: this.id, stage: 'validation',
+          reason: validationFailure.reason, responseExcerpt: validationFailure.responseExcerpt,
+        }
+      : { status: 'not-found', module, sourceId: this.id, stage: 'not-found' };
   }
 
   private notFound(module: string, response?: HttpResponse): SourceFetchResult {

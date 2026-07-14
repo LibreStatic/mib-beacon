@@ -97,6 +97,7 @@ describe('HttpTemplateSource', () => {
       status: 'not-found',
       module: 'NO-MIB',
       sourceId: 'fixture',
+      stage: 'not-found',
     });
     expect(http.requests).toHaveLength(14);
   });

@@ -144,7 +144,7 @@ describe('GitHubTreeSource', () => {
     ).toBe(true);
   });
 
-  it.each([403, 429])('returns HTTP %s tree failures without fetching raw content', async (status) => {
+  it.each([401, 403, 429])('returns HTTP %s tree failures without fetching raw content', async (status) => {
     const http = new FixtureHttpClient({
       [TREE_URL]: { status, ok: false, headers: { 'Retry-After': '2' } },
     });

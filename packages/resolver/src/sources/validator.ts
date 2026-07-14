@@ -5,7 +5,7 @@ export type MibContentValidation =
   | { ok: true; moduleName: string; warnings: string[] }
   | {
       ok: false;
-      code: 'CONTENT_TOO_LARGE' | 'HTML_RESPONSE' | 'INVALID_MIB_HEADER' | 'MODULE_NAME_MISMATCH';
+      code: 'CONTENT_TOO_LARGE' | 'HTML_RESPONSE' | 'INVALID_MIB_HEADER';
       message: string;
     };
 
@@ -46,9 +46,9 @@ export function validateMibContent(
   const moduleName = header[1];
   if (moduleName.toLowerCase() !== requestedName.trim().toLowerCase()) {
     return {
-      ok: false,
-      code: 'MODULE_NAME_MISMATCH',
-      message: `Requested ${requestedName} but content defines ${moduleName}`,
+      ok: true,
+      moduleName,
+      warnings: [`Requested ${requestedName} but content defines ${moduleName}`],
     };
   }
   return { ok: true, moduleName, warnings: [] };

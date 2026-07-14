@@ -41,11 +41,11 @@ describe('validateMibContent', () => {
     });
   });
 
-  it('rejects content declaring a different module name', () => {
+  it('accepts content declaring a different module name with an attribution warning', () => {
     expect(validateMibContent('REQUESTED-MIB', 'ACTUAL-MIB DEFINITIONS ::= BEGIN\nEND')).toEqual({
-      ok: false,
-      code: 'MODULE_NAME_MISMATCH',
-      message: 'Requested REQUESTED-MIB but content defines ACTUAL-MIB',
+      ok: true,
+      moduleName: 'ACTUAL-MIB',
+      warnings: ['Requested REQUESTED-MIB but content defines ACTUAL-MIB'],
     });
   });
 });

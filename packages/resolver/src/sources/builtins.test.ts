@@ -10,11 +10,12 @@ describe('BUILTIN_SOURCE_CONFIGS', () => {
       'pysnmp-github',
       'librenms',
       'cisco',
+      'cisco-mirror',
       'netdisco',
       'mibbrowser-online',
       'circitor',
     ]);
-    expect(BUILTIN_SOURCE_CONFIGS.map(({ priority }) => priority)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(BUILTIN_SOURCE_CONFIGS.map(({ priority }) => priority)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     expect(BUILTIN_SOURCE_CONFIGS.at(-1)?.enabled).toBe(false);
     expect(BUILTIN_SOURCE_CONFIGS.every(({ builtIn }) => builtIn)).toBe(true);
   });
@@ -28,9 +29,9 @@ it('creates the configured external adapters while cache remains the resolver ca
     },
   });
   expect(sources.map(({ id }) => id)).toEqual([
-    'pysnmp', 'pysnmp-github', 'librenms', 'cisco', 'netdisco', 'mibbrowser-online', 'circitor',
+    'pysnmp', 'pysnmp-github', 'librenms', 'cisco', 'cisco-mirror', 'netdisco', 'mibbrowser-online', 'circitor',
   ]);
   expect(sources.map(({ kind }) => kind)).toEqual([
-    'http-template', 'http-template', 'github-tree', 'http-template', 'github-tree', 'http-template', 'http-template',
+    'http-template', 'http-template', 'github-tree', 'http-template', 'http-template', 'github-tree', 'http-template', 'http-template',
   ]);
 });

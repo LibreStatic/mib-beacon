@@ -21,6 +21,7 @@ import type {
   ResolverSourceTestResult,
   ResolverSourcePreviewResult,
 } from '../api/engine-api';
+import { contentAddress } from './content-address';
 
 const BUILTIN_PRIORITY_OFFSET = 1_000;
 
@@ -94,7 +95,10 @@ export class PersistentMibCache implements MibCache {
       [module],
     );
     this.db.run('DELETE FROM resolver_cache WHERE module = ?', [module]);
-    if (row && !this.db.get('SELECT 1 FROM resolver_cache WHERE content_key = ?', [row.content_key])) {
+    if (
+      row &&
+      !this.db.get('SELECT 1 FROM resolver_cache WHERE content_key = ?', [row.content_key])
+    ) {
       await this.files.remove(this.path(row.content_key));
     }
   }
@@ -102,6 +106,15 @@ export class PersistentMibCache implements MibCache {
   async clear(): Promise<void> {
     this.db.run('DELETE FROM resolver_cache');
     await this.files.remove(this.directory);
+  }
+
+  /** Enumerate intact cached documents for local, side-effect-free OID inspection. */
+  async list(): Promise<CachedMib[]> {
+    const modules = this.db
+      .all<{ module: string }>('SELECT module FROM resolver_cache ORDER BY stored_at DESC')
+      .map((row) => row.module);
+    const values = await Promise.all(modules.map((module) => this.get(module)));
+    return values.filter((value): value is CachedMib => value !== undefined);
   }
 
   stats(): ResolverCacheStats {
@@ -134,15 +147,38 @@ export class ResolverSourceStore {
         `INSERT OR IGNORE INTO resolver_sources
          (id, kind, name, enabled, priority, built_in, config_json, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-        [config.id, config.kind, config.name, config.enabled ? 1 : 0, config.priority, JSON.stringify(config), this.now(), this.now()],
+        [
+          config.id,
+          config.kind,
+          config.name,
+          config.enabled ? 1 : 0,
+          config.priority,
+          JSON.stringify(config),
+          this.now(),
+          this.now(),
+        ],
       );
     }
   }
 
   list(): SourceConfig[] {
     return this.db
-      .all<{ id: string; kind: string; name: string; config_json: string; enabled: number; priority: number; built_in: number }>(
-        'SELECT id, kind, name, config_json, enabled, priority, built_in FROM resolver_sources ORDER BY priority, name',
+      .all<{
+        id: string;
+        kind: string;
+        name: string;
+        config_json: string;
+        enabled: number;
+        priority: number;
+        built_in: number;
+        last_used_at: number | null;
+        last_result: string | null;
+        cache_hits: number | null;
+      }>(
+        `SELECT s.id, s.kind, s.name, s.config_json, s.enabled, s.priority, s.built_in,
+                st.last_used_at, st.last_result, st.cache_hits
+         FROM resolver_sources s LEFT JOIN resolver_source_stats st ON st.source_id = s.id
+         ORDER BY s.priority, s.name`,
       )
       .map((row) => {
         let parsed: unknown;
@@ -151,13 +187,20 @@ export class ResolverSourceStore {
           assertValidSourceConfig(parsed, this.platform);
           const stored = parsed as SourceConfig;
           if (!this.secrets.isEncrypted() && hasStoredSecretReferences(stored)) {
-            throw new Error('Stored credentials are unavailable because encrypted credential storage is not configured on this engine host');
+            throw new Error(
+              'Stored credentials are unavailable because encrypted credential storage is not configured on this engine host',
+            );
           }
           const config = sanitizePersistedRefs({
             ...stored,
             enabled: Boolean(row.enabled),
             priority: row.priority,
             builtIn: Boolean(row.built_in),
+            stats: {
+              ...(row.last_used_at === null ? {} : { lastUsedAt: row.last_used_at }),
+              ...(row.last_result === null ? {} : { lastResult: row.last_result }),
+              cacheHits: row.cache_hits ?? 0,
+            },
           });
           const constructionError = this.constructionErrors.get(config.id);
           return constructionError
@@ -176,12 +219,15 @@ export class ResolverSourceStore {
 
   async create(draft: ResolverSourceDraft): Promise<SourceConfig> {
     if (draft.config.kind === 'cache') throw new Error('Cache source is built-in only');
-    if (this.get(draft.config.id)) throw new Error(`Resolver source already exists: ${draft.config.id}`);
+    if (this.get(draft.config.id))
+      throw new Error(`Resolver source already exists: ${draft.config.id}`);
     this.assertCredentialStorage(draft);
     assertValidSourceConfig(draft.config, this.platform);
     const safeDraft = { ...draft, config: stripCallerSecretRefs(draft.config) };
     const config = await this.withSecrets({ ...safeDraft.config, builtIn: false }, safeDraft);
-    const customPriorities = this.list().filter((source) => !source.builtIn).map((source) => source.priority);
+    const customPriorities = this.list()
+      .filter((source) => !source.builtIn)
+      .map((source) => source.priority);
     config.priority = customPriorities.length === 0 ? 0 : Math.min(...customPriorities) - 1;
     this.write(config, false);
     return config;
@@ -192,13 +238,19 @@ export class ResolverSourceStore {
     if (!current) throw new Error(`Unknown resolver source: ${sourceId}`);
     this.assertCredentialStorage(draft);
     assertValidSourceConfig(draft.config, this.platform);
-    if (!current.builtIn && draft.config.kind === 'cache') throw new Error('Cache source is built-in only');
+    if (!current.builtIn && draft.config.kind === 'cache')
+      throw new Error('Cache source is built-in only');
     if (current.builtIn && (draft.config.id !== sourceId || draft.config.kind !== current.kind)) {
       throw new Error('Built-in source identity and kind cannot be changed');
     }
     const safeDraft = { ...draft, config: stripCallerSecretRefs(draft.config) };
     const config = await this.withSecrets(
-      { ...safeDraft.config, id: sourceId, builtIn: Boolean(current.builtIn), priority: current.priority },
+      {
+        ...safeDraft.config,
+        id: sourceId,
+        builtIn: Boolean(current.builtIn),
+        priority: current.priority,
+      },
       safeDraft,
       current,
     );
@@ -225,20 +277,27 @@ export class ResolverSourceStore {
     ];
     this.db.transaction(() => {
       ordered.forEach((source, index) => {
-        this.db.run('UPDATE resolver_sources SET priority = ?, updated_at = ? WHERE id = ?', [index, this.now(), source.id]);
+        this.db.run('UPDATE resolver_sources SET priority = ?, updated_at = ? WHERE id = ?', [
+          index,
+          this.now(),
+          source.id,
+        ]);
       });
     });
     return this.list();
   }
 
   exportCustom(): string {
-    const configs = this.list().filter((source) => !source.builtIn).map(redactSecretReferences);
+    const configs = this.list()
+      .filter((source) => !source.builtIn)
+      .map(redactSecretReferences);
     return JSON.stringify({ version: 1, sources: configs }, null, 2);
   }
 
   async importCustom(serialized: string): Promise<SourceConfig[]> {
     const parsed = JSON.parse(serialized) as { sources?: unknown[] };
-    if (!Array.isArray(parsed.sources)) throw new Error('Source export must contain a sources array');
+    if (!Array.isArray(parsed.sources))
+      throw new Error('Source export must contain a sources array');
     const configs: SourceConfig[] = [];
     for (const value of parsed.sources) {
       assertValidSourceConfig(value, this.platform);
@@ -261,11 +320,23 @@ export class ResolverSourceStore {
       if (!config.enabled || config.kind === 'cache' || config.validationError) return [];
       try {
         let source: MibSource;
-        if (config.kind === 'http-template') source = new HttpTemplateSource(config, transport.http, resolveSecret);
+        if (config.kind === 'http-template')
+          source = new HttpTemplateSource(config, transport.http, resolveSecret);
         else if (config.kind === 'github-tree') {
-          source = new GitHubTreeSource(config, transport.http, resolveSecret, this.indexStore(config.id));
+          source = new GitHubTreeSource(
+            config,
+            transport.http,
+            resolveSecret,
+            this.indexStore(config.id),
+          );
         } else if (config.kind === 'json-catalog') {
-          source = new JsonCatalogSource(config, transport.http, resolveSecret, this.now, this.indexStore(config.id));
+          source = new JsonCatalogSource(
+            config,
+            transport.http,
+            resolveSecret,
+            this.now,
+            this.indexStore(config.id),
+          );
         } else {
           source = new FtpSource(config, ftpClient, resolveSecret);
         }
@@ -288,14 +359,50 @@ export class ResolverSourceStore {
     signal?: AbortSignal,
   ): Promise<ResolverSourceTestResult> {
     const source = this.instantiate(transport).find((candidate) => candidate.id === sourceId);
-    if (!source) return { ok: false, sourceId, module, message: 'Source is disabled or unavailable' };
+    if (!source)
+      return { ok: false, sourceId, module, message: 'Source is disabled or unavailable' };
     try {
       const result = await source.fetch(module, { signal });
-      return result.status === 'found'
-        ? { ok: true, sourceId, module, location: result.location }
-        : { ok: false, sourceId, module, message: result.reason ?? 'Module not found' };
+      if (result.status === 'found') {
+        return { ok: true, sourceId, module, location: result.location };
+      }
+      if (result.httpStatus === 401 || result.httpStatus === 403) {
+        return {
+          ok: false,
+          sourceId,
+          module,
+          message: `Source authentication failed with HTTP ${result.httpStatus}`,
+          code: 'SOURCE_AUTH_FAILED',
+          stage: 'auth',
+          httpStatus: result.httpStatus,
+        };
+      }
+      return {
+        ok: false,
+        sourceId,
+        module,
+        message: result.reason ?? 'Module not found',
+        code: 'MODULE_NOT_FOUND',
+        stage: result.stage ?? 'not-found',
+        ...(result.httpStatus === undefined ? {} : { httpStatus: result.httpStatus }),
+        ...(result.responseExcerpt === undefined ? {} : { responseExcerpt: result.responseExcerpt }),
+      };
     } catch (error) {
-      return { ok: false, sourceId, module, message: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      const stage = /password|credential|secret|auth/i.test(message)
+        ? 'auth'
+        : /jsonpath|configuration|invalid.*(?:url|template|source)/i.test(message)
+          ? 'configuration'
+          : /connect|socket|dns|timed?\s*out|unreachable/i.test(message)
+            ? 'connect'
+            : 'fetch';
+      return {
+        ok: false,
+        sourceId,
+        module,
+        message,
+        stage,
+      };
     }
   }
 
@@ -323,14 +430,23 @@ export class ResolverSourceStore {
         ephemeral.set(reference, value);
       }
     }
+    let rawSnippet = '';
     const entries = await previewJsonCatalog(
       config,
       transport.http,
       async (reference) => ephemeral.get(reference) ?? null,
       signal,
       20,
+      (snippet) => {
+        rawSnippet = snippet;
+      },
     );
-    return { kind: 'source-preview', sourceId: config.id, entries };
+    return {
+      kind: 'source-preview',
+      sourceId: config.id,
+      entries,
+      ...(rawSnippet ? { rawSnippet } : {}),
+    };
   }
 
   candidates(evidence: string[]): { module: string; sourceId: string; location?: string }[] {
@@ -339,7 +455,18 @@ export class ResolverSourceStore {
       .filter(
         (term) =>
           term.length >= 3 &&
-          !['MIB', 'THE', 'INC', 'CORP', 'ISO', 'ORG', 'DOD', 'INTERNET', 'PRIVATE', 'ENTERPRISES'].includes(term),
+          ![
+            'MIB',
+            'THE',
+            'INC',
+            'CORP',
+            'ISO',
+            'ORG',
+            'DOD',
+            'INTERNET',
+            'PRIVATE',
+            'ENTERPRISES',
+          ].includes(term),
       );
     if (terms.length === 0) return [];
     const candidates: { module: string; sourceId: string; location?: string }[] = [];
@@ -364,7 +491,9 @@ export class ResolverSourceStore {
           "SELECT value_json FROM resolver_source_indexes WHERE source_id = ? AND index_key = 'modules'",
           [sourceId],
         );
-        return row ? (JSON.parse(row.value_json) as Awaited<ReturnType<SourceIndexStore['load']>>) : null;
+        return row
+          ? (JSON.parse(row.value_json) as Awaited<ReturnType<SourceIndexStore['load']>>)
+          : null;
       },
       save: async (snapshot: SourceIndexSnapshot) => {
         this.db.run(
@@ -387,7 +516,17 @@ export class ResolverSourceStore {
        ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, name=excluded.name,
        enabled=excluded.enabled, priority=excluded.priority, built_in=excluded.built_in,
        config_json=excluded.config_json, updated_at=excluded.updated_at`,
-      [config.id, config.kind, config.name, config.enabled ? 1 : 0, config.priority, builtIn ? 1 : 0, JSON.stringify(config), this.now(), this.now()],
+      [
+        config.id,
+        config.kind,
+        config.name,
+        config.enabled ? 1 : 0,
+        config.priority,
+        builtIn ? 1 : 0,
+        JSON.stringify(config),
+        this.now(),
+        this.now(),
+      ],
     );
   }
 
@@ -397,19 +536,25 @@ export class ResolverSourceStore {
     current?: SourceConfig,
   ): Promise<SourceConfig> {
     const next = { ...config } as SourceConfig;
-    const candidatePasswordRef = current && 'passwordRef' in current ? current.passwordRef : undefined;
+    const candidatePasswordRef =
+      current && 'passwordRef' in current ? current.passwordRef : undefined;
     const candidateTokenRef = current?.kind === 'github-tree' ? current.tokenRef : undefined;
-    const currentPasswordRef = isOwnedRef(next.id, candidatePasswordRef) ? candidatePasswordRef : undefined;
+    const currentPasswordRef = isOwnedRef(next.id, candidatePasswordRef)
+      ? candidatePasswordRef
+      : undefined;
     const currentTokenRef = isOwnedRef(next.id, candidateTokenRef) ? candidateTokenRef : undefined;
     const currentSecretHeaders =
       current && (current.kind === 'http-template' || current.kind === 'json-catalog')
         ? Object.fromEntries(
-            Object.entries(current.secretHeaders ?? {}).filter(([, ref]) => isOwnedRef(next.id, ref)),
+            Object.entries(current.secretHeaders ?? {}).filter(([, ref]) =>
+              isOwnedRef(next.id, ref),
+            ),
           )
         : undefined;
     const usesPassword =
       next.kind === 'ftp' ||
-      ((next.kind === 'http-template' || next.kind === 'json-catalog') && next.authKind === 'basic');
+      ((next.kind === 'http-template' || next.kind === 'json-catalog') &&
+        next.authKind === 'basic');
     const clears = new Set(draft.clearSecrets ?? []);
     if (currentPasswordRef && usesPassword && !draft.secrets?.password && !clears.has('password')) {
       (next as SourceConfig & { passwordRef: string }).passwordRef = currentPasswordRef;
@@ -418,7 +563,12 @@ export class ResolverSourceStore {
       await this.secrets.delete(currentPasswordRef);
       delete (next as SourceConfig & { passwordRef?: string }).passwordRef;
     }
-    if (next.kind === 'github-tree' && currentTokenRef && !draft.secrets?.token && !clears.has('token')) {
+    if (
+      next.kind === 'github-tree' &&
+      currentTokenRef &&
+      !draft.secrets?.token &&
+      !clears.has('token')
+    ) {
       next.tokenRef = currentTokenRef;
     }
     if (currentTokenRef && (next.kind !== 'github-tree' || clears.has('token'))) {
@@ -430,11 +580,15 @@ export class ResolverSourceStore {
         next.secretHeaders = { ...currentSecretHeaders };
       }
       if (clears.has('headers')) {
-        await Promise.all(Object.values(currentSecretHeaders ?? {}).map((ref) => this.secrets.delete(ref)));
+        await Promise.all(
+          Object.values(currentSecretHeaders ?? {}).map((ref) => this.secrets.delete(ref)),
+        );
         delete next.secretHeaders;
       }
       if (draft.secrets?.headers) {
-        await Promise.all(Object.values(currentSecretHeaders ?? {}).map((ref) => this.secrets.delete(ref)));
+        await Promise.all(
+          Object.values(currentSecretHeaders ?? {}).map((ref) => this.secrets.delete(ref)),
+        );
         next.secretHeaders = {};
         for (const [name, value] of Object.entries(draft.secrets.headers)) {
           const ref = `resolver-source:${next.id}:header:${headerKey(name)}`;
@@ -449,13 +603,15 @@ export class ResolverSourceStore {
       const reference = `resolver-source:${next.id}:password`;
       await this.secrets.set(reference, draft.secrets.password);
       (next as SourceConfig & { passwordRef: string }).passwordRef = reference;
-      if (currentPasswordRef && currentPasswordRef !== reference) await this.secrets.delete(currentPasswordRef);
+      if (currentPasswordRef && currentPasswordRef !== reference)
+        await this.secrets.delete(currentPasswordRef);
     }
     if (draft.secrets?.token && next.kind === 'github-tree') {
       const reference = `resolver-source:${next.id}:token`;
       await this.secrets.set(reference, draft.secrets.token);
       next.tokenRef = reference;
-      if (currentTokenRef && currentTokenRef !== reference) await this.secrets.delete(currentTokenRef);
+      if (currentTokenRef && currentTokenRef !== reference)
+        await this.secrets.delete(currentTokenRef);
     }
     return next;
   }
@@ -494,16 +650,6 @@ export class ResolverSourceStore {
       );
     }
   }
-}
-
-function contentAddress(content: string): string {
-  const bytes = new TextEncoder().encode(content);
-  let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${bytes.byteLength.toString(16)}-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function redactSecretReferences(config: SourceConfig): SourceConfig {
@@ -570,9 +716,6 @@ function assertValidSourceConfig(
     throw new Error('Invalid resolver source configuration: ID, name, and priority are required');
   }
   if (value.kind === 'http-template') {
-    if (!value.urlTemplate.includes('@mib@')) {
-      throw new Error('HTTP URL template must contain @mib@');
-    }
     assertHttpUrl(
       value.urlTemplate.replaceAll('@mib@', 'MODULE-MIB').replaceAll('@first@', 'M'),
       'HTTP URL template',
@@ -597,8 +740,12 @@ function assertValidSourceConfig(
     if (!value.pathTemplate.includes('@mib@')) {
       throw new Error('FTP path template must contain @mib@');
     }
-    if (/[\r\n]/.test(value.pathTemplate)) throw new Error('FTP path template cannot contain newlines');
-    if (value.port !== undefined && (!Number.isInteger(value.port) || value.port < 1 || value.port > 65_535)) {
+    if (/[\r\n]/.test(value.pathTemplate))
+      throw new Error('FTP path template cannot contain newlines');
+    if (
+      value.port !== undefined &&
+      (!Number.isInteger(value.port) || value.port < 1 || value.port > 65_535)
+    ) {
       throw new Error('FTP port must be between 1 and 65535');
     }
     if (platform === 'react-native' && value.secure === 'ftps-explicit') {
@@ -625,7 +772,9 @@ function assertJsonPath(path: string, label: string): void {
   try {
     evaluateSimpleJsonPath({}, path);
   } catch (error) {
-    throw new Error(`${label} is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -662,29 +811,42 @@ function isSourceConfig(value: unknown): value is SourceConfig {
   if (!value || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
   if (
-    typeof record.id !== 'string' || !record.id ||
+    typeof record.id !== 'string' ||
+    !record.id ||
     typeof record.kind !== 'string' ||
     typeof record.name !== 'string' ||
     typeof record.enabled !== 'boolean' ||
     typeof record.priority !== 'number'
-  ) return false;
+  )
+    return false;
   if (record.kind === 'cache') return true;
   if (record.kind === 'http-template') {
-    return typeof record.urlTemplate === 'string' &&
-      (record.authKind === 'none' || record.authKind === 'basic');
+    return (
+      typeof record.urlTemplate === 'string' &&
+      (record.authKind === 'none' || record.authKind === 'basic')
+    );
   }
   if (record.kind === 'github-tree') {
-    return typeof record.owner === 'string' && typeof record.repo === 'string' &&
-      typeof record.branch === 'string';
+    return (
+      typeof record.owner === 'string' &&
+      typeof record.repo === 'string' &&
+      typeof record.branch === 'string'
+    );
   }
   if (record.kind === 'json-catalog') {
-    return typeof record.catalogUrl === 'string' && typeof record.urlQuery === 'string' &&
-      (record.authKind === 'none' || record.authKind === 'basic');
+    return (
+      typeof record.catalogUrl === 'string' &&
+      typeof record.urlQuery === 'string' &&
+      (record.authKind === 'none' || record.authKind === 'basic')
+    );
   }
   if (record.kind === 'ftp') {
-    return typeof record.host === 'string' && typeof record.pathTemplate === 'string' &&
+    return (
+      typeof record.host === 'string' &&
+      typeof record.pathTemplate === 'string' &&
       (record.secure === 'none' || record.secure === 'ftps-explicit') &&
-      typeof record.anonymous === 'boolean';
+      typeof record.anonymous === 'boolean'
+    );
   }
   return false;
 }

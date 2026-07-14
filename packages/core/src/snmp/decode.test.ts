@@ -24,6 +24,17 @@ describe('decodeVarbind', () => {
     expect(decodeVarbind(vb).value).toBe('de ad be ef');
   });
 
+  it('decodes an eight-byte Counter64 as an exact decimal string', () => {
+    const value = new Uint8Array([0, 0, 0, 0, 0, 0, 4, 76]);
+    expect(
+      decodeVarbind({
+        oid: '1.3.6.1.2.1.31.1.1.1.6.1',
+        type: snmp.ObjectType.Counter64,
+        value,
+      }),
+    ).toMatchObject({ value: '1100', rawValue: '1100', typeName: 'Counter64' });
+  });
+
   it('decodes an INTEGER as a number', () => {
     const vb = { oid: '1.3.6.1.2.1.2.2.1.8.1', type: snmp.ObjectType.Integer, value: 1 };
     const d = decodeVarbind(vb);

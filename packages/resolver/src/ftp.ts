@@ -266,6 +266,7 @@ export class FtpSource implements MibSource {
     const password = this.config.passwordRef
       ? await this.resolvePassword(this.config.passwordRef)
       : undefined;
+    let validationFailure: { reason: string; responseExcerpt: string } | undefined;
     for (const path of buildFtpPathCandidates(this.config.pathTemplate, module, this.config.fixedExtension)) {
       if (context?.signal?.aborted) throw new Error('operation aborted');
       try {
@@ -280,7 +281,13 @@ export class FtpSource implements MibSource {
         });
         const content = new TextDecoder().decode(bytes);
         const validation = validateMibContent(module, content);
-        if (!validation.ok) continue;
+        if (!validation.ok) {
+          validationFailure = {
+            reason: `Validation failed: ${validation.message}`,
+            responseExcerpt: content.slice(0, 240),
+          };
+          continue;
+        }
         const protocol = this.config.secure === 'ftps-explicit' ? 'ftps' : 'ftp';
         const port = this.config.port ? `:${this.config.port}` : '';
         return {
@@ -297,7 +304,12 @@ export class FtpSource implements MibSource {
         throw error;
       }
     }
-    return { status: 'not-found', module, sourceId: this.id };
+    return validationFailure
+      ? {
+          status: 'not-found', module, sourceId: this.id, stage: 'validation',
+          reason: validationFailure.reason, responseExcerpt: validationFailure.responseExcerpt,
+        }
+      : { status: 'not-found', module, sourceId: this.id, stage: 'not-found' };
   }
 
   private async resolvePassword(reference: string): Promise<string> {
