@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  PanResponder,
   Platform,
   Pressable,
   StyleSheet,
   View,
   type LayoutChangeEvent,
+  type PointerEvent as NativePointerEvent,
+  type ViewStyle,
 } from 'react-native';
 import { useTheme } from '@mibbeacon/ui';
 import {
@@ -16,6 +17,15 @@ import {
 } from '../responsive-layout';
 
 const memoryRatios = new Map<string, number>();
+const horizontalResizeCursor =
+  Platform.OS === 'web'
+    ? ({ cursor: 'col-resize', touchAction: 'none', userSelect: 'none' } as unknown as ViewStyle)
+    : null;
+
+interface PointerCaptureTarget {
+  setPointerCapture?: (pointerId: number) => void;
+  releasePointerCapture?: (pointerId: number) => void;
+}
 
 function readRatio(key: string, fallback: number): number {
   const memory = memoryRatios.get(key);
@@ -55,7 +65,8 @@ export function SplitWorkspace({
   const defaultRatio = getWorkspaceDefaultRatio(workspace);
   const [containerSize, setContainerSize] = useState(0);
   const [ratio, setRatio] = useState(() => readRatio(storageKey, defaultRatio));
-  const dragStart = useRef(ratio);
+  const dragStart = useRef({ ratio, pageX: 0 });
+  const activePointer = useRef<number | null>(null);
 
   const updateRatio = (next: number) => {
     const clamped = clampSplitRatio({
@@ -73,31 +84,6 @@ export function SplitWorkspace({
     // Re-clamp persisted sizes only when the available width changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [containerSize]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          dragStart.current = ratio;
-        },
-        onPanResponderMove: (_event, gesture) => {
-          updateRatio(
-            adjustSplitRatio({
-              containerSize,
-              ratio: dragStart.current,
-              delta: gesture.dx,
-              minPrimary,
-              minSecondary,
-            }),
-          );
-        },
-      }),
-    // PanResponder must capture the latest dimensions and ratio at drag start.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [containerSize, minPrimary, minSecondary, ratio],
-  );
 
   const onLayout = (event: LayoutChangeEvent) => setContainerSize(event.nativeEvent.layout.width);
   const primaryBasis = `${Math.round(ratio * 10_000) / 100}%` as const;
@@ -118,6 +104,39 @@ export function SplitWorkspace({
           onDoubleClick: () => updateRatio(defaultRatio),
         }
       : {};
+  const dragHandlers = {
+    onPointerDown: (event: NativePointerEvent) => {
+      if (activePointer.current !== null || event.nativeEvent.button !== 0) return;
+      activePointer.current = event.nativeEvent.pointerId;
+      dragStart.current = { ratio, pageX: event.nativeEvent.pageX };
+      (event.currentTarget as unknown as PointerCaptureTarget).setPointerCapture?.(
+        event.nativeEvent.pointerId,
+      );
+    },
+    onPointerMove: (event: NativePointerEvent) => {
+      if (activePointer.current !== event.nativeEvent.pointerId) return;
+      updateRatio(
+        adjustSplitRatio({
+          containerSize,
+          ratio: dragStart.current.ratio,
+          delta: event.nativeEvent.pageX - dragStart.current.pageX,
+          minPrimary,
+          minSecondary,
+        }),
+      );
+      event.preventDefault();
+    },
+    onPointerUp: (event: NativePointerEvent) => {
+      if (activePointer.current !== event.nativeEvent.pointerId) return;
+      activePointer.current = null;
+      (event.currentTarget as unknown as PointerCaptureTarget).releasePointerCapture?.(
+        event.nativeEvent.pointerId,
+      );
+    },
+    onPointerCancel: (event: NativePointerEvent) => {
+      if (activePointer.current === event.nativeEvent.pointerId) activePointer.current = null;
+    },
+  };
 
   return (
     <View style={styles.root} onLayout={onLayout}>
@@ -133,12 +152,13 @@ export function SplitWorkspace({
         }}
         onLongPress={() => updateRatio(defaultRatio)}
         delayLongPress={450}
+        {...dragHandlers}
         {...webKeyboardProps}
         style={({ pressed }) => [
           styles.dividerHit,
+          horizontalResizeCursor,
           { backgroundColor: pressed ? t.accentSoft : 'transparent' },
         ]}
-        {...panResponder.panHandlers}
       >
         <View style={[styles.divider, { backgroundColor: t.border }]} />
       </Pressable>

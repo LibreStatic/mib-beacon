@@ -42,6 +42,7 @@
     "corpus:fetch": "tsx dev/corpus/fetch-corpus.ts",
     "corpus": "tsx dev/corpus/run-corpus.ts",
     "audit:artifact-identity": "dev/audit/artifact-identity-smoke.sh",
+    "audit:split-workspace": "python3 dev/audit/split-workspace-smoke.py",
     "audit:ubuntu-vm-appimage": "dev/audit/ubuntu-vm-appimage-smoke/run.sh"
   },
   "devDependencies": {

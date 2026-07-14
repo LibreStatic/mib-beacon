@@ -1,13 +1,30 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { PanResponder, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  type PointerEvent as NativePointerEvent,
+  type ViewStyle,
+} from 'react-native';
 import { useTheme } from '@mibbeacon/ui';
 import { clampSplitRatio, getWindowScopedStorageKey } from '../responsive-layout';
 
 const DEFAULT_MAIN_RATIO = 0.65;
+const verticalResizeCursor =
+  Platform.OS === 'web'
+    ? ({ cursor: 'row-resize', touchAction: 'none', userSelect: 'none' } as unknown as ViewStyle)
+    : null;
+
+interface PointerCaptureTarget {
+  setPointerCapture?: (pointerId: number) => void;
+  releasePointerCapture?: (pointerId: number) => void;
+}
 
 function readRatio(storageKey: string): number {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return DEFAULT_MAIN_RATIO;
-  const parsed = Number(window.localStorage?.getItem(storageKey));
+  const stored = window.localStorage?.getItem(storageKey);
+  const parsed = stored == null ? Number.NaN : Number(stored);
   return Number.isFinite(parsed) ? parsed : DEFAULT_MAIN_RATIO;
 }
 
@@ -28,7 +45,8 @@ export function VerticalDockWorkspace({
   const storageKey = getWindowScopedStorageKey(windowNamespace, `dock:${storageId}`);
   const [height, setHeight] = useState(0);
   const [ratio, setRatio] = useState(() => readRatio(storageKey));
-  const dragStart = useRef(ratio);
+  const dragStart = useRef({ ratio, pageY: 0 });
+  const activePointer = useRef<number | null>(null);
 
   const updateRatio = (next: number) => {
     const clamped = clampSplitRatio({
@@ -43,24 +61,34 @@ export function VerticalDockWorkspace({
     }
   };
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => Boolean(dock),
-        onMoveShouldSetPanResponder: () => Boolean(dock),
-        onPanResponderGrant: () => {
-          dragStart.current = ratio;
-        },
-        onPanResponderMove: (_event, gesture) =>
-          updateRatio(height > 0 ? dragStart.current + gesture.dy / height : ratio),
-      }),
-    // The responder must capture the current geometry at drag start.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dock, height, ratio],
-  );
-
   if (!dock) return <View style={styles.root}>{main}</View>;
   const mainBasis = `${Math.round(ratio * 10_000) / 100}%` as const;
+  const dragHandlers = {
+    onPointerDown: (event: NativePointerEvent) => {
+      if (activePointer.current !== null || event.nativeEvent.button !== 0) return;
+      activePointer.current = event.nativeEvent.pointerId;
+      dragStart.current = { ratio, pageY: event.nativeEvent.pageY };
+      (event.currentTarget as unknown as PointerCaptureTarget).setPointerCapture?.(
+        event.nativeEvent.pointerId,
+      );
+    },
+    onPointerMove: (event: NativePointerEvent) => {
+      if (activePointer.current !== event.nativeEvent.pointerId) return;
+      const delta = event.nativeEvent.pageY - dragStart.current.pageY;
+      updateRatio(height > 0 ? dragStart.current.ratio + delta / height : ratio);
+      event.preventDefault();
+    },
+    onPointerUp: (event: NativePointerEvent) => {
+      if (activePointer.current !== event.nativeEvent.pointerId) return;
+      activePointer.current = null;
+      (event.currentTarget as unknown as PointerCaptureTarget).releasePointerCapture?.(
+        event.nativeEvent.pointerId,
+      );
+    },
+    onPointerCancel: (event: NativePointerEvent) => {
+      if (activePointer.current === event.nativeEvent.pointerId) activePointer.current = null;
+    },
+  };
   return (
     <View style={styles.root} onLayout={(event) => setHeight(event.nativeEvent.layout.height)}>
       <View style={[styles.pane, { flexBasis: mainBasis }]}>{main}</View>
@@ -74,9 +102,10 @@ export function VerticalDockWorkspace({
         }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onLongPress={() => updateRatio(DEFAULT_MAIN_RATIO)}
-        {...panResponder.panHandlers}
+        {...dragHandlers}
         style={({ pressed }) => [
           styles.dividerHit,
+          verticalResizeCursor,
           { backgroundColor: pressed ? t.accentSoft : 'transparent' },
         ]}
       >
