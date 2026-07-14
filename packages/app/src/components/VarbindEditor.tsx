@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Button, Chip, Field, Label, Row, useTheme } from '@mibbeacon/ui';
 import { validateVarbindInput } from '@mibbeacon/core/client';
-import type { SnmpVarbindInput, SnmpWireType } from '@mibbeacon/core/client';
+import type { MibNodeDetail, SnmpVarbindInput, SnmpWireType } from '@mibbeacon/core/client';
+import { bitIsSelected, mibRangeError, toggleBitHex } from '../mib-set-editor';
 
 const TYPES: SnmpWireType[] = [
   'Integer',
@@ -20,15 +21,18 @@ export function VarbindEditor({
   onChange,
   onRemove,
   compact,
+  metadata,
 }: {
   value: SnmpVarbindInput;
   onChange: (patch: Partial<SnmpVarbindInput>) => void;
   onRemove?: () => void;
   compact?: boolean;
+  metadata?: MibNodeDetail | null;
 }) {
   const t = useTheme();
   const binary = value.type === 'OctetString' || value.type === 'Opaque';
-  const validationError = validateVarbindInput(value);
+  const validationError = validateVarbindInput(value) ?? mibRangeError(metadata, value.value);
+  const isBits = /^BITS\b/i.test(metadata?.syntax ?? '');
   return (
     <View style={[styles.editor, { borderColor: t.border, backgroundColor: t.surfaceAlt }]}>
       <Row style={styles.head}>
@@ -54,6 +58,45 @@ export function VarbindEditor({
           />
         ))}
       </Row>
+      {metadata?.enumValues && !isBits ? (
+        <>
+          <Label tone="dim" size={11}>MIB enum values</Label>
+          <Row style={styles.types}>
+            {Object.entries(metadata.enumValues).map(([label, number]) => (
+              <Chip
+                key={label}
+                label={`${label} (${number})`}
+                active={value.value === String(number)}
+                onPress={() => onChange({ type: 'Integer', value: String(number) })}
+              />
+            ))}
+          </Row>
+        </>
+      ) : null}
+      {isBits && metadata?.enumValues ? (
+        <>
+          <Label tone="dim" size={11}>BITS values</Label>
+          <Row style={styles.types}>
+            {Object.entries(metadata.enumValues).map(([label, position]) => (
+              <Chip
+                key={label}
+                label={label}
+                active={bitIsSelected(value.value, position)}
+                onPress={() =>
+                  onChange({
+                    type: 'OctetString',
+                    encoding: 'hex',
+                    value: toggleBitHex(value.value, position),
+                  })
+                }
+              />
+            ))}
+          </Row>
+        </>
+      ) : null}
+      {metadata?.displayHint ? (
+        <Label tone="dim" size={11}>DISPLAY-HINT input: {metadata.displayHint}</Label>
+      ) : null}
       {binary ? (
         <Row>
           <Chip

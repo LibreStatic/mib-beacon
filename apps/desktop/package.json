@@ -1,6 +1,6 @@
 {
   "name": "@mibbeacon/desktop",
-  "version": "0.0.0",
+  "version": "0.0.1-beta.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "MIB Beacon — SNMP toolkit for desktop (Electron + react-native-web)",
@@ -29,6 +29,7 @@
     "spike:crypto": "electron-vite build && electron out/main/index.js --probe-crypto"
   },
   "build": {
+    "icon": "build/icon.png",
     "appId": "com.librestatic.mibbeacon",
     "electronVersion": "37.10.3",
     "executableName": "mib-beacon",
@@ -42,6 +43,7 @@
       "package.json"
     ],
     "artifactName": "MIB-Beacon-${version}-${os}-${arch}.${ext}",
+    "afterSign": "build/notarize.cjs",
     "fileAssociations": [
       {
         "ext": "mib",
@@ -71,7 +73,19 @@
       "syncDesktopName": true
     },
     "deb": {
-      "packageName": "mib-beacon"
+      "packageName": "mib-beacon",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libasound2t64 | libasound2"
+      ]
     },
     "rpm": {
       "packageName": "mib-beacon"
@@ -93,7 +107,7 @@
     },
     "publish": {
       "provider": "github",
-      "releaseType": "draft"
+      "releaseType": "prerelease"
     }
   },
   "dependencies": {
@@ -101,12 +115,14 @@
     "@mibbeacon/core": "workspace:*",
     "@mibbeacon/transport": "workspace:*",
     "@mibbeacon/ui": "workspace:*",
+    "electron-updater": "^6.8.9",
     "net-snmp": "^3.26.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "electron": "^37.10.3",
     "electron-builder": "26.15.3",
     "electron-builder-squirrel-windows": "26.15.3",

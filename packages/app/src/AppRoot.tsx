@@ -1,6 +1,15 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Modal, ScrollView } from 'react-native';
-import { Button, Card, Label, SectionTitle, useTheme } from '@mibbeacon/ui';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Linking,
+  Platform,
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Modal,
+  ScrollView,
+} from 'react-native';
+import { Button, Card, Label, SectionTitle, ThemeProvider, useTheme } from '@mibbeacon/ui';
 import type { DecodedVarbind, EngineEvent, EngineInfo, TrapRecord } from '@mibbeacon/core/client';
 import { useEngine } from './engine-context';
 import { useAppStore, type Tab } from './store';
@@ -9,6 +18,8 @@ import {
   loadChildren,
   refreshModules,
   refreshResolverState,
+  refreshAgentProfiles,
+  refreshAgentGroups,
   respondResolverConsent,
 } from './actions';
 import { BrowseScreen } from './screens/BrowseScreen';
@@ -16,27 +27,70 @@ import { QueryScreen } from './screens/QueryScreen';
 import { TrapsScreen } from './screens/TrapsScreen';
 import { MibsScreen } from './screens/MibsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { AgentsScreen } from './screens/AgentsScreen';
+import { ToolsScreen } from './screens/ToolsScreen';
 import { ResponsiveLayoutProvider, useResponsiveLayout } from './responsive-context';
+import { getNavigationTabs, type NavigationTab } from './navigation';
+import { routeForTab, tabFromUrl } from './routes';
+import { SHORTCUTS } from './browser-shortcuts';
+import { FileImportReviewModal } from './components/FileImportFlow';
+import {
+  createInitialFileSelection,
+  stageAcquiredFileImport,
+  type RawSelectedFile,
+} from './file-import';
 
-const TABS: { key: Tab; glyph: string; label: string }[] = [
-  { key: 'browse', glyph: '⌬', label: 'Browse' },
-  { key: 'query', glyph: '⇄', label: 'Query' },
-  { key: 'traps', glyph: '⚑', label: 'Traps' },
-  { key: 'mibs', glyph: '▤', label: 'MIBs' },
-  { key: 'settings', glyph: '⚙', label: 'Settings' },
-];
+export interface HostUpdateStatus {
+  phase:
+    | 'disabled'
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error';
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  message?: string;
+}
+
+export interface HostUpdateAdapter {
+  get(): Promise<{ preferences: { automaticChecks: boolean }; status: HostUpdateStatus } | null>;
+  setAutomaticChecks(enabled: boolean): ReturnType<HostUpdateAdapter['get']>;
+  check(): Promise<HostUpdateStatus | null>;
+  download(): Promise<HostUpdateStatus | null>;
+  install(): Promise<void>;
+  onStatus(listener: (status: HostUpdateStatus) => void): () => void;
+}
 
 export interface AppHostAdapter {
   canOpenWindow: boolean;
   newWindow: () => void;
   setWindowTitle?: (title: string) => void;
+  updates?: HostUpdateAdapter;
+  subscribeOpenFiles?: (listener: (files: RawSelectedFile[]) => void) => () => void;
 }
 
 export function AppRoot({ host }: { host?: AppHostAdapter }) {
   return (
     <ResponsiveLayoutProvider>
-      <ResponsiveAppRoot host={host} />
+      <ThemedAppRoot host={host} />
     </ResponsiveLayoutProvider>
+  );
+}
+
+function ThemedAppRoot({ host }: { host?: AppHostAdapter }) {
+  const { mode } = useResponsiveLayout();
+  const themeMode = useAppStore((state) => state.themeMode);
+  const densityMode = useAppStore((state) => state.densityMode);
+  const density =
+    densityMode === 'auto' ? (mode === 'expanded' ? 'compact' : 'comfortable') : densityMode;
+  return (
+    <ThemeProvider mode={themeMode} density={density}>
+      <ResponsiveAppRoot host={host} />
+    </ThemeProvider>
   );
 }
 
@@ -46,14 +100,94 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
   const { mode } = useResponsiveLayout();
   const tab = useAppStore((s) => s.tab);
   const setTab = useAppStore((s) => s.setTab);
-  const trapCount = useAppStore((s) => s.records.length);
+  const tabs = getNavigationTabs(mode);
+  const activeTab: Tab = mode !== 'compact' && tab === 'mibs' ? 'browse' : tab;
+  const trapCount = useAppStore((s) => s.unreadTrapCount);
   const consent = useAppStore((s) => s.consent);
   const [info, setInfo] = useState<EngineInfo | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const selectTab = useCallback(
+    (next: Tab) => {
+      setTab(next);
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.history.replaceState(null, '', routeForTab(next));
+      }
+    },
+    [setTab],
+  );
 
   useEffect(() => {
-    const label = TABS.find((item) => item.key === tab)?.label ?? 'MIB Beacon';
+    const apply = (url: string | null) => {
+      const next = url ? tabFromUrl(url) : null;
+      if (next) setTab(next);
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const sync = () => apply(window.location.href);
+      sync();
+      window.addEventListener('hashchange', sync);
+      window.addEventListener('popstate', sync);
+      return () => {
+        window.removeEventListener('hashchange', sync);
+        window.removeEventListener('popstate', sync);
+      };
+    }
+    void Linking.getInitialURL().then(apply);
+    const subscription = Linking.addEventListener('url', ({ url }) => apply(url));
+    return () => subscription.remove();
+  }, [setTab]);
+
+  useEffect(() => {
+    if (!host?.subscribeOpenFiles) return;
+    return host.subscribeOpenFiles((files) => {
+      void (async () => {
+        const state = useAppStore.getState();
+        try {
+          const review = await stageAcquiredFileImport(
+            { status: 'selected', files },
+            state.modules,
+            (module) => engine.mibs.replacementGroup(module),
+          );
+          state.setFileImportDraft({
+            review,
+            selected: [...createInitialFileSelection(review)],
+            replacements: [],
+            handleId: null,
+            visible: true,
+          });
+          state.setTab('browse');
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.history.replaceState(null, '', routeForTab('browse'));
+          }
+        } catch (cause) {
+          console.error('OS_OPEN_FILE_REVIEW_FAILED', cause);
+          state.setResolverError(
+            `Could not review the file opened by the operating system: ${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
+      })();
+    });
+  }, [engine, host]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editable =
+        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
+      if (event.key === 'Escape' && shortcutsOpen) setShortcutsOpen(false);
+      else if (event.key === '?' && !editable) {
+        event.preventDefault();
+        setShortcutsOpen((value) => !value);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [shortcutsOpen]);
+
+  useEffect(() => {
+    const label = tabs.find((item) => item.key === activeTab)?.label ?? 'MIB Beacon';
     host?.setWindowTitle?.(`${label} — MIB Beacon`);
-  }, [host, tab]);
+  }, [activeTab, host, tabs]);
 
   useEffect(() => {
     const store = useAppStore.getState;
@@ -62,6 +196,8 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
       .then(setInfo)
       .catch(() => setInfo(null));
     void refreshModules(engine);
+    void refreshAgentProfiles(engine);
+    void refreshAgentGroups(engine);
     void loadChildren(engine, '');
     void refreshResolverState(engine).catch((error: unknown) =>
       store().setResolverError(error instanceof Error ? error.message : String(error)),
@@ -70,17 +206,33 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
       store().setReceiver({
         running: status.running,
         ...(status.port ? { port: status.port } : {}),
+        count: status.count,
+        drops: status.drops,
+        ...(status.transports ? { transports: status.transports } : {}),
       }),
     );
     void engine.traps.list().then((records) => {
-      store().clearTraps();
-      for (const record of [...records].reverse()) store().addTrap(record);
+      store().setTrapRecords(records);
     });
 
     const offOps = engine.events.subscribe('ops', (e: EngineEvent) => {
       const s = store();
       if (e.handleId !== s.running) return;
-      if (e.kind === 'batch') {
+      if (e.kind === 'pdu') {
+        s.appendOperationPdu(e.payload);
+      } else if (e.kind === 'agent-status') {
+        const status = e.payload as {
+          agentId: string;
+          state: string;
+          count?: number;
+          error?: { message?: string; code?: string };
+        };
+        s.setAgentOperationStatus(status.agentId, {
+          state: status.state,
+          ...(status.count === undefined ? {} : { count: status.count }),
+          ...(status.error ? { message: status.error.message ?? status.error.code } : {}),
+        });
+      } else if (e.kind === 'batch') {
         const batch = e.payload as DecodedVarbind[];
         s.appendResults(batch);
         const st = store().stats;
@@ -97,6 +249,9 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
           batches: st.batches,
           ms: Date.now() - s.walkStart,
         });
+        s.saveQueryResultTab(
+          `${s.queryGroupMode ? (s.agentGroups.find((group) => group.id === s.selectedAgentGroupId)?.name ?? 'Group') : s.selectedAgentId ? (s.agentProfiles.find((profile) => profile.id === s.selectedAgentId)?.name ?? 'Agent') : s.agent.host || 'Ad hoc'} · ${s.queryOperation} · ${s.oid}`,
+        );
         s.setRunning(null);
       } else if (e.kind === 'error') {
         const p = e.payload as { message?: string; code?: string };
@@ -106,13 +261,35 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
     });
 
     const offTraps = engine.events.subscribe('traps', (e: EngineEvent) => {
-      if (e.kind === 'trap') store().addTrap(e.payload as TrapRecord);
+      if (e.kind === 'trap') {
+        store().addTrap(e.payload as TrapRecord);
+        void engine.traps.status().then((status) =>
+          store().setReceiver({
+            running: status.running,
+            ...(status.port ? { port: status.port } : {}),
+            count: status.count,
+            drops: status.drops,
+            ...(status.transports ? { transports: status.transports } : {}),
+          }),
+        );
+      } else if (e.kind === 'rule-notification') showTrapRuleNotification(e.payload);
       else if (e.kind === 'status') {
-        const status = e.payload as { running: boolean; port?: number };
+        const status = e.payload as {
+          running: boolean;
+          port?: number;
+          count?: number;
+          drops?: number;
+          transports?: ('udp4' | 'udp6')[];
+        };
         store().setReceiver({
           running: status.running,
           ...(status.port ? { port: status.port } : {}),
+          ...(status.count === undefined ? {} : { count: status.count }),
+          ...(status.drops === undefined ? {} : { drops: status.drops }),
+          ...(status.transports ? { transports: status.transports } : {}),
         });
+      } else if (e.kind === 'removed') {
+        for (const id of (e.payload as { ids?: string[] }).ids ?? []) store().removeTrap(id);
       } else if (e.kind === 'cleared') store().clearTraps();
     });
 
@@ -126,7 +303,9 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
     });
 
     const offTools = engine.events.subscribe('tools', (e: EngineEvent) => {
-      if (e.kind === 'resolver-changed') {
+      if (e.kind === 'watch-alert') {
+        showWatchNotification(e.payload);
+      } else if (e.kind === 'resolver-changed') {
         void refreshResolverState(engine);
       } else if (e.kind === 'catalog-changed') {
         void refreshModules(engine).then(async () => {
@@ -148,12 +327,15 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {mode === 'compact' ? (
         <View style={[styles.header, { borderBottomColor: t.border }]}>
-          <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
-          {info ? (
-            <Text style={[styles.sub, { color: t.textDim }]}>
-              {info.platform} · net-snmp {info.netSnmpVersion}
-            </Text>
-          ) : null}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
+            {info ? (
+              <Text style={[styles.sub, { color: t.textDim }]}>
+                {info.platform} · net-snmp {info.netSnmpVersion}
+              </Text>
+            ) : null}
+          </View>
+          <Button title="?" small variant="ghost" onPress={() => setShortcutsOpen(true)} />
         </View>
       ) : null}
 
@@ -161,21 +343,27 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
         {mode !== 'compact' ? (
           <AppNavigation
             expanded={mode === 'expanded'}
-            tab={tab}
+            tabs={tabs}
+            tab={activeTab}
             trapCount={trapCount}
             info={info}
-            onSelect={setTab}
+            onSelect={selectTab}
             onNewWindow={host?.canOpenWindow ? host.newWindow : undefined}
+            onShortcuts={() => setShortcutsOpen(true)}
           />
         ) : null}
         <View style={styles.body}>
-          {tab === 'browse' ? <BrowseScreen /> : null}
-          {tab === 'query' ? <QueryScreen info={info} /> : null}
-          {tab === 'traps' ? <TrapsScreen info={info} /> : null}
-          {tab === 'mibs' ? <MibsScreen /> : null}
-          {tab === 'settings' ? <SettingsScreen /> : null}
+          {activeTab === 'browse' ? <BrowseScreen info={info} unified /> : null}
+          {activeTab === 'query' ? <QueryScreen info={info} /> : null}
+          {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
+          {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}
+          {activeTab === 'tools' ? <ToolsScreen /> : null}
+          {activeTab === 'mibs' ? <MibsScreen /> : null}
+          {activeTab === 'settings' ? <SettingsScreen host={host} /> : null}
         </View>
       </View>
+
+      <FileImportReviewModal />
 
       <ResolverConsentModal
         visible={Boolean(consent)}
@@ -184,11 +372,56 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
         onRespond={(allow, askAgain) => void respondResolverConsent(engine, allow, askAgain)}
       />
 
+      <ShortcutOverlay visible={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
       {mode === 'compact' ? (
-        <BottomNavigation tab={tab} trapCount={trapCount} onSelect={setTab} />
+        <BottomNavigation tabs={tabs} tab={activeTab} trapCount={trapCount} onSelect={selectTab} />
       ) : null}
     </View>
   );
+}
+
+function showTrapRuleNotification(payload: unknown): void {
+  const value = payload as {
+    record?: TrapRecord;
+    rules?: { name: string }[];
+  };
+  const NotificationApi = (
+    globalThis as unknown as {
+      Notification?: {
+        permission: 'default' | 'granted' | 'denied';
+        requestPermission(): Promise<'default' | 'granted' | 'denied'>;
+        new (title: string, options?: { body?: string }): unknown;
+      };
+    }
+  ).Notification;
+  if (!NotificationApi || !value.record) return;
+  const display = () =>
+    new NotificationApi(value.record?.trapName ?? value.record?.trapOid ?? 'SNMP notification', {
+      body: `${value.record?.sourceAddress ?? 'unknown source'} · ${value.rules?.map(({ name }) => name).join(', ') ?? 'matched rule'}`,
+    });
+  if (NotificationApi.permission === 'granted') display();
+  else if (NotificationApi.permission === 'default') {
+    void NotificationApi.requestPermission().then((permission) => {
+      if (permission === 'granted') display();
+    });
+  }
+}
+
+function showWatchNotification(payload: unknown): void {
+  const value = payload as { name?: string; value?: number; operator?: string; threshold?: number };
+  const NotificationApi = (
+    globalThis as unknown as {
+      Notification?: {
+        permission?: string;
+        new (title: string, options?: { body?: string }): unknown;
+      };
+    }
+  ).Notification;
+  if (!NotificationApi || NotificationApi.permission !== 'granted') return;
+  new NotificationApi(`Watch threshold: ${value.name ?? 'MIB Beacon'}`, {
+    body: `${value.value ?? 'value'} ${value.operator ?? ''} ${value.threshold ?? ''}`.trim(),
+  });
 }
 
 function NavigationItem({
@@ -198,19 +431,22 @@ function NavigationItem({
   badgeCount,
   onPress,
 }: {
-  item: (typeof TABS)[number];
+  item: NavigationTab;
   active: boolean;
   expanded: boolean;
   badgeCount?: number;
   onPress: () => void;
 }) {
   const t = useTheme();
+  const [hovered, setHovered] = useState(false);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={item.label}
       accessibilityState={{ selected: active }}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={({ pressed }) => [
         styles.navItem,
         expanded ? styles.navItemExpanded : styles.navItemRail,
@@ -233,24 +469,33 @@ function NavigationItem({
       {expanded ? (
         <Text style={[styles.navLabel, { color: active ? t.text : t.textDim }]}>{item.label}</Text>
       ) : null}
+      {!expanded && hovered ? (
+        <View style={[styles.navTooltip, { backgroundColor: t.surfaceAlt, borderColor: t.border }]}>
+          <Text style={[styles.navTooltipText, { color: t.text }]}>{item.label}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
 function AppNavigation({
+  tabs,
   expanded,
   tab,
   trapCount,
   info,
   onSelect,
   onNewWindow,
+  onShortcuts,
 }: {
+  tabs: NavigationTab[];
   expanded: boolean;
   tab: Tab;
   trapCount: number;
   info: EngineInfo | null;
   onSelect: (tab: Tab) => void;
   onNewWindow?: () => void;
+  onShortcuts: () => void;
 }) {
   const t = useTheme();
   return (
@@ -263,7 +508,7 @@ function AppNavigation({
       ]}
     >
       <View style={[styles.brandMark, { backgroundColor: t.accentSoft, borderColor: t.accent }]}>
-        <Text style={[styles.brandGlyph, { color: t.accent }]}>OM</Text>
+        <Text style={[styles.brandGlyph, { color: t.accent }]}>◉</Text>
       </View>
       {expanded ? (
         <View style={styles.brandCopy}>
@@ -272,7 +517,7 @@ function AppNavigation({
         </View>
       ) : null}
       <View style={styles.navItems}>
-        {TABS.map((item) => (
+        {tabs.map((item) => (
           <NavigationItem
             key={item.key}
             item={item}
@@ -284,6 +529,19 @@ function AppNavigation({
         ))}
       </View>
       <View style={styles.sidebarFooter}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Keyboard shortcuts"
+          onPress={onShortcuts}
+          style={({ pressed }) => [
+            styles.newWindow,
+            expanded ? styles.navItemExpanded : styles.navItemRail,
+            { backgroundColor: pressed ? t.surfaceAlt : 'transparent', borderColor: t.border },
+          ]}
+        >
+          <Text style={[styles.newWindowGlyph, { color: t.accent }]}>?</Text>
+          {expanded ? <Text style={[styles.navLabel, { color: t.text }]}>Shortcuts</Text> : null}
+        </Pressable>
         {onNewWindow ? (
           <Pressable
             accessibilityRole="button"
@@ -315,11 +573,37 @@ function AppNavigation({
   );
 }
 
+function ShortcutOverlay({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const t = useTheme();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <Card style={styles.shortcutCard}>
+          <View style={styles.shortcutHead}>
+            <SectionTitle>Keyboard shortcuts</SectionTitle>
+            <Button title="Close" small variant="ghost" onPress={onClose} />
+          </View>
+          <ScrollView>
+            {SHORTCUTS.map(([key, description]) => (
+              <View key={key} style={[styles.shortcutRow, { borderBottomColor: t.border }]}>
+                <Text style={[styles.shortcutKey, { color: t.mono }]}>{key}</Text>
+                <Text style={[styles.shortcutDescription, { color: t.text }]}>{description}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Card>
+      </View>
+    </Modal>
+  );
+}
+
 function BottomNavigation({
+  tabs,
   tab,
   trapCount,
   onSelect,
 }: {
+  tabs: NavigationTab[];
   tab: Tab;
   trapCount: number;
   onSelect: (tab: Tab) => void;
@@ -330,7 +614,7 @@ function BottomNavigation({
       nativeID="app-bottom-navigation"
       style={[styles.tabbar, { backgroundColor: t.surface, borderTopColor: t.border }]}
     >
-      {TABS.map((item) => {
+      {tabs.map((item) => {
         const active = item.key === tab;
         return (
           <Pressable
@@ -391,10 +675,9 @@ function ResolverConsentModal({
             Search configured external sources?
           </Text>
           <Label tone="dim" size={12}>
-            Local parsing found missing definitions. MIB Beacon can contact the enabled hosts
-            below. Valid modules are cached on the engine host (the LAN server when using the web
-            app). These sources are configured for lookup; they are not inherently trusted or
-            endorsed.
+            Local parsing found missing definitions. MIB Beacon can contact the enabled hosts below.
+            Valid modules are cached on the engine host (the LAN server when using the web app).
+            These sources are configured for lookup; they are not inherently trusted or endorsed.
           </Label>
           {missingModules.length ? (
             <ScrollView style={styles.modalList}>
@@ -412,6 +695,7 @@ function ResolverConsentModal({
           ) : null}
           <Pressable
             accessibilityRole="checkbox"
+            accessibilityLabel="Ask me again before external MIB lookup"
             accessibilityState={{ checked: askAgain }}
             onPress={() => setAskAgain((value) => !value)}
             style={styles.checkboxRow}
@@ -444,7 +728,15 @@ function ResolverConsentModal({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   workbench: { flex: 1, minHeight: 0, flexDirection: 'row' },
-  header: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1 },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   title: { fontSize: 18, fontWeight: '800' },
   sub: { fontSize: 11, marginTop: 2 },
   body: { flex: 1, minHeight: 0 },
@@ -469,6 +761,18 @@ const styles = StyleSheet.create({
   navItemRail: { borderRadius: 10, justifyContent: 'center', paddingHorizontal: 0 },
   navGlyphWrap: { width: 26, alignItems: 'center' },
   navGlyph: { fontSize: 20, lineHeight: 24, fontWeight: '700' },
+  navTooltip: {
+    position: 'absolute',
+    left: 48,
+    minHeight: 36,
+    minWidth: 96,
+    borderWidth: 1,
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  navTooltipText: { fontSize: 12, fontWeight: '700' },
   navLabel: { fontSize: 13, fontWeight: '700' },
   sidebarFooter: { alignSelf: 'stretch', gap: 8 },
   newWindow: { minHeight: 42, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
@@ -521,4 +825,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  shortcutCard: { width: '92%', maxWidth: 620, maxHeight: '82%' },
+  shortcutHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  shortcutRow: {
+    minHeight: 46,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    paddingVertical: 7,
+  },
+  shortcutKey: { width: 135, fontFamily: 'monospace', fontWeight: '800', fontSize: 12 },
+  shortcutDescription: { flex: 1, fontSize: 13 },
 });

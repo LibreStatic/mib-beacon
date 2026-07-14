@@ -1,4 +1,13 @@
-export { useTheme, type Theme } from './theme';
+export {
+  useTheme,
+  ThemeProvider,
+  createTheme,
+  contrastRatio,
+  THEME_PALETTES,
+  type Theme,
+  type ThemeMode,
+  type DensityMode,
+} from './theme';
 export {
   Card,
   SectionTitle,

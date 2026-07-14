@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { forwardRef, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -22,29 +22,58 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
 
 export function SectionTitle({ children }: { children: ReactNode }) {
   const t = useTheme();
-  return <Text style={[styles.sectionTitle, { color: t.textDim }]}>{children}</Text>;
+  return (
+    <Text maxFontSizeMultiplier={1.3} style={[styles.sectionTitle, { color: t.textDim }]}>
+      {children}
+    </Text>
+  );
 }
 
-export function Field({ label, ...props }: { label?: string } & TextInputProps) {
+export const Field = forwardRef<TextInput, { label?: string } & TextInputProps>(function Field(
+  { label, onFocus, onBlur, style, multiline, accessibilityLabel, ...props },
+  ref,
+) {
   const t = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.field}>
-      {label ? <Text style={[styles.label, { color: t.textDim }]}>{label}</Text> : null}
+      {label ? (
+        <Text maxFontSizeMultiplier={1.3} style={[styles.label, { color: t.textDim }]}>
+          {label}
+        </Text>
+      ) : null}
       <TextInput
+        {...props}
+        ref={ref}
         placeholderTextColor={t.textDim}
         autoCapitalize="none"
         autoCorrect={false}
+        accessibilityLabel={accessibilityLabel ?? label}
+        multiline={multiline}
+        maxFontSizeMultiplier={1.3}
+        onFocus={(event) => {
+          setFocused(true);
+          onFocus?.(event);
+        }}
+        onBlur={(event) => {
+          setFocused(false);
+          onBlur?.(event);
+        }}
         style={[
           styles.input,
-          { color: t.text, borderColor: t.border, backgroundColor: t.surfaceAlt },
-          props.multiline ? styles.inputMultiline : null,
-          props.style,
+          {
+            color: t.text,
+            borderColor: focused ? t.focus : t.border,
+            backgroundColor: t.surfaceAlt,
+            minHeight: t.density.controlMinHeight,
+          },
+          multiline ? styles.inputMultiline : null,
+          style,
         ]}
-        {...props}
       />
     </View>
   );
-}
+});
 
 export function Button({
   title,
@@ -60,6 +89,7 @@ export function Button({
   small?: boolean;
 }) {
   const t = useTheme();
+  const [focused, setFocused] = useState(false);
   const bg = variant === 'primary' ? t.accent : variant === 'danger' ? t.errorSoft : 'transparent';
   const fg = variant === 'primary' ? t.accentText : variant === 'danger' ? t.error : t.accent;
   const borderColor = variant === 'ghost' ? t.border : 'transparent';
@@ -69,13 +99,26 @@ export function Button({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={title}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={({ pressed }) => [
         styles.button,
         small && styles.buttonSmall,
-        { backgroundColor: bg, borderColor, opacity: disabled ? 0.45 : pressed ? 0.75 : 1 },
+        {
+          backgroundColor: bg,
+          borderColor: focused ? t.focus : borderColor,
+          borderWidth: focused ? 2 : 1,
+          minHeight: t.density.controlMinHeight,
+          opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
+        },
       ]}
     >
-      <Text style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}>{title}</Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}
+      >
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -91,20 +134,29 @@ export function Chip({
   onPress?: () => void;
 }) {
   const t = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ selected: Boolean(active) }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={[
         styles.chip,
         {
           backgroundColor: active ? t.accentSoft : t.surfaceAlt,
-          borderColor: active ? t.accent : t.border,
+          borderColor: focused ? t.focus : active ? t.accent : t.border,
+          borderWidth: focused ? 2 : 1,
+          minHeight: t.density.controlMinHeight,
         },
       ]}
     >
-      <Text style={{ color: active ? t.accent : t.textDim, fontSize: 12, fontWeight: '600' }}>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        style={{ color: active ? t.accent : t.textDim, fontSize: 12, fontWeight: '600' }}
+      >
         {label}
       </Text>
     </Pressable>
@@ -115,7 +167,12 @@ export function Pill({ text, color }: { text: string; color?: string }) {
   const t = useTheme();
   return (
     <View style={[styles.pill, { backgroundColor: t.surfaceAlt, borderColor: t.border }]}>
-      <Text style={{ color: color ?? t.textDim, fontSize: 10, fontWeight: '700' }}>{text}</Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        style={{ color: color ?? t.textDim, fontSize: 10, fontWeight: '700' }}
+      >
+        {text}
+      </Text>
     </View>
   );
 }
@@ -135,6 +192,8 @@ export function Mono({
   return (
     <Text
       numberOfLines={numberOfLines}
+      ellipsizeMode={numberOfLines ? 'middle' : undefined}
+      maxFontSizeMultiplier={1.3}
       style={{ fontFamily: 'monospace', fontSize: size, color: dim ? t.textDim : t.mono }}
     >
       {children}
@@ -153,17 +212,39 @@ export function Label({
 }) {
   const t = useTheme();
   const color =
-    tone === 'ok' ? t.ok : tone === 'error' ? t.error : tone === 'warn' ? t.warn : tone === 'dim' ? t.textDim : t.text;
-  return <Text style={{ color, fontSize: size }}>{children}</Text>;
+    tone === 'ok'
+      ? t.ok
+      : tone === 'error'
+        ? t.error
+        : tone === 'warn'
+          ? t.warn
+          : tone === 'dim'
+            ? t.textDim
+            : t.text;
+  return (
+    <Text maxFontSizeMultiplier={1.3} style={{ color, fontSize: size }}>
+      {children}
+    </Text>
+  );
 }
 
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   const t = useTheme();
   return (
     <View style={styles.empty}>
-      <Text style={{ color: t.textDim, fontSize: 14, fontWeight: '600' }}>{title}</Text>
+      <Text
+        maxFontSizeMultiplier={1.3}
+        style={{ color: t.textDim, fontSize: 14, fontWeight: '600' }}
+      >
+        {title}
+      </Text>
       {hint ? (
-        <Text style={{ color: t.textDim, fontSize: 12, marginTop: 4, textAlign: 'center' }}>{hint}</Text>
+        <Text
+          maxFontSizeMultiplier={1.3}
+          style={{ color: t.textDim, fontSize: 12, marginTop: 4, textAlign: 'center' }}
+        >
+          {hint}
+        </Text>
       ) : null}
     </View>
   );
@@ -178,8 +259,19 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   field: { gap: 4, flex: 1 },
   label: { fontSize: 11, fontWeight: '600' },
-  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14 },
-  inputMultiline: { minHeight: 96, textAlignVertical: 'top', fontFamily: 'monospace', fontSize: 12 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  inputMultiline: {
+    minHeight: 96,
+    textAlignVertical: 'top',
+    fontFamily: 'monospace',
+    fontSize: 12,
+  },
   button: {
     borderRadius: 8,
     borderWidth: 1,
@@ -191,7 +283,14 @@ const styles = StyleSheet.create({
   buttonSmall: { paddingVertical: 6, paddingHorizontal: 12 },
   buttonText: { fontWeight: '600', fontSize: 14 },
   buttonTextSmall: { fontSize: 12 },
-  chip: { borderWidth: 1, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 12 },
+  chip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pill: { borderWidth: 1, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 },
   empty: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 16 },
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },

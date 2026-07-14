@@ -39,10 +39,11 @@ describe('prepareFileImport', () => {
     const result = await prepareFileImport([
       raw('one.mib', mib('ONE-MIB')),
       raw('two', mib('TWO-MIB')),
+      raw('three.smi', mib('THREE-MIB')),
       raw('three.json', mib('THREE-MIB')),
       raw('page.txt', '<html>not a mib</html>'),
     ]);
-    expect(result.candidates.map((item) => item.path)).toEqual(['one.mib', 'two']);
+    expect(result.candidates.map((item) => item.path)).toEqual(['one.mib', 'two', 'three.smi']);
     expect(result.rejections.map((item) => item.reason)).toEqual(['unsupported-extension', 'html-content']);
   });
 

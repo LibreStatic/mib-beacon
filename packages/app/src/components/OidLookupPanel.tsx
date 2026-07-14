@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { Linking, View, Text, StyleSheet } from 'react-native';
 import { Button, Card, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
-import { lookupUnknownOid } from '../actions';
+import { loadLookupCandidate, lookupUnknownOid } from '../actions';
+import { observiumSearchUrl } from '../oid-lookup';
 
 /** Explicit, one-OID-at-a-time external lookup. It never starts without a user press. */
 export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?: boolean }) {
@@ -11,6 +12,7 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
   const normalized = oid.trim().replace(/^\./, '');
   const lookup = useAppStore((s) => s.oidLookups[normalized]);
   const running = Boolean(useAppStore((s) => s.lookupHandles[normalized]));
+  const importing = useAppStore((s) => s.importBusy);
   const valid = /^\d+(?:\.\d+)+$/.test(normalized);
   if (!valid) return null;
   const content = (
@@ -35,7 +37,22 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
           <Row style={styles.wrap}>
             <Pill text={lookup.result.fromCache ? 'cached lookup' : 'fresh lookup'} color={lookup.result.fromCache ? t.warn : t.ok} />
             {lookup.result.loaded ? <Pill text={`loaded · ${lookup.result.loaded.name}`} color={t.ok} /> : null}
+            {lookup.result.cached ? <Pill text={`cached · ${lookup.result.cached.name}`} color={t.warn} /> : null}
           </Row>
+          {lookup.result.cached?.module ? (
+            <Row>
+              <View style={{ flex: 1 }}>
+                <Label tone="dim" size={10}>Cached but not loaded</Label>
+                <Mono size={10}>{lookup.result.cached.module}</Mono>
+              </View>
+              <Button
+                title="Load cached"
+                small
+                disabled={importing}
+                onPress={() => void loadLookupCandidate(engine, lookup.result!.cached!.module!, true)}
+              />
+            </Row>
+          ) : null}
           {lookup.result.enterprise ? (
             <Evidence title={`IANA enterprise ${lookup.result.enterprise.number}`} value={lookup.result.enterprise.organization} />
           ) : null}
@@ -49,12 +66,27 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
             <View>
               <Label tone="dim" size={10}>Candidate indexed MIBs</Label>
               {lookup.result.candidates.slice(0, 12).map((candidate, index) => (
-                <Text key={`${candidate.sourceId}-${candidate.module}-${index}`} style={{ color: t.text, fontSize: 11 }}>
-                  {candidate.module} · {candidate.sourceId}{candidate.location ? ` · ${candidate.location}` : ''}
-                </Text>
+                <Row key={`${candidate.sourceId}-${candidate.module}-${index}`} style={styles.candidate}>
+                  <Text style={{ color: t.text, fontSize: 11, flex: 1 }}>
+                    {candidate.module} · {candidate.sourceId}{candidate.location ? ` · ${candidate.location}` : ''}
+                  </Text>
+                  <Button
+                    title="Fetch"
+                    small
+                    variant="ghost"
+                    disabled={importing}
+                    onPress={() => void loadLookupCandidate(engine, candidate.module)}
+                  />
+                </Row>
               ))}
             </View>
           ) : null}
+          <Button
+            title="Search Observium"
+            small
+            variant="ghost"
+            onPress={() => void Linking.openURL(observiumSearchUrl(normalized))}
+          />
           {!lookup.result.loaded && !lookup.result.enterprise && !lookup.result.oidBase && !lookup.result.oidRef && !lookup.result.candidates.length ? (
             <Label tone="dim" size={11}>No matching loaded definition or external registry evidence was found.</Label>
           ) : null}
@@ -81,4 +113,5 @@ const styles = StyleSheet.create({
   results: { gap: 6 },
   wrap: { flexWrap: 'wrap' },
   evidence: { borderLeftWidth: 2, borderLeftColor: '#4f8ef7', paddingLeft: 7 },
+  candidate: { alignItems: 'center', gap: 6 },
 });

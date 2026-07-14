@@ -1,6 +1,6 @@
 {
   "name": "@mibbeacon/app",
-  "version": "0.0.0",
+  "version": "0.0.1-beta.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@mibbeacon/ui": "workspace:*",
     "fflate": "^0.8.3",
+    "react-native-svg": "^15.15.5",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {

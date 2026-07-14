@@ -413,7 +413,7 @@ export function retainedFileReviewAction(
 
 export type FileImportLimits = typeof FILE_IMPORT_LIMITS;
 
-const acceptedExtensions = new Set(['', '.mib', '.my', '.txt', '.asn1']);
+const acceptedExtensions = new Set(['', '.mib', '.my', '.smi', '.txt', '.asn1']);
 const systemNames = new Set(['thumbs.db', 'desktop.ini', '.ds_store', '__macosx']);
 const zipSignatures = new Set([0x04034b50, 0x06054b50, 0x08074b50]);
 
@@ -705,7 +705,7 @@ async function inputPicker(directory: boolean, owner: Document = document, optio
     const input = owner.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.mib,.my,.txt,.asn1,.zip';
+    input.accept = '.mib,.my,.smi,.txt,.asn1,.zip';
     if (directory) input.setAttribute('webkitdirectory', '');
     input.style.display = 'none';
     owner.body?.appendChild(input);

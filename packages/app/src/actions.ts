@@ -1,20 +1,25 @@
-import { inferWireType } from '@mibbeacon/core/client';
+import { inferWireType, validateVarbindInput } from '@mibbeacon/core/client';
 import type {
   AgentSpec,
+  AgentTarget,
+  OperationTarget,
   EngineAPI,
   EngineEvent,
   ImportResult,
   MibNodeDetail,
   MibTextFile,
   NotificationSendRequest,
+  NotificationAgentSendRequest,
+  TrapQuery,
   OidLookupResult,
   ResolverOperationStatus,
   ResolverSettings,
   ResolverSourceDraft,
   ResolverSourcePreviewResult,
   SourceConfig,
+  SnmpVarbindInput,
 } from '@mibbeacon/core/client';
-import { useAppStore, type AgentForm } from './store';
+import { useAppStore, type AgentForm, type QueryOperation } from './store';
 
 let notificationSeq = 0;
 
@@ -23,7 +28,10 @@ export function buildAgentSpec(form: AgentForm, defaultPort = 161): AgentSpec {
   const spec: AgentSpec = {
     host: form.host.trim(),
     port: Number(form.port) || defaultPort,
+    transport: form.transport,
     version: form.version,
+    timeoutMs: Number(form.timeoutMs) || 5_000,
+    retries: Math.max(0, Number(form.retries) || 0),
   };
   if (form.version === 'v3') {
     spec.v3 = {
@@ -33,6 +41,7 @@ export function buildAgentSpec(form: AgentForm, defaultPort = 161): AgentSpec {
       authKey: form.v3.level !== 'noAuthNoPriv' ? form.v3.authKey : undefined,
       privProtocol: form.v3.level === 'authPriv' ? form.v3.privProtocol : undefined,
       privKey: form.v3.level === 'authPriv' ? form.v3.privKey : undefined,
+      context: form.v3.context || undefined,
     };
   } else {
     spec.community = form.community;
@@ -40,19 +49,77 @@ export function buildAgentSpec(form: AgentForm, defaultPort = 161): AgentSpec {
   return spec;
 }
 
+/** Keep saved credentials inside the engine by targeting an opaque profile id. */
+export function buildAgentTarget(form: AgentForm, selectedAgentId: string | null): AgentTarget {
+  return selectedAgentId ? { agentId: selectedAgentId } : { agent: buildAgentSpec(form) };
+}
+
+export function buildOperationTarget(
+  form: AgentForm,
+  selectedAgentId: string | null,
+  selectedGroupId: string | null,
+): OperationTarget {
+  return selectedGroupId ? { groupId: selectedGroupId } : buildAgentTarget(form, selectedAgentId);
+}
+
 function describeError(e: unknown): string {
-  const err = e as { message?: string; hint?: string };
-  return `${err.message ?? String(e)}${err.hint ? ' — ' + err.hint : ''}`;
+  const err = e as {
+    message?: string;
+    hint?: string;
+    details?: { errorIndex?: number; oid?: string };
+  };
+  const row = err.details?.errorIndex
+    ? ` — staged row ${err.details.errorIndex}${err.details.oid ? ` (${err.details.oid})` : ''}`
+    : '';
+  return `${err.message ?? String(e)}${row}${err.hint ? ' — ' + err.hint : ''}`;
+}
+
+export function queryResultTitle(
+  state: Pick<
+    ReturnType<typeof useAppStore.getState>,
+    'selectedAgentId' | 'agentProfiles' | 'agent' | 'oid'
+  >,
+  operation: string,
+): string {
+  const agentName = state.selectedAgentId
+    ? (state.agentProfiles.find((profile) => profile.id === state.selectedAgentId)?.name ?? 'Agent')
+    : state.agent.host.trim() || 'Ad hoc';
+  return `${agentName} · ${operation} · ${state.oid}`;
+}
+
+export async function numericOid(engine: EngineAPI, value: string): Promise<string> {
+  const trimmed = value.trim();
+  if (/^\d+(?:\.\d+)+$/.test(trimmed)) return trimmed;
+  const translated = await engine.mibs.translate(trimmed);
+  if (!translated) throw new Error(`OID or symbol "${trimmed}" could not be resolved`);
+  return translated.oid;
+}
+
+async function numericSetVarbinds(
+  engine: EngineAPI,
+  inputs: readonly SnmpVarbindInput[],
+): Promise<SnmpVarbindInput[]> {
+  return Promise.all(
+    inputs.map(async (input) => ({
+      ...input,
+      oid: await numericOid(engine, input.oid),
+      ...(input.type === 'ObjectIdentifier'
+        ? { value: await numericOid(engine, input.value) }
+        : {}),
+    })),
+  );
 }
 
 // --------------------------------------------------------------------------
 // Query
 // --------------------------------------------------------------------------
 
-async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext'): Promise<void> {
+async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext' | 'getBulk'): Promise<void> {
   const s = useAppStore.getState();
-  const agent = buildAgentSpec(s.agent);
-  if (!agent.host) {
+  const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
+  const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
+  const target = groupId ? ({ groupId } as const) : agentTarget;
+  if (!groupId && !s.selectedAgentId && !s.agent.host.trim()) {
     s.setQueryError('Enter an agent host first.');
     return;
   }
@@ -60,10 +127,22 @@ async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext'): Promise<v
   s.setStats({ count: 0, batches: 0, ms: 0 });
   const t0 = Date.now();
   try {
-    const fn = kind === 'get' ? engine.ops.get : engine.ops.getNext;
-    const vbs = await fn({ agent, oids: [s.oid] });
-    s.setResults(vbs);
-    s.setStats({ count: vbs.length, batches: 1, ms: Date.now() - t0 });
+    const oid = await numericOid(engine, s.oid);
+    s.clearAgentOperationStatuses();
+    s.clearOperationPduLog();
+    s.setResults([]);
+    const request =
+      kind === 'getBulk'
+        ? {
+            ...target,
+            kind,
+            oids: [oid],
+            nonRepeaters: Number(s.agent.getBulkNonRepeaters) || 0,
+            maxRepetitions: Number(s.agent.getBulkMaxRepetitions) || 20,
+          }
+        : { ...target, kind, oids: [oid] };
+    const { handleId } = await engine.ops.start(request);
+    s.setRunning(handleId, t0);
   } catch (e) {
     s.setResults([]);
     s.setQueryError(describeError(e));
@@ -72,11 +151,14 @@ async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext'): Promise<v
 
 export const runGet = (engine: EngineAPI) => runOneShot(engine, 'get');
 export const runGetNext = (engine: EngineAPI) => runOneShot(engine, 'getNext');
+export const runGetBulk = (engine: EngineAPI) => runOneShot(engine, 'getBulk');
 
 export async function runSet(engine: EngineAPI): Promise<void> {
   const s = useAppStore.getState();
-  const agent = buildAgentSpec(s.agent);
-  if (!agent.host) {
+  const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
+  const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
+  const target = groupId ? ({ groupId } as const) : agentTarget;
+  if (!groupId && !s.selectedAgentId && !s.agent.host.trim()) {
     s.setQueryError('Enter an agent host first.');
     return;
   }
@@ -84,28 +166,70 @@ export async function runSet(engine: EngineAPI): Promise<void> {
   s.setStats({ count: 0, batches: 0, ms: 0 });
   const t0 = Date.now();
   try {
-    const vbs = await engine.ops.set({ agent, varbinds: [s.setDraft] });
-    s.setResults(vbs);
-    s.setStats({ count: vbs.length, batches: 1, ms: Date.now() - t0 });
+    const varbinds = await numericSetVarbinds(
+      engine,
+      s.setStaging.length > 0 ? s.setStaging : [s.setDraft],
+    );
+    s.clearAgentOperationStatuses();
+    s.clearOperationPduLog();
+    s.setResults([]);
+    const { handleId } = await engine.ops.start({ ...target, kind: 'set', varbinds });
+    s.setRunning(handleId, t0);
     s.setSetReview(false);
+    s.clearSetStaging();
   } catch (e) {
     s.setResults([]);
     s.setQueryError(describeError(e));
   }
 }
 
+export async function prepareSetReview(engine: EngineAPI): Promise<void> {
+  const state = useAppStore.getState();
+  const varbinds = state.setStaging.length > 0 ? state.setStaging : [state.setDraft];
+  const validationError = varbinds.map(validateVarbindInput).find(Boolean);
+  if (validationError) {
+    state.setQueryError(validationError);
+    return;
+  }
+  state.setQueryError(null);
+  if (state.queryGroupMode && state.selectedAgentGroupId) {
+    state.setSetPreviousValues([]);
+    state.setSetReview(true);
+    return;
+  }
+  try {
+    const target = buildAgentTarget(state.agent, state.selectedAgentId);
+    state.setSetPreviousValues(
+      await engine.ops.get({
+        ...target,
+        oids: await Promise.all(varbinds.map(({ oid }) => numericOid(engine, oid))),
+      }),
+    );
+  } catch {
+    state.setSetPreviousValues([]);
+  }
+  state.setSetReview(true);
+}
+
 export async function runWalk(engine: EngineAPI): Promise<void> {
   const s = useAppStore.getState();
-  const agent = buildAgentSpec(s.agent);
-  if (!agent.host) {
+  const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
+  const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
+  const target = groupId ? ({ groupId } as const) : agentTarget;
+  if (!groupId && !s.selectedAgentId && !s.agent.host.trim()) {
     s.setQueryError('Enter an agent host first.');
     return;
   }
   s.setQueryError(null);
+  s.clearAgentOperationStatuses();
+  s.clearOperationPduLog();
   s.setResults([]);
   s.setStats({ count: 0, batches: 0, ms: 0 });
   try {
-    const { handleId } = await engine.ops.startWalk({ agent, baseOid: s.oid });
+    const baseOid = await numericOid(engine, s.oid);
+    const { handleId } = groupId
+      ? await engine.ops.start({ ...target, kind: 'walk', baseOid })
+      : await engine.ops.startWalk({ ...agentTarget, baseOid });
     s.setRunning(handleId, Date.now());
   } catch (e) {
     s.setQueryError(describeError(e));
@@ -118,6 +242,74 @@ export async function stopWalk(engine: EngineAPI): Promise<void> {
     await engine.ops.cancel(running);
     setRunning(null);
   }
+}
+
+export async function openTableView(engine: EngineAPI, node: MibNodeDetail): Promise<void> {
+  let entry: MibNodeDetail | null = node;
+  if (node.kind === 'table') {
+    const child = (await engine.mibs.tree(node.oid)).find((item) => item.kind === 'entry');
+    entry = child ? await engine.mibs.node(child.oid, child.module) : null;
+  } else if (node.kind === 'column') {
+    entry = await engine.mibs.node(node.oid.split('.').slice(0, -1).join('.'), node.module);
+  }
+  if (!entry || entry.kind !== 'entry') throw new Error(`${node.name} is not a table or entry`);
+  const columnSummaries = (await engine.mibs.tree(entry.oid)).filter(
+    (item) => item.kind === 'column',
+  );
+  const columnDetails = await Promise.all(
+    columnSummaries.map((column) => engine.mibs.node(column.oid, column.module)),
+  );
+  const indexDetails = await Promise.all(
+    (entry.indexes ?? []).map((name) => engine.mibs.node(name, entry!.module)),
+  );
+  const columns = columnSummaries.map((column, index) => ({
+    oid: column.oid,
+    name: column.name,
+    ...(columnDetails[index]?.access ? { access: columnDetails[index]!.access } : {}),
+    ...(columnDetails[index]?.syntax ? { syntax: columnDetails[index]!.syntax } : {}),
+  }));
+  useAppStore.getState().setTableView({
+    entryOid: entry.oid,
+    name: entry.name,
+    columns,
+    indexes: (entry.indexes ?? []).map((name, index) => ({
+      name,
+      syntax: indexDetails[index]?.syntax ?? 'INTEGER',
+      implied: entry!.impliedIndexes?.includes(name),
+      displayHint: indexDetails[index]?.displayHint,
+    })),
+    selectedColumnOids: columns.map(({ oid }) => oid),
+    rotate: false,
+    pollMs: 0,
+  });
+  await runTableView(engine);
+}
+
+export async function runTableView(engine: EngineAPI): Promise<void> {
+  const state = useAppStore.getState();
+  const view = state.tableView;
+  if (!view) return;
+  const groupId = state.queryGroupMode ? state.selectedAgentGroupId : null;
+  const target = buildOperationTarget(state.agent, state.selectedAgentId, groupId);
+  state.setQueryError(null);
+  state.setResults([]);
+  state.clearOperationPduLog();
+  state.clearAgentOperationStatuses();
+  const { handleId } = await engine.ops.start({
+    ...target,
+    kind: 'table-fetch',
+    baseOid: view.entryOid,
+    columnOids: view.selectedColumnOids,
+  });
+  state.setRunning(handleId, Date.now());
+}
+
+export async function refreshAgentProfiles(engine: EngineAPI): Promise<void> {
+  useAppStore.getState().setAgentProfiles(await engine.agents.list());
+}
+
+export async function refreshAgentGroups(engine: EngineAPI): Promise<void> {
+  useAppStore.getState().setAgentGroups(await engine.agents.groups.list());
 }
 
 /** Live OID → name hint for the query field. */
@@ -148,7 +340,15 @@ export async function resolveOidHint(engine: EngineAPI, oid: string): Promise<vo
 // Traps
 // --------------------------------------------------------------------------
 
-export async function toggleReceiver(engine: EngineAPI, port: string): Promise<void> {
+export async function toggleReceiver(
+  engine: EngineAPI,
+  port: string,
+  options: {
+    disableAuthorization?: boolean;
+    communities?: string[];
+    transport?: 'udp4' | 'udp6' | 'dual';
+  } = {},
+): Promise<void> {
   const s = useAppStore.getState();
   if (s.receiver.running) {
     await engine.traps.stopReceiver();
@@ -156,11 +356,18 @@ export async function toggleReceiver(engine: EngineAPI, port: string): Promise<v
   } else {
     try {
       const status = await engine.traps.startReceiver({
-        port: Number(port) || 1162,
-        disableAuthorization: true,
-        communities: ['public'],
+        ...(port.trim() ? { port: Number(port) } : {}),
+        disableAuthorization: options.disableAuthorization ?? true,
+        communities: options.communities ?? ['public'],
+        transport: options.transport ?? 'dual',
       });
-      s.setReceiver({ running: status.running, port: status.port });
+      s.setReceiver({
+        running: status.running,
+        port: status.port,
+        count: status.count,
+        drops: status.drops,
+        transports: status.transports,
+      });
     } catch (e) {
       s.setReceiver({ running: false });
       throw e;
@@ -168,22 +375,47 @@ export async function toggleReceiver(engine: EngineAPI, port: string): Promise<v
   }
 }
 
+export async function refreshTrapRecords(engine: EngineAPI, query: TrapQuery = {}): Promise<void> {
+  useAppStore.getState().setTrapRecords(await engine.traps.query({ ...query, limit: 10_000 }));
+}
+
+export async function markTrapRead(engine: EngineAPI, id: string, read = true): Promise<void> {
+  await engine.traps.markRead([id], read);
+  useAppStore.getState().markTrapRead(id, read);
+}
+
+export async function deleteTrap(engine: EngineAPI, id: string): Promise<void> {
+  await engine.traps.delete([id]);
+  useAppStore.getState().removeTrap(id);
+}
+
 export async function sendNotification(engine: EngineAPI): Promise<void> {
   const s = useAppStore.getState();
   const form = s.notification;
   const target = buildAgentSpec(form.target, 162);
-  if (!target.host) {
+  const selectedProfile = s.agentProfiles.find((profile) => profile.id === s.notificationAgentId);
+  const sendsV1 = selectedProfile ? selectedProfile.version === 'v1' : form.target.version === 'v1';
+  if (!s.notificationAgentId && !target.host) {
     s.setSendError('Enter a destination host first.');
     return;
   }
-  const request: NotificationSendRequest = {
-    target,
+  const payload = {
     kind: form.kind,
     trapOid: form.trapOid,
     varbinds: form.varbinds,
     ...(form.upTime.trim() ? { upTime: Number(form.upTime) } : {}),
     ...(form.agentAddress.trim() ? { agentAddress: form.agentAddress.trim() } : {}),
+    ...(sendsV1
+      ? {
+          v1Enterprise: form.v1Enterprise.trim(),
+          v1Generic: Number(form.v1Generic),
+          v1Specific: Number(form.v1Specific),
+        }
+      : {}),
   };
+  const request: NotificationSendRequest | NotificationAgentSendRequest = s.notificationAgentId
+    ? { agentId: s.notificationAgentId, ...payload }
+    : { target, ...payload };
   s.setSendBusy(true);
   s.setSendError(null);
   const id = `sent-${Date.now()}-${notificationSeq++}`;
@@ -201,7 +433,7 @@ export async function sendNotification(engine: EngineAPI): Promise<void> {
 
 export async function repeatNotification(
   engine: EngineAPI,
-  request: NotificationSendRequest,
+  request: NotificationSendRequest | NotificationAgentSendRequest,
 ): Promise<void> {
   const s = useAppStore.getState();
   s.setSendBusy(true);
@@ -514,6 +746,9 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
       ok: result.ok === true,
       message: stringValue(result.message) ?? status.failures[0]?.message,
       location: stringValue(result.location),
+      stage: stringValue(result.stage),
+      responseExcerpt: stringValue(result.responseExcerpt),
+      httpStatus: typeof result.httpStatus === 'number' ? result.httpStatus : undefined,
     });
     await refreshResolverState(engine);
     return;
@@ -629,6 +864,30 @@ export async function moveResolverSource(
     );
 }
 
+export async function dragResolverSource(
+  engine: EngineAPI,
+  sourceId: string,
+  targetIndex: number,
+): Promise<void> {
+  const sources = useAppStore.getState().resolverSources;
+  const fixed = sources.filter((source) => source.kind === 'cache');
+  const movable = sources.filter((source) => source.kind !== 'cache');
+  const from = movable.findIndex((source) => source.id === sourceId);
+  const to = Math.max(0, Math.min(movable.length - 1, Math.trunc(targetIndex)));
+  if (from < 0 || from === to) return;
+  const [moved] = movable.splice(from, 1);
+  if (!moved) return;
+  movable.splice(to, 0, moved);
+  useAppStore
+    .getState()
+    .setResolverSources(
+      await engine.resolver.sources.reorder([
+        ...fixed.map((source) => source.id),
+        ...movable.map((source) => source.id),
+      ]),
+    );
+}
+
 export async function testResolverSource(
   engine: EngineAPI,
   sourceId: string,
@@ -679,6 +938,25 @@ export async function lookupUnknownOid(engine: EngineAPI, oid: string): Promise<
       state: 'error',
       error: describeError(e),
     });
+  }
+}
+
+/** Resolve a lookup candidate through the configured chain, or strictly from local cache. */
+export async function loadLookupCandidate(
+  engine: EngineAPI,
+  module: string,
+  cachedOnly = false,
+): Promise<void> {
+  const state = useAppStore.getState();
+  if (state.importHandle) return;
+  try {
+    const { handleId } = cachedOnly
+      ? await engine.resolver.loadCachedModules([module])
+      : await engine.resolver.resolveModules([module]);
+    state.beginImport(handleId);
+    await syncResolverOperation(engine, handleId);
+  } catch (error) {
+    state.setResolverError(describeError(error));
   }
 }
 
@@ -749,7 +1027,10 @@ export async function unloadModule(engine: EngineAPI, name: string): Promise<voi
   await engine.mibs.unload(name);
   await refreshModules(engine);
   const s = useAppStore.getState();
-  if (s.moduleFocus?.module.name === name) s.setModuleFocus(null);
+  if (s.moduleFocus?.module.name === name) {
+    s.setModuleFocus(null);
+    s.setSelected(null);
+  }
   s.clearChildrenCache();
   await loadChildren(engine, '');
 }
@@ -768,7 +1049,7 @@ export async function loadChildren(engine: EngineAPI, oid: string): Promise<void
   s.setChildren(oid, children);
 }
 
-export async function focusModule(engine: EngineAPI, moduleName: string): Promise<void> {
+export async function selectModuleInPlace(engine: EngineAPI, moduleName: string): Promise<void> {
   const s = useAppStore.getState();
   const focus = await engine.mibs.module(moduleName);
   if (!focus) return;
@@ -777,8 +1058,12 @@ export async function focusModule(engine: EngineAPI, moduleName: string): Promis
   s.setSearch('');
   s.setHits([]);
   s.clearChildrenCache();
-  s.setTab('browse');
   await loadChildren(engine, '');
+}
+
+export async function focusModule(engine: EngineAPI, moduleName: string): Promise<void> {
+  await selectModuleInPlace(engine, moduleName);
+  useAppStore.getState().setTab('browse');
 }
 
 export async function clearModuleFocus(engine: EngineAPI): Promise<void> {
@@ -864,6 +1149,95 @@ export async function openSearchHit(engine: EngineAPI, oid: string): Promise<voi
       current.setSearchError(describeError(error));
     }
   }
+}
+
+export interface NodeOperationPlan {
+  allowed: boolean;
+  oid: string;
+  requiresInstance: boolean;
+  reason?: string;
+}
+
+function isWritable(detail: MibNodeDetail): boolean {
+  return (
+    detail.access === 'read-write' ||
+    detail.access === 'read-create' ||
+    detail.access === 'write-only'
+  );
+}
+
+export function getNodeOperationPlan(
+  detail: MibNodeDetail,
+  operation: QueryOperation,
+  instanceSuffix = '',
+): NodeOperationPlan {
+  const objectOperation = operation === 'get' || operation === 'set';
+  if (objectOperation && detail.kind !== 'scalar' && detail.kind !== 'column') {
+    return {
+      allowed: false,
+      oid: detail.oid,
+      requiresInstance: false,
+      reason: 'Get and Set require a scalar or column object.',
+    };
+  }
+  if (operation === 'get' && detail.access === 'not-accessible') {
+    return {
+      allowed: false,
+      oid: detail.oid,
+      requiresInstance: false,
+      reason: 'This object is not directly readable.',
+    };
+  }
+  if (operation === 'set' && !isWritable(detail)) {
+    return {
+      allowed: false,
+      oid: detail.oid,
+      requiresInstance: false,
+      reason: 'This object is not writable.',
+    };
+  }
+  if ((operation === 'get' || operation === 'set') && detail.kind === 'column') {
+    const suffix = instanceSuffix.trim().replace(/^\.+/, '');
+    return suffix
+      ? { allowed: true, oid: `${detail.oid}.${suffix}`, requiresInstance: false }
+      : {
+          allowed: false,
+          oid: `${detail.oid}.`,
+          requiresInstance: true,
+          reason: 'Enter the row instance suffix before running this operation.',
+        };
+  }
+  const oid =
+    (operation === 'get' || operation === 'set') && detail.kind === 'scalar'
+      ? `${detail.oid}.0`
+      : detail.oid;
+  return { allowed: true, oid, requiresInstance: false };
+}
+
+export async function prepareNodeOperation(
+  engine: EngineAPI,
+  detail: MibNodeDetail,
+  operation: QueryOperation,
+  options: { instanceSuffix?: string; execute?: boolean } = {},
+): Promise<void> {
+  const s = useAppStore.getState();
+  const plan = getNodeOperationPlan(detail, operation, options.instanceSuffix);
+  s.setBrowserConsoleOpen(true);
+  if (s.running) {
+    s.setQueryError('Stop the running walk before starting another operation.');
+    return;
+  }
+  s.setQueryOperation(operation);
+  s.setOid(plan.oid);
+  s.setOidName(detail.name);
+  s.setQueryError(plan.allowed ? null : (plan.reason ?? 'This operation is unavailable.'));
+  if (operation === 'set') {
+    s.updateSetDraft({ oid: plan.oid, type: inferWireType(detail.syntax), value: '' });
+  }
+  if (!plan.allowed || options.execute === false || operation === 'set') return;
+  if (operation === 'get') await runGet(engine);
+  else if (operation === 'getNext') await runGetNext(engine);
+  else await runWalk(engine);
 }
 
 /** Send the browse selection into the Query tab and run it. */

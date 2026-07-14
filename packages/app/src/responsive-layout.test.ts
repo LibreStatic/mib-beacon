@@ -3,21 +3,22 @@ import {
   adjustSplitRatio,
   clampSplitRatio,
   getResponsiveMode,
+  getWindowScopedStorageKey,
   getWorkspaceDefaultRatio,
 } from './responsive-layout';
 
 describe('getResponsiveMode', () => {
   it('keeps phone-sized views compact', () => {
-    expect(getResponsiveMode(719)).toBe('compact');
+    expect(getResponsiveMode(639)).toBe('compact');
   });
 
   it('uses the navigation rail at tablet widths', () => {
-    expect(getResponsiveMode(720)).toBe('medium');
-    expect(getResponsiveMode(1099)).toBe('medium');
+    expect(getResponsiveMode(640)).toBe('medium');
+    expect(getResponsiveMode(1023)).toBe('medium');
   });
 
   it('uses the expanded sidebar at desktop widths', () => {
-    expect(getResponsiveMode(1100)).toBe('expanded');
+    expect(getResponsiveMode(1024)).toBe('expanded');
   });
 });
 
@@ -60,5 +61,13 @@ describe('workspace defaults', () => {
     expect(getWorkspaceDefaultRatio('traps')).toBe(0.42);
     expect(getWorkspaceDefaultRatio('mibs')).toBe(0.36);
     expect(getWorkspaceDefaultRatio('settings')).toBe(0.28);
+  });
+});
+
+describe('window-scoped workspace persistence', () => {
+  it('keeps pane and dock preferences independent between Electron windows', () => {
+    expect(getWindowScopedStorageKey('window-2', 'dock:mib-navigation')).toBe(
+      'mibbeacon:window-2:dock:mib-navigation',
+    );
   });
 });

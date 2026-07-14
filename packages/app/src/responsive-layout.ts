@@ -1,13 +1,17 @@
 export type ResponsiveMode = 'compact' | 'medium' | 'expanded';
-export type WorkspaceKey = 'browse' | 'query' | 'traps' | 'mibs' | 'settings';
+export type WorkspaceKey = 'browse' | 'mibModules' | 'query' | 'traps' | 'mibs' | 'settings';
 
-export const COMPACT_MAX_WIDTH = 719;
-export const EXPANDED_MIN_WIDTH = 1100;
+export const COMPACT_MAX_WIDTH = 639;
+export const EXPANDED_MIN_WIDTH = 1024;
 
 export function getResponsiveMode(width: number): ResponsiveMode {
   if (width <= COMPACT_MAX_WIDTH) return 'compact';
   if (width < EXPANDED_MIN_WIDTH) return 'medium';
   return 'expanded';
+}
+
+export function getWindowScopedStorageKey(windowId: string, preference: string): string {
+  return `mibbeacon:${windowId}:${preference}`;
 }
 
 export interface SplitRatioInput {
@@ -42,6 +46,7 @@ export function adjustSplitRatio({
 
 const DEFAULT_RATIOS: Record<WorkspaceKey, number> = {
   browse: 0.38,
+  mibModules: 0.24,
   query: 0.36,
   traps: 0.42,
   mibs: 0.36,

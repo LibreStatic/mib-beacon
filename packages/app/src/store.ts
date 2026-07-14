@@ -16,6 +16,7 @@ import type {
   TrapRecord,
   NotificationKind,
   NotificationSendRequest,
+  NotificationAgentSendRequest,
   NotificationSendResult,
   SnmpVarbindInput,
   ResolverOperationState,
@@ -26,9 +27,14 @@ import type {
   OidLookupResult,
   ResolverSourcePreviewResult,
   SourceConfig,
+  AgentProfile,
+  AgentGroup,
+  TableIndexDescriptor,
 } from '@mibbeacon/core/client';
 
-export type Tab = 'browse' | 'query' | 'traps' | 'mibs' | 'settings';
+export type Tab = 'browse' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
+export type AppThemeMode = 'system' | 'light' | 'dark';
+export type AppDensityMode = 'auto' | 'compact' | 'comfortable';
 
 const RESULTS_CAP = 5000;
 const TRAPS_CAP = 200;
@@ -36,7 +42,12 @@ const TRAPS_CAP = 200;
 export interface AgentForm {
   host: string;
   port: string;
+  transport: 'udp4' | 'udp6';
   version: SnmpVersion;
+  timeoutMs: string;
+  retries: string;
+  getBulkNonRepeaters: string;
+  getBulkMaxRepetitions: string;
   community: string;
   v3: {
     user: string;
@@ -45,6 +56,8 @@ export interface AgentForm {
     authKey: string;
     privProtocol: PrivProtocol;
     privKey: string;
+    context: string;
+    contextEngineId: string;
   };
 }
 
@@ -54,9 +67,28 @@ export interface WalkStats {
   ms: number;
 }
 
+export interface QueryResultTab {
+  id: string;
+  title: string;
+  results: DecodedVarbind[];
+  stats: WalkStats;
+  pinned: boolean;
+  createdAt: number;
+}
+
+export interface TableViewState {
+  entryOid: string;
+  name: string;
+  columns: { oid: string; name: string; access?: string; syntax?: string }[];
+  indexes: TableIndexDescriptor[];
+  selectedColumnOids: string[];
+  rotate: boolean;
+  pollMs: number;
+}
+
 export type BrowseTreeNode = MibNodeSummary | ModuleTreeNode;
 export type BrowseSearchPhase = 'idle' | 'debouncing' | 'searching' | 'opening' | 'error';
-export type QueryOperation = 'get' | 'getNext' | 'walk' | 'set';
+export type QueryOperation = 'get' | 'getNext' | 'getBulk' | 'walk' | 'set';
 export type TrapMode = 'receive' | 'send';
 
 export interface NotificationForm {
@@ -65,12 +97,15 @@ export interface NotificationForm {
   trapOid: string;
   upTime: string;
   agentAddress: string;
+  v1Enterprise: string;
+  v1Generic: string;
+  v1Specific: string;
   varbinds: SnmpVarbindInput[];
 }
 
 export interface NotificationHistoryItem {
   id: string;
-  request: NotificationSendRequest;
+  request: NotificationSendRequest | NotificationAgentSendRequest;
   result?: NotificationSendResult;
   error?: string;
 }
@@ -87,6 +122,10 @@ export interface FileImportDraft {
 export interface AppState {
   tab: Tab;
   setTab: (tab: Tab) => void;
+  themeMode: AppThemeMode;
+  densityMode: AppDensityMode;
+  setThemeMode: (mode: AppThemeMode) => void;
+  setDensityMode: (mode: AppDensityMode) => void;
 
   // --- browse ---
   expanded: Record<string, boolean>;
@@ -97,6 +136,8 @@ export interface AppState {
   hits: MibSearchHit[];
   searchPhase: BrowseSearchPhase;
   searchError: string | null;
+  browserConsoleOpen: boolean;
+  browserImportOpen: boolean;
   setExpanded: (oid: string, open: boolean) => void;
   setChildren: (oid: string, children: BrowseTreeNode[]) => void;
   setModuleFocus: (focus: ModuleView | null) => void;
@@ -106,9 +147,20 @@ export interface AppState {
   setHits: (hits: MibSearchHit[]) => void;
   setSearchPhase: (phase: BrowseSearchPhase) => void;
   setSearchError: (error: string | null) => void;
+  setBrowserConsoleOpen: (open: boolean) => void;
+  setBrowserImportOpen: (open: boolean) => void;
 
   // --- query ---
   agent: AgentForm;
+  agentProfiles: AgentProfile[];
+  agentGroups: AgentGroup[];
+  selectedAgentId: string | null;
+  selectedAgentGroupId: string | null;
+  queryGroupMode: boolean;
+  agentOperationStatuses: Record<string, { state: string; message?: string; count?: number }>;
+  operationPduLog: unknown[];
+  rawPduOpen: boolean;
+  tableView: TableViewState | null;
   oid: string;
   oidName: string | null;
   results: DecodedVarbind[];
@@ -118,9 +170,30 @@ export interface AppState {
   queryError: string | null;
   queryOperation: QueryOperation;
   setDraft: SnmpVarbindInput;
+  setStaging: SnmpVarbindInput[];
+  setPreviousValues: DecodedVarbind[];
   setReview: boolean;
+  queryTabs: QueryResultTab[];
+  activeQueryTabId: string | null;
   setAgent: (patch: Partial<AgentForm>) => void;
   setV3: (patch: Partial<AgentForm['v3']>) => void;
+  setAgentProfiles: (profiles: AgentProfile[]) => void;
+  setAgentGroups: (groups: AgentGroup[]) => void;
+  selectAgentProfile: (profile: AgentProfile | null) => void;
+  selectAgentGroup: (groupId: string | null) => void;
+  setQueryGroupMode: (enabled: boolean) => void;
+  setAgentOperationStatus: (
+    agentId: string,
+    status: { state: string; message?: string; count?: number },
+  ) => void;
+  clearAgentOperationStatuses: () => void;
+  appendOperationPdu: (entry: unknown) => void;
+  clearOperationPduLog: () => void;
+  setRawPduOpen: (open: boolean) => void;
+  setTableView: (view: TableViewState | null) => void;
+  setTableViewColumns: (oids: string[]) => void;
+  setTableViewRotate: (rotate: boolean) => void;
+  setTableViewPollMs: (ms: number) => void;
   setOid: (oid: string) => void;
   setOidName: (name: string | null) => void;
   setResults: (results: DecodedVarbind[]) => void;
@@ -130,21 +203,42 @@ export interface AppState {
   setQueryError: (msg: string | null) => void;
   setQueryOperation: (operation: QueryOperation) => void;
   updateSetDraft: (patch: Partial<SnmpVarbindInput>) => void;
+  addSetDraftToStaging: () => void;
+  updateStagedVarbind: (index: number, patch: Partial<SnmpVarbindInput>) => void;
+  removeStagedVarbind: (index: number) => void;
+  clearSetStaging: () => void;
+  setSetPreviousValues: (values: DecodedVarbind[]) => void;
   setSetReview: (review: boolean) => void;
+  saveQueryResultTab: (title: string) => void;
+  selectQueryResultTab: (id: string) => void;
+  closeQueryResultTab: (id: string) => void;
+  toggleQueryResultTabPin: (id: string) => void;
 
   // --- traps ---
-  receiver: { running: boolean; port?: number };
+  receiver: {
+    running: boolean;
+    port?: number;
+    count?: number;
+    drops?: number;
+    transports?: ('udp4' | 'udp6')[];
+  };
   records: TrapRecord[];
-  setReceiver: (r: { running: boolean; port?: number }) => void;
+  unreadTrapCount: number;
+  setReceiver: (r: AppState['receiver']) => void;
+  setTrapRecords: (records: TrapRecord[]) => void;
   addTrap: (rec: TrapRecord) => void;
+  markTrapRead: (id: string, read?: boolean) => void;
+  removeTrap: (id: string) => void;
   clearTraps: () => void;
   trapMode: TrapMode;
   notification: NotificationForm;
+  notificationAgentId: string | null;
   sendBusy: boolean;
   sendError: string | null;
   sendHistory: NotificationHistoryItem[];
   setTrapMode: (mode: TrapMode) => void;
   updateNotification: (patch: Partial<NotificationForm>) => void;
+  setNotificationAgentId: (id: string | null) => void;
   setNotificationVarbinds: (varbinds: SnmpVarbindInput[]) => void;
   setSendBusy: (busy: boolean) => void;
   setSendError: (error: string | null) => void;
@@ -225,6 +319,9 @@ export interface SourceTestState {
   ok?: boolean;
   message?: string;
   location?: string;
+  stage?: string;
+  responseExcerpt?: string;
+  httpStatus?: number;
 }
 
 export interface OidLookupState {
@@ -242,7 +339,12 @@ export interface SourcePreviewState {
 const defaultAgent: AgentForm = {
   host: '',
   port: '161',
+  transport: 'udp4',
   version: 'v2c',
+  timeoutMs: '5000',
+  retries: '1',
+  getBulkNonRepeaters: '0',
+  getBulkMaxRepetitions: '20',
   community: 'public',
   v3: {
     user: '',
@@ -251,6 +353,8 @@ const defaultAgent: AgentForm = {
     authKey: '',
     privProtocol: 'aes',
     privKey: '',
+    context: '',
+    contextEngineId: '',
   },
 };
 
@@ -260,12 +364,42 @@ const defaultNotification: NotificationForm = {
   trapOid: '1.3.6.1.6.3.1.1.5.1',
   upTime: '',
   agentAddress: '',
+  v1Enterprise: '1.3.6.1.4.1',
+  v1Generic: '6',
+  v1Specific: '0',
   varbinds: [],
 };
+
+function readUiPreference<T extends string>(key: string, values: readonly T[], fallback: T): T {
+  try {
+    const value = (globalThis as { localStorage?: Storage }).localStorage?.getItem(key) as T | null;
+    return value && values.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeUiPreference(key: string, value: string): void {
+  try {
+    (globalThis as { localStorage?: Storage }).localStorage?.setItem(key, value);
+  } catch {
+    // Native hosts without localStorage retain the preference for this app session.
+  }
+}
 
 export const useAppStore = create<AppState>((set) => ({
   tab: 'browse',
   setTab: (tab) => set({ tab }),
+  themeMode: readUiPreference('mibbeacon:theme', ['system', 'light', 'dark'], 'system'),
+  densityMode: readUiPreference('mibbeacon:density', ['auto', 'compact', 'comfortable'], 'auto'),
+  setThemeMode: (themeMode) => {
+    writeUiPreference('mibbeacon:theme', themeMode);
+    set({ themeMode });
+  },
+  setDensityMode: (densityMode) => {
+    writeUiPreference('mibbeacon:density', densityMode);
+    set({ densityMode });
+  },
 
   expanded: {},
   childrenCache: {},
@@ -275,6 +409,8 @@ export const useAppStore = create<AppState>((set) => ({
   hits: [],
   searchPhase: 'idle',
   searchError: null,
+  browserConsoleOpen: false,
+  browserImportOpen: false,
   setExpanded: (oid, open) => set((s) => ({ expanded: { ...s.expanded, [oid]: open } })),
   setChildren: (oid, children) =>
     set((s) => ({ childrenCache: { ...s.childrenCache, [oid]: children } })),
@@ -285,8 +421,19 @@ export const useAppStore = create<AppState>((set) => ({
   setHits: (hits) => set({ hits }),
   setSearchPhase: (searchPhase) => set({ searchPhase }),
   setSearchError: (searchError) => set({ searchError }),
+  setBrowserConsoleOpen: (browserConsoleOpen) => set({ browserConsoleOpen }),
+  setBrowserImportOpen: (browserImportOpen) => set({ browserImportOpen }),
 
   agent: defaultAgent,
+  agentProfiles: [],
+  agentGroups: [],
+  selectedAgentId: null,
+  selectedAgentGroupId: null,
+  queryGroupMode: false,
+  agentOperationStatuses: {},
+  operationPduLog: [],
+  rawPduOpen: false,
+  tableView: null,
   oid: '1.3.6.1.2.1',
   oidName: null,
   results: [],
@@ -296,9 +443,68 @@ export const useAppStore = create<AppState>((set) => ({
   queryError: null,
   queryOperation: 'get',
   setDraft: { oid: '1.3.6.1.2.1.1.5.0', type: 'OctetString', value: '' },
+  setStaging: [],
+  setPreviousValues: [],
   setReview: false,
-  setAgent: (patch) => set((s) => ({ agent: { ...s.agent, ...patch } })),
-  setV3: (patch) => set((s) => ({ agent: { ...s.agent, v3: { ...s.agent.v3, ...patch } } })),
+  queryTabs: [],
+  activeQueryTabId: null,
+  setAgent: (patch) => set((s) => ({ agent: { ...s.agent, ...patch }, selectedAgentId: null })),
+  setV3: (patch) =>
+    set((s) => ({
+      agent: { ...s.agent, v3: { ...s.agent.v3, ...patch } },
+      selectedAgentId: null,
+    })),
+  setAgentProfiles: (agentProfiles) => set({ agentProfiles }),
+  setAgentGroups: (agentGroups) => set({ agentGroups }),
+  selectAgentProfile: (profile) =>
+    set((s) =>
+      profile
+        ? {
+            selectedAgentId: profile.id,
+            agent: {
+              host: profile.host,
+              port: String(profile.port),
+              transport: profile.transport,
+              version: profile.version,
+              timeoutMs: String(profile.timeoutMs),
+              retries: String(profile.retries),
+              getBulkNonRepeaters: String(profile.getBulkNonRepeaters),
+              getBulkMaxRepetitions: String(profile.getBulkMaxRepetitions),
+              community: '',
+              v3: {
+                user: profile.v3?.user ?? '',
+                level: profile.v3?.level ?? 'authPriv',
+                authProtocol: profile.v3?.authProtocol ?? 'sha256',
+                authKey: '',
+                privProtocol: profile.v3?.privProtocol ?? 'aes',
+                privKey: '',
+                context: profile.v3?.context ?? '',
+                contextEngineId: profile.v3?.contextEngineId ?? '',
+              },
+            },
+          }
+        : { selectedAgentId: null, agent: { ...s.agent } },
+    ),
+  selectAgentGroup: (selectedAgentGroupId) => set({ selectedAgentGroupId }),
+  setQueryGroupMode: (queryGroupMode) => set({ queryGroupMode }),
+  setAgentOperationStatus: (agentId, status) =>
+    set((state) => ({
+      agentOperationStatuses: { ...state.agentOperationStatuses, [agentId]: status },
+    })),
+  clearAgentOperationStatuses: () => set({ agentOperationStatuses: {} }),
+  appendOperationPdu: (entry) =>
+    set((state) => ({ operationPduLog: [...state.operationPduLog, entry].slice(-200) })),
+  clearOperationPduLog: () => set({ operationPduLog: [] }),
+  setRawPduOpen: (rawPduOpen) => set({ rawPduOpen }),
+  setTableView: (tableView) => set({ tableView }),
+  setTableViewColumns: (selectedColumnOids) =>
+    set((state) => ({
+      tableView: state.tableView ? { ...state.tableView, selectedColumnOids } : null,
+    })),
+  setTableViewRotate: (rotate) =>
+    set((state) => ({ tableView: state.tableView ? { ...state.tableView, rotate } : null })),
+  setTableViewPollMs: (pollMs) =>
+    set((state) => ({ tableView: state.tableView ? { ...state.tableView, pollMs } : null })),
   setOid: (oid) => set({ oid }),
   setOidName: (oidName) => set({ oidName }),
   setResults: (results) => set({ results }),
@@ -313,20 +519,114 @@ export const useAppStore = create<AppState>((set) => ({
   setQueryOperation: (queryOperation) => set({ queryOperation, setReview: false }),
   updateSetDraft: (patch) =>
     set((s) => ({ setDraft: { ...s.setDraft, ...patch }, setReview: false })),
+  addSetDraftToStaging: () =>
+    set((state) => ({
+      setStaging: [...state.setStaging, { ...state.setDraft }],
+      setReview: false,
+      setPreviousValues: [],
+    })),
+  updateStagedVarbind: (index, patch) =>
+    set((state) => ({
+      setStaging: state.setStaging.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item,
+      ),
+      setReview: false,
+      setPreviousValues: [],
+    })),
+  removeStagedVarbind: (index) =>
+    set((state) => ({
+      setStaging: state.setStaging.filter((_, itemIndex) => itemIndex !== index),
+      setReview: false,
+      setPreviousValues: [],
+    })),
+  clearSetStaging: () => set({ setStaging: [], setPreviousValues: [], setReview: false }),
+  setSetPreviousValues: (setPreviousValues) => set({ setPreviousValues }),
   setSetReview: (setReview) => set({ setReview }),
+  saveQueryResultTab: (title) =>
+    set((state) => {
+      const id = `result-${Date.now()}-${state.queryTabs.length}`;
+      const tab: QueryResultTab = {
+        id,
+        title,
+        results: [...state.results],
+        stats: { ...state.stats },
+        pinned: false,
+        createdAt: Date.now(),
+      };
+      return { queryTabs: [...state.queryTabs, tab].slice(-20), activeQueryTabId: id };
+    }),
+  selectQueryResultTab: (id) =>
+    set((state) => {
+      const tab = state.queryTabs.find((item) => item.id === id);
+      return tab
+        ? { activeQueryTabId: id, results: [...tab.results], stats: { ...tab.stats } }
+        : {};
+    }),
+  closeQueryResultTab: (id) =>
+    set((state) => {
+      const queryTabs = state.queryTabs.filter((tab) => tab.id !== id || tab.pinned);
+      const active =
+        state.activeQueryTabId === id
+          ? (queryTabs[queryTabs.length - 1] ?? null)
+          : (queryTabs.find((tab) => tab.id === state.activeQueryTabId) ?? null);
+      return {
+        queryTabs,
+        activeQueryTabId: active?.id ?? null,
+        ...(active ? { results: [...active.results], stats: { ...active.stats } } : {}),
+      };
+    }),
+  toggleQueryResultTabPin: (id) =>
+    set((state) => ({
+      queryTabs: state.queryTabs.map((tab) =>
+        tab.id === id ? { ...tab, pinned: !tab.pinned } : tab,
+      ),
+    })),
 
   receiver: { running: false },
   records: [],
+  unreadTrapCount: 0,
   setReceiver: (receiver) => set({ receiver }),
-  addTrap: (rec) => set((s) => ({ records: [rec, ...s.records].slice(0, TRAPS_CAP) })),
-  clearTraps: () => set({ records: [] }),
+  setTrapRecords: (records) =>
+    set({
+      records: records.slice(0, TRAPS_CAP),
+      unreadTrapCount: records.filter((item) => !item.readAt).length,
+    }),
+  addTrap: (rec) =>
+    set((s) => ({
+      records: [rec, ...s.records].slice(0, TRAPS_CAP),
+      unreadTrapCount: s.unreadTrapCount + (rec.readAt ? 0 : 1),
+    })),
+  markTrapRead: (id, read = true) =>
+    set((state) => {
+      const record = state.records.find((item) => item.id === id);
+      if (!record || Boolean(record.readAt) === read) return {};
+      return {
+        records: state.records.map((item) =>
+          item.id === id
+            ? { ...item, ...(read ? { readAt: Date.now() } : { readAt: undefined }) }
+            : item,
+        ),
+        unreadTrapCount: Math.max(0, state.unreadTrapCount + (read ? -1 : 1)),
+      };
+    }),
+  removeTrap: (id) =>
+    set((state) => {
+      const record = state.records.find((item) => item.id === id);
+      return {
+        records: state.records.filter((item) => item.id !== id),
+        unreadTrapCount: Math.max(0, state.unreadTrapCount - (record && !record.readAt ? 1 : 0)),
+      };
+    }),
+  clearTraps: () => set({ records: [], unreadTrapCount: 0 }),
   trapMode: 'receive',
   notification: defaultNotification,
+  notificationAgentId: null,
   sendBusy: false,
   sendError: null,
   sendHistory: [],
   setTrapMode: (trapMode) => set({ trapMode }),
   updateNotification: (patch) => set((s) => ({ notification: { ...s.notification, ...patch } })),
+  setNotificationAgentId: (notificationAgentId) => set({ notificationAgentId }),
   setNotificationVarbinds: (varbinds) =>
     set((s) => ({ notification: { ...s.notification, varbinds } })),
   setSendBusy: (sendBusy) => set({ sendBusy }),

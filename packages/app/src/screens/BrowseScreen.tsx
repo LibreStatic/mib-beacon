@@ -1,15 +1,29 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   View,
   Text,
   Pressable,
   FlatList,
+  Modal,
+  Platform,
+  Share,
   ScrollView,
   StyleSheet,
+  type TextInput,
 } from 'react-native';
-import { Card, Field, Button, Pill, Mono, EmptyState, KindGlyph, useTheme } from '@mibbeacon/ui';
-import type { MibNodeSummary } from '@mibbeacon/core/client';
+import {
+  Card,
+  Field,
+  Button,
+  Pill,
+  Mono,
+  EmptyState,
+  KindGlyph,
+  SectionTitle,
+  useTheme,
+} from '@mibbeacon/ui';
+import type { EngineInfo, MibNodeSummary, MibSearchHit } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import {
@@ -22,17 +36,32 @@ import {
   clearModuleFocus,
   setFromNode,
   trapFromNode,
+  prepareNodeOperation,
+  refreshModules,
 } from '../actions';
 import { OidLookupPanel } from '../components/OidLookupPanel';
 import { SplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import { MibCatalogPane, MibImportModal, MibModuleStrip } from '../components/MibCatalogControls';
+import { VerticalDockWorkspace } from '../components/VerticalDockWorkspace';
+import { QueryScreen } from './QueryScreen';
+import { nodeMetadataRows } from '../node-metadata';
+import { highlightSegments } from '../search-highlights';
+import { canUseBrowserEventTarget, isSearchFocusShortcut } from '../browser-shortcuts';
+import { BROWSE_TITLE } from '../navigation';
 import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } from './browse-tree';
 
-export function BrowseScreen() {
+export function BrowseScreen({
+  info = null,
+  unified = false,
+}: {
+  info?: EngineInfo | null;
+  unified?: boolean;
+}) {
   const engine = useEngine();
   const t = useTheme();
-  const { supportsSplitView } = useResponsiveLayout();
+  const { mode, width, height, supportsSplitView } = useResponsiveLayout();
   const cache = useAppStore((s) => s.childrenCache);
   const expanded = useAppStore((s) => s.expanded);
   const selected = useAppStore((s) => s.selected);
@@ -41,6 +70,12 @@ export function BrowseScreen() {
   const searchPhase = useAppStore((s) => s.searchPhase);
   const searchError = useAppStore((s) => s.searchError);
   const moduleFocus = useAppStore((s) => s.moduleFocus);
+  const consoleOpen = useAppStore((s) => s.browserConsoleOpen);
+  const running = useAppStore((s) => s.running);
+  const searchInput = useRef<TextInput>(null);
+  const [tabletDrawerOpen, setTabletDrawerOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [contextNode, setContextNode] = useState<{ oid: string; name: string } | null>(null);
 
   const rows = useMemo(() => flattenVisibleTree(cache, expanded), [cache, expanded]);
 
@@ -58,6 +93,19 @@ export function BrowseScreen() {
     return () => clearTimeout(timer);
   }, [engine, search]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !canUseBrowserEventTarget(window)) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSearchFocusShortcut(event)) return;
+      event.preventDefault();
+      searchInput.current?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => setTabletDrawerOpen(false), [selected?.oid]);
+
   const toggle = (node: MibNodeSummary) => {
     const open = !expanded[node.oid];
     useAppStore.getState().setExpanded(node.oid, open);
@@ -65,6 +113,39 @@ export function BrowseScreen() {
   };
 
   const pickHit = (oid: string) => void openSearchHit(engine, oid);
+  const contextProps = (node: { oid: string; name: string }) => ({
+    onLongPress: () => setContextNode(node),
+    delayLongPress: 420,
+    ...(Platform.OS === 'web'
+      ? {
+          onContextMenu: (event: { preventDefault(): void }) => {
+            event.preventDefault();
+            setContextNode(node);
+          },
+        }
+      : {}),
+  });
+  const treeKeyboardProps = (node: MibNodeSummary, isExpanded: boolean) =>
+    Platform.OS === 'web'
+      ? {
+          onKeyDown: (event: { key: string; preventDefault(): void }) => {
+            if (event.key === 'ArrowRight' && node.hasChildren && !isExpanded) toggle(node);
+            else if (event.key === 'ArrowLeft' && node.hasChildren && isExpanded) toggle(node);
+            else if (event.key === 'Enter') void selectNode(engine, node.oid);
+            else return;
+            event.preventDefault();
+          },
+        }
+      : {};
+  const refreshTree = async () => {
+    setRefreshing(true);
+    try {
+      useAppStore.getState().clearChildrenCache();
+      await Promise.all([refreshModules(engine), loadChildren(engine, '')]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const navigator = (
     <View style={[styles.navigator, { borderRightColor: t.border }]}>
@@ -98,8 +179,19 @@ export function BrowseScreen() {
         </View>
       ) : null}
       <View style={styles.searchWrap}>
+        {unified && mode === 'compact' ? (
+          <View style={styles.phoneCatalogActions}>
+            <Button
+              title="Import MIB"
+              small
+              variant="ghost"
+              onPress={() => useAppStore.getState().setBrowserImportOpen(true)}
+            />
+          </View>
+        ) : null}
         <View style={styles.searchFieldRow}>
           <Field
+            ref={searchInput}
             placeholder="Search name, OID, or description…"
             value={search}
             onChangeText={onSearch}
@@ -146,6 +238,7 @@ export function BrowseScreen() {
           renderItem={({ item }) => (
             <Pressable
               onPress={() => pickHit(item.oid)}
+              {...contextProps(item)}
               disabled={searchPhase === 'opening'}
               accessibilityRole="button"
               accessibilityLabel={`Open ${item.name} at ${item.oid}`}
@@ -156,9 +249,11 @@ export function BrowseScreen() {
             >
               <KindGlyph kind={item.kind} />
               <View style={styles.rowText}>
-                <Text style={{ color: t.text, fontWeight: '600' }}>{item.name}</Text>
+                <Text style={{ color: t.text, fontWeight: '600' }}>
+                  <HighlightedValue hit={item} field="name" value={item.name} />
+                </Text>
                 <Mono dim size={11}>
-                  {item.oid}
+                  <HighlightedValue hit={item} field="oid" value={item.oid} />
                 </Mono>
               </View>
               {item.module ? <Pill text={item.module} /> : null}
@@ -168,6 +263,8 @@ export function BrowseScreen() {
       ) : (
         <FlatList
           data={rows}
+          refreshing={refreshing}
+          onRefresh={() => void refreshTree()}
           keyExtractor={(r) => r.node.oid}
           style={styles.tree}
           ListEmptyComponent={
@@ -238,6 +335,8 @@ export function BrowseScreen() {
                 </Pressable>
                 <Pressable
                   onPress={() => void selectNode(engine, node.oid)}
+                  {...contextProps(node)}
+                  {...treeKeyboardProps(node, isExpanded)}
                   accessibilityRole="button"
                   accessibilityLabel={`View details for ${node.name}`}
                   accessibilityState={{ selected: isSel }}
@@ -275,34 +374,203 @@ export function BrowseScreen() {
           }}
         />
       )}
+      <Modal
+        visible={Boolean(contextNode)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setContextNode(null)}
+      >
+        <View style={styles.contextBackdrop}>
+          <Card style={styles.contextCard}>
+            <SectionTitle>{contextNode?.name ?? 'MIB object'}</SectionTitle>
+            <Mono numberOfLines={1}>{contextNode?.oid}</Mono>
+            <Button
+              title="View details"
+              onPress={() => {
+                if (contextNode) void selectNode(engine, contextNode.oid);
+                setContextNode(null);
+              }}
+            />
+            <Button
+              title="Walk subtree"
+              variant="ghost"
+              onPress={() => {
+                if (contextNode) void walkFromNode(engine, contextNode.oid);
+                setContextNode(null);
+              }}
+            />
+            <Button
+              title="Copy / share OID"
+              variant="ghost"
+              onPress={() => {
+                if (contextNode) void Share.share({ message: contextNode.oid });
+                setContextNode(null);
+              }}
+            />
+            <Button title="Cancel" variant="ghost" onPress={() => setContextNode(null)} />
+          </Card>
+        </View>
+      </Modal>
     </View>
   );
 
   if (!supportsSplitView) {
     return (
       <View style={styles.container}>
-        {navigator}
-        {selected ? <DetailPanel /> : null}
+        {selected ? <DetailPanel embedded unified={unified} /> : navigator}
+        {selected ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open operation controls"
+            onPress={() => {
+              const state = useAppStore.getState();
+              state.setOid(selected.oid);
+              state.setOidName(selected.name);
+              state.setBrowserConsoleOpen(true);
+            }}
+            style={[styles.operationFab, { backgroundColor: t.accent }]}
+          >
+            <Text style={[styles.operationFabText, { color: t.accentText }]}>⇄ Run</Text>
+          </Pressable>
+        ) : null}
+        <Modal
+          visible={Boolean(selected && consoleOpen)}
+          transparent
+          animationType="slide"
+          onRequestClose={() => useAppStore.getState().setBrowserConsoleOpen(false)}
+        >
+          <View style={styles.phoneSheetBackdrop}>
+            <View style={[styles.phoneSheet, { backgroundColor: t.bg, borderColor: t.border }]}>
+              <View style={[styles.consoleHead, { borderBottomColor: t.border }]}>
+                <Text style={[styles.consoleTitle, { color: t.text }]}>Operation controls</Text>
+                <Button
+                  title="Close"
+                  small
+                  variant="ghost"
+                  onPress={() => useAppStore.getState().setBrowserConsoleOpen(false)}
+                />
+              </View>
+              <QueryScreen info={info} embedded />
+            </View>
+          </View>
+        </Modal>
+        {unified ? <MibImportModal /> : null}
       </View>
     );
   }
 
+  const inspector = selected ? (
+    <DetailPanel embedded unified={unified} />
+  ) : (
+    <BrowseInspectorEmpty />
+  );
+  const navigatorPane =
+    unified && mode === 'medium' ? (
+      <View style={styles.navigatorWrapper}>
+        <MibModuleStrip />
+        {navigator}
+      </View>
+    ) : (
+      navigator
+    );
+  const browserSplit = (
+    <SplitWorkspace
+      workspace="browse"
+      minPrimary={300}
+      minSecondary={380}
+      primary={navigatorPane}
+      secondary={inspector}
+    />
+  );
+  const tabletPortrait = mode === 'medium' && height > width;
+  const tabletMain = tabletPortrait ? (
+    selected ? (
+      <View style={styles.container}>
+        <View style={[styles.tabletDrawerBar, { borderBottomColor: t.border }]}>
+          <Button
+            title="Browse MIB tree"
+            small
+            variant="ghost"
+            onPress={() => setTabletDrawerOpen(true)}
+          />
+        </View>
+        {inspector}
+        <Modal
+          visible={tabletDrawerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setTabletDrawerOpen(false)}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close MIB tree drawer"
+            onPress={() => setTabletDrawerOpen(false)}
+            style={styles.tabletDrawerBackdrop}
+          >
+            <Pressable
+              accessible={false}
+              onPress={(event) => event.stopPropagation()}
+              style={[styles.tabletDrawer, { backgroundColor: t.bg, borderColor: t.border }]}
+            >
+              {navigatorPane}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      </View>
+    ) : (
+      navigatorPane
+    )
+  ) : (
+    browserSplit
+  );
+  const browserMain =
+    unified && mode === 'expanded' ? (
+      <SplitWorkspace
+        workspace="mibModules"
+        minPrimary={230}
+        minSecondary={680}
+        primary={<MibCatalogPane />}
+        secondary={browserSplit}
+      />
+    ) : (
+      tabletMain
+    );
+  const console =
+    unified && consoleOpen ? (
+      <View style={[styles.operationConsole, { backgroundColor: t.bg }]}>
+        <View
+          style={[styles.consoleHead, { backgroundColor: t.surface, borderBottomColor: t.border }]}
+        >
+          <View style={styles.consoleTitleRow}>
+            <Text style={[styles.consoleTitle, { color: t.text }]}>SNMP operation console</Text>
+            {running ? <Pill text="RUNNING" color={t.ok} /> : null}
+          </View>
+          <Button
+            title="Hide console"
+            small
+            variant="ghost"
+            onPress={() => useAppStore.getState().setBrowserConsoleOpen(false)}
+          />
+        </View>
+        <QueryScreen info={info} embedded />
+      </View>
+    ) : undefined;
+
   return (
     <View style={styles.container}>
       <WorkspaceHeader
-        title="MIB explorer"
-        subtitle="EXPLORE THE OID TREE · INSPECT DEFINITIONS · LAUNCH OPERATIONS"
+        title={BROWSE_TITLE}
+        subtitle={
+          unified
+            ? 'SELECT A MIB · EXPLORE ITS OID TREE · RUN OPERATIONS IN PLACE'
+            : 'EXPLORE THE OID TREE · INSPECT DEFINITIONS · LAUNCH OPERATIONS'
+        }
         actions={
           selected?.module ? <Pill text={selected.module} color={t.kind.module} /> : undefined
         }
       />
-      <SplitWorkspace
-        workspace="browse"
-        minPrimary={300}
-        minSecondary={380}
-        primary={navigator}
-        secondary={selected ? <DetailPanel embedded /> : <BrowseInspectorEmpty />}
-      />
+      <VerticalDockWorkspace storageId="mib-navigation" main={browserMain} dock={console} />
+      {unified ? <MibImportModal /> : null}
     </View>
   );
 }
@@ -321,7 +589,13 @@ function BrowseInspectorEmpty() {
   );
 }
 
-function DetailPanel({ embedded = false }: { embedded?: boolean }) {
+function DetailPanel({
+  embedded = false,
+  unified = false,
+}: {
+  embedded?: boolean;
+  unified?: boolean;
+}) {
   const engine = useEngine();
   const t = useTheme();
   const selected = useAppStore((s) => s.selected)!;
@@ -337,22 +611,54 @@ function DetailPanel({ embedded = false }: { embedded?: boolean }) {
         {selected.module ? <Pill text={selected.module} /> : null}
       </View>
       <Mono size={12}>{selected.oid}</Mono>
-      {selected.syntax ? <KV k="Syntax" v={selected.syntax} /> : null}
-      {selected.access ? <KV k="Access" v={selected.access} /> : null}
-      {selected.status ? <KV k="Status" v={selected.status} /> : null}
-      {selected.indexes?.length ? <KV k="Index" v={selected.indexes.join(', ')} /> : null}
-      {selected.objects?.length ? <KV k="Objects" v={selected.objects.join(', ')} /> : null}
+      {nodeMetadataRows(selected).map(({ label, value }) => (
+        <KV key={label} k={label} v={value} />
+      ))}
       {selected.description ? (
         <Text style={[styles.desc, { color: t.textDim }]}>{selected.description}</Text>
       ) : null}
       <View style={styles.detailActions}>
-        <Button title="Walk here" small onPress={() => walkFromNode(engine, selected.oid)} />
+        <Button
+          title="Walk here"
+          small
+          onPress={() =>
+            unified
+              ? void prepareNodeOperation(engine, selected, 'walk')
+              : walkFromNode(engine, selected.oid)
+          }
+        />
         {(selected.kind === 'scalar' || selected.kind === 'column') &&
         selected.access !== 'not-accessible' ? (
-          <Button title="Get" small variant="ghost" onPress={() => getFromNode(engine, selected)} />
+          <Button
+            title="Get"
+            small
+            variant="ghost"
+            onPress={() =>
+              unified
+                ? void prepareNodeOperation(engine, selected, 'get')
+                : getFromNode(engine, selected)
+            }
+          />
+        ) : null}
+        {unified ? (
+          <Button
+            title="Get Next"
+            small
+            variant="ghost"
+            onPress={() => void prepareNodeOperation(engine, selected, 'getNext')}
+          />
         ) : null}
         {writable ? (
-          <Button title="Set value" small variant="ghost" onPress={() => setFromNode(selected)} />
+          <Button
+            title="Set value"
+            small
+            variant="ghost"
+            onPress={() =>
+              unified
+                ? void prepareNodeOperation(engine, selected, 'set', { execute: false })
+                : setFromNode(selected)
+            }
+          />
         ) : null}
         {selected.kind === 'notification' ? (
           <Button
@@ -403,9 +709,42 @@ function KV({ k, v }: { k: string; v: string }) {
   );
 }
 
+function HighlightedValue({
+  hit,
+  field,
+  value,
+}: {
+  hit: MibSearchHit;
+  field: 'name' | 'oid';
+  value: string;
+}) {
+  const t = useTheme();
+  return highlightSegments(value, hit.highlights, field).map((segment, index) => (
+    <Text
+      key={`${segment.text}-${index}`}
+      style={segment.highlighted ? { color: t.accent, fontWeight: '900' } : undefined}
+    >
+      {segment.text}
+    </Text>
+  ));
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  navigatorWrapper: { flex: 1, minWidth: 0, minHeight: 0 },
   navigator: { flex: 1, minWidth: 0, minHeight: 0 },
+  operationConsole: { flex: 1, minWidth: 0, minHeight: 0 },
+  consoleHead: {
+    minHeight: 42,
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  consoleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  consoleTitle: { fontSize: 12, fontWeight: '800' },
   focusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -459,6 +798,43 @@ const styles = StyleSheet.create({
   treeText: { flex: 1 },
   treeName: { fontSize: 14 },
   detail: { margin: 12, maxHeight: '45%' },
+  phoneCatalogActions: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
+  operationFab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 18,
+    minHeight: 48,
+    minWidth: 96,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+  },
+  operationFabText: { fontSize: 14, fontWeight: '800' },
+  phoneSheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.46)' },
+  phoneSheet: {
+    height: '82%',
+    borderTopWidth: 1,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: 'hidden',
+  },
+  tabletDrawerBar: {
+    minHeight: 48,
+    borderBottomWidth: 1,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+  },
+  tabletDrawerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)' },
+  tabletDrawer: { width: '82%', maxWidth: 520, height: '100%', borderRightWidth: 1 },
+  contextBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    padding: 12,
+  },
+  contextCard: { width: '100%', maxWidth: 520, alignSelf: 'center' },
   inspector: { flex: 1, minWidth: 0, minHeight: 0 },
   inspectorEyebrow: {
     height: 38,
