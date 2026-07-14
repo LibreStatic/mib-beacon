@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T22:59:13.214Z",
+  "platform": "linux-x86_64-Flatpak",
+  "transport": "localhost filesystem OSTree remote",
+  "fromVersion": "0.0.1-rc.1",
+  "expectedVersion": "0.0.1-rc.2",
+  "rc1Commit": "17220a5a772e638ca3859225d2928b959e8ffd6cc12c0e96e7fe8ec9fafac806",
+  "rc2Commit": "ba0e2730327b23cedc182b1436b688cc9335f5f73791e52419c6a9c0cbdd3c04",
+  "installedCommit": "ba0e2730327b23cedc182b1436b688cc9335f5f73791e52419c6a9c0cbdd3c04",
+  "smokeMarkers": ["ENGINE_READY", "SMOKE_MAIN_WINDOW_READY"],
+  "log": "flatpak-update-smoke.log",
+  "result": "passed"
+}

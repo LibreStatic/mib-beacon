@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T23:44:09.934Z",
+  "canonicalIdentity": {
+    "applicationId": "com.librestatic.mibbeacon",
+    "productName": "MIB Beacon",
+    "publisher": "LibreStatic",
+    "version": "0.0.1-beta.1"
+  },
+  "artifacts": [
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-arm64.AppImage",
+      "format": "AppImage",
+      "architecture": "arm64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "3ad56b3f2a4eaca1fa56f49dc8e5d7a68e30307a0c73c33d4a15af4e59196b3b",
+      "assertion": "desktop entry and packaged app.asar identity match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-x86_64.AppImage",
+      "format": "AppImage",
+      "architecture": "x86_64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "d587088dad14c222f2eee73eb0c151c597dd8af6852a2a5de6e2d1ed820cb0de",
+      "assertion": "desktop entry and packaged app.asar identity match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-amd64.deb",
+      "format": "deb",
+      "architecture": "amd64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1~beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "ccb3d39e45564dc554f8eb96c953c4835f1148a61c0e5d802f33020eb04191dc",
+      "assertion": "control metadata, desktop entry, and packaged app.asar identity match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-arm64.deb",
+      "format": "deb",
+      "architecture": "arm64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1~beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "b4babff310f1ba047cb56ed20b36cfb09ded92462f4b184853d934dcf5b210ad",
+      "assertion": "control metadata, desktop entry, and packaged app.asar identity match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-aarch64.rpm",
+      "format": "rpm",
+      "architecture": "aarch64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1~beta.1-1",
+      "publisher": "LibreStatic",
+      "sha256": "ef18faa834609f1fa1be2cf9cdb0ed1284dff15b84fb6fc6cfdaf18f69dd246d",
+      "assertion": "RPM header publisher and canonical payload paths match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-x86_64.rpm",
+      "format": "rpm",
+      "architecture": "x86_64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1~beta.1-1",
+      "publisher": "LibreStatic",
+      "sha256": "ab2cc93c4ae775c275276db7218231620defe699aa7a41060c762b978ec1f6a3",
+      "assertion": "RPM header publisher and canonical payload paths match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-linux-x86_64.flatpak",
+      "format": "Flatpak",
+      "architecture": "x86_64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "eeda5732f9871734ccd69b9962ac00573ee47e11cbcee42aa425964672e383b3",
+      "assertion": "OSTree ref, desktop entry, metainfo, and packaged app.asar identity match"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-flatpak-source-aarch64.tar.xz",
+      "format": "flatpak-source",
+      "architecture": "aarch64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "a1af1458634364703cfa3db3be6396ac554b07bf45403823de3707fe9f640cda",
+      "assertion": "immutable source packaged app.asar identity matches"
+    },
+    {
+      "artifact": "MIB-Beacon-0.0.1-beta.1-flatpak-source-x86_64.tar.xz",
+      "format": "flatpak-source",
+      "architecture": "x86_64",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "LibreStatic",
+      "sha256": "0796b795b47c7404da05ef0437644570b4fa9821168fd12d4815e2b7d3d5271c",
+      "assertion": "immutable source packaged app.asar identity matches"
+    },
+    {
+      "artifact": "app-release.apk",
+      "format": "APK",
+      "architecture": "multi",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "verification-only key; release publisher credential absent",
+      "sha256": "d351615031ed5b96dc71c3cb64c312ca4b93657b2c3d5a2d3b0bf4d407b35bea",
+      "assertion": "compiled APK manifest identity matches; publication signer remains gated"
+    },
+    {
+      "artifact": "app-release.aab",
+      "format": "AAB",
+      "architecture": "multi",
+      "packageId": "com.librestatic.mibbeacon",
+      "name": "MIB Beacon",
+      "version": "0.0.1-beta.1",
+      "publisher": "verification-only key; release publisher credential absent",
+      "sha256": "f2f1e2822a13c76924dfb84a562baa869a073f7efea3acfcbb81701a9d21051f",
+      "assertion": "protobuf base manifest identity matches; publication signer remains gated"
+    }
+  ],
+  "checks": {
+    "desktopArtifactIdentity": "passed",
+    "androidPackageIdentity": "passed",
+    "desktopChecksumInventory": "passed"
+  },
+  "limitations": [
+    "The Android APK/AAB use a deleted verification-only key, not the unavailable publication key.",
+    "NSIS, dmg, and IPA identity still require their hosted target-platform artifacts.",
+    "Uploaded-artifact identity and checksums remain unverified until a GitHub prerelease exists."
+  ],
+  "log": "artifact-identity.log",
+  "result": "passed"
+}

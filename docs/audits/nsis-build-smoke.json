@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T23:22:59.817Z",
+  "buildHost": "linux-x86_64",
+  "target": "windows-x86_64-NSIS",
+  "compatibilityLayer": "wine-11.12",
+  "emulatedWindowsVersion": "Microsoft Windows 10.0.19045",
+  "artifact": "MIB-Beacon-0.0.1-beta.1-win-x64.exe",
+  "sha256": "ea8265ccc2de315d392e647a9fade8972b53479147530f7ebc19a0acceaf2fc1",
+  "size": 102338828,
+  "installerFile": "PE32 executable for MS Windows 4.00 (GUI), Intel i386, Nullsoft Installer self-extracting archive, 5 sections",
+  "appFile": "PE32+ executable for MS Windows 10.00 (GUI), x86-64, 14 sections",
+  "checks": {
+    "electronBuilderCompleted": true,
+    "updaterMetadataPresent": true,
+    "embeddedApplicationArchivePresent": true,
+    "unpackedPayloadScanPassed": true,
+    "authenticodeSecurityDirectory": "absent (expected for local unsigned build)"
+  },
+  "limitations": [
+    "Cross-build evidence is not a Windows 10/11 installation or runtime test.",
+    "The artifact is intentionally unsigned and is not publication-ready."
+  ],
+  "log": "nsis-build-smoke.log",
+  "result": "passed"
+}

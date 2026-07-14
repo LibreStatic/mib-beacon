@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-14T00:27:24Z",
+  "result": "passed",
+  "guest": {
+    "imageUrl": "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img",
+    "imageSha256": "ffe6203da54deeb6db5d2a98a83f9ec8e55f149d3f7ba622e1abe5fa966ee3d6",
+    "os": "Ubuntu 24.04.4 LTS (Noble Numbat)",
+    "kernel": "6.8.0-134-generic",
+    "virtualization": "kvm"
+  },
+  "artifact": {
+    "name": "MIB-Beacon-0.0.1-beta.1-linux-x86_64.AppImage",
+    "sha256": "d587088dad14c222f2eee73eb0c151c597dd8af6852a2a5de6e2d1ed820cb0de",
+    "hostGuestHashMatch": true
+  },
+  "checks": {
+    "fuseMountObserved": true,
+    "fuseMountReleased": true,
+    "engineReady": true,
+    "mainWindowReady": true,
+    "exitStatus": 0,
+    "unprivilegedUserNamespaceAvailable": false,
+    "appImageNoSandboxFallbackObserved": true
+  }
+}

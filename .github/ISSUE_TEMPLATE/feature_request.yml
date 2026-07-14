@@ -1,0 +1,21 @@
+name: Feature request
+description: Propose a user-visible improvement
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: Problem to solve }
+    validations: { required: true }
+  - type: textarea
+    id: proposal
+    attributes: { label: Proposed behavior }
+    validations: { required: true }
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Privacy and platform impact
+      options:
+        - label: I identified any new network access.
+        - label: I identified any new OS/mobile permission.
+        - label: I considered desktop, phone, tablet, and LAN-host behavior.

@@ -1,0 +1,36 @@
+Warning: Permanently added '[127.0.0.1]:22223' (ED25519) to the list of known hosts.
+OS=Ubuntu 24.04.4 LTS (Noble Numbat)
+KERNEL=6.8.0-134-generic
+ARCH=x86_64
+VIRTUALIZATION=kvm
+APPIMAGE_SHA256=d587088dad14c222f2eee73eb0c151c597dd8af6852a2a5de6e2d1ed820cb0de
+FUSE_DEVICE=character special file 666 root:root
+UNPRIVILEGED_USER_NAMESPACE=false
+(node:3530) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `mib-beacon --trace-warnings ...` to show where the warning was created)
+ENGINE_READY { platform: 'linux', version: '0.0.1-beta.1' }
+dbus-daemon[3525]: [session uid=1000 pid=3525] Activating service name='org.a11y.Bus' requested by ':1.2' (uid=1000 pid=3530 comm="/tmp/.mount_MIB-Bezhshoj/mib-beacon --no-sandbox -" label="unconfined")
+[3874:0714/002722.990184:ERROR:components/viz/service/main/viz_main_impl.cc:184] Exiting GPU process due to errors during initialization
+dbus-daemon[3525]: [session uid=1000 pid=3525] Successfully activated service 'org.a11y.Bus'
+[4078:0714/002723.443307:ERROR:components/viz/service/main/viz_main_impl.cc:184] Exiting GPU process due to errors during initialization
+[4141:0714/002723.665051:WARNING:ui/gfx/linux/gpu_memory_buffer_support_x11.cc:49] dri3 extension not supported.
+[4141:0714/002723.667419:WARNING:sandbox/policy/linux/sandbox_linux.cc:415] InitializeSandbox() called with multiple threads in process gpu-process.
+[4058:0714/002723.732280:ERROR:gpu/ipc/client/command_buffer_proxy_impl.cc:127] ContextResult::kTransientFailure: Failed to send GpuControl.CreateCommandBuffer.
+SMOKE_MAIN_WINDOW_READY
+APP_EXIT_STATUS=0
+FUSE_MOUNT_OBSERVED=true
+MIB-Beacon.AppImage /tmp/.mount_MIB-Bezhshoj fuse.MIB-Beacon.AppImage ro,nosuid,nodev,relatime,user_id=1000,group_id=1000 0 0
+PROCESS_COMMANDS_BEGIN
+   3530 /tmp/.mount_MIB-Bezhshoj/mib-beacon --no-sandbox --smoke-test
+   3629 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-zygote-sandbox --no-sandbox
+   3630 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-sandbox
+   3874 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-zygote-sandbox --no-sandbox
+   4058 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-sandbox
+   4078 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-zygote-sandbox --no-sandbox
+   4141 /tmp/.mount_MIB-Bezhshoj/mib-beacon --type=zygote --no-zygote-sandbox --no-sandbox
+PROCESS_COMMANDS_END
+APPIMAGE_NO_SANDBOX_FALLBACK=true
+ENGINE_READY { platform: 'linux', version: '0.0.1-beta.1' }
+SMOKE_MAIN_WINDOW_READY
+FUSE_MOUNT_LEAK=false
+RESULT=passed

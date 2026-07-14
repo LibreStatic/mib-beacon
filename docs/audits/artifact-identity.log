@@ -1,0 +1,12 @@
+MIB-Beacon-0.0.1-beta.1-flatpak-source-aarch64.tar.xz: OK
+MIB-Beacon-0.0.1-beta.1-flatpak-source-x86_64.tar.xz: OK
+MIB-Beacon-0.0.1-beta.1-linux-aarch64.rpm: OK
+MIB-Beacon-0.0.1-beta.1-linux-amd64.deb: OK
+MIB-Beacon-0.0.1-beta.1-linux-arm64.AppImage: OK
+MIB-Beacon-0.0.1-beta.1-linux-arm64.deb: OK
+MIB-Beacon-0.0.1-beta.1-linux-x86_64.AppImage: OK
+MIB-Beacon-0.0.1-beta.1-linux-x86_64.flatpak: OK
+MIB-Beacon-0.0.1-beta.1-linux-x86_64.rpm: OK
+com.librestatic.mibbeacon.release.yml: OK
+latest-linux-arm64.yml: OK
+latest-linux.yml: OK

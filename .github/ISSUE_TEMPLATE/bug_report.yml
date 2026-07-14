@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible non-security defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never report vulnerabilities or paste SNMP credentials here. Use SECURITY.md.
+  - type: input
+    id: version
+    attributes: { label: Version and artifact, placeholder: "0.0.1-beta.1 AppImage x64" }
+    validations: { required: true }
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Linux, Windows, macOS, Android, iOS unsigned build, LAN web client]
+    validations: { required: true }
+  - type: textarea
+    id: reproduce
+    attributes: { label: Reproduction steps }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: Expected and actual behavior }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: Sanitized logs, placeholder: "Remove hosts, communities, users, keys, and tokens." }

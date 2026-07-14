@@ -1,0 +1,23 @@
+[2:0713/195845.689092:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `mib-beacon --trace-warnings ...` to show where the warning was created)
+[2:0713/195846.113304:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[2:0713/195846.113361:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+ENGINE_READY { platform: 'linux', version: '0.0.1-rc.1' }
+SMOKE_MAIN_WINDOW_READY
+[2:0713/195847.094491:ERROR:ui/events/platform/wayland/wayland_event_watcher.cc:47] libwayland: warning: queue 0xfac013e0700 destroyed while proxies still attached:
+
+[2:0713/195847.094594:ERROR:ui/events/platform/wayland/wayland_event_watcher.cc:47] libwayland:   wl_shm_pool#45 still attached
+
+[2 zypak-helper] Wait found events, but sd-event found none
+[2:0713/195911.772796:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `mib-beacon --trace-warnings ...` to show where the warning was created)
+[2:0713/195912.193941:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+[2:0713/195912.193980:ERROR:dbus/bus.cc:408] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory
+ENGINE_READY { platform: 'linux', version: '0.0.1-rc.2' }
+SMOKE_MAIN_WINDOW_READY
+[2:0713/195913.068710:ERROR:ui/events/platform/wayland/wayland_event_watcher.cc:47] libwayland: warning: queue 0x2314013947c0 destroyed while proxies still attached:
+
+[2:0713/195913.068810:ERROR:ui/events/platform/wayland/wayland_event_watcher.cc:47] libwayland:   wl_shm_pool#46 still attached
+

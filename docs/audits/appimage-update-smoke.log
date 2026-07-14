@@ -1,0 +1,20 @@
+(node:322126) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `mib-beacon --trace-warnings ...` to show where the warning was created)
+Gtk-Message: 19:54:25.089: Failed to load module "appmenu-gtk-module"
+Checking for update
+Generated new staging user ID: ac2c3a7f-862c-51ee-88dd-d4f122dc2498
+Found version 0.0.1-rc.2 (url: MIB-Beacon-0.0.1-rc.2-linux-x86_64.AppImage)
+Downloading update from MIB-Beacon-0.0.1-rc.2-linux-x86_64.AppImage
+updater cache dir: /tmp/mibbeacon-appimage-update.uMjfBp/home/.cache/@mibbeacondesktop-updater
+Cannot download differentially, fallback to full download: Error: Server doesn't support Accept-Ranges (response code 200)
+    at checkIsRangesSupported (/tmp/.mount_MIB-BeJby76B/resources/app.asar/out/main/index.js:13631:16)
+    at ClientRequest.<anonymous> (/tmp/.mount_MIB-BeJby76B/resources/app.asar/out/main/index.js:13952:69)
+    at ClientRequest.emit (node:events:519:28)
+    at SimpleURLLoaderWrapper.<anonymous> (node:electron/js2c/browser_init:2:123892)
+    at SimpleURLLoaderWrapper.emit (node:events:519:28)
+New version 0.0.1-rc.2 has been downloaded to /tmp/mibbeacon-appimage-update.uMjfBp/home/.cache/@mibbeacondesktop-updater/pending/MIB-Beacon-0.0.1-rc.2-linux-x86_64.AppImage
+Install on explicit quitAndInstall
+Install: isSilent: false, isForceRunAfter: true
+Executing: /tmp/mibbeacon-appimage-update.uMjfBp/rc1/MIB-Beacon-0.0.1-rc.2-linux-x86_64.AppImage with args: 
+UPDATE_SMOKE_INSTALLING { version: '0.0.1-rc.1' }
+Update installer has already been triggered. Quitting application.

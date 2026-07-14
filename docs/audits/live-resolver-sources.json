@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T16:49:29.497Z",
+  "consent": "Explicit operator-invoked external-network audit; never run during normal startup.",
+  "requiredEnabledSourcesPassed": true,
+  "results": [
+    {
+      "id": "pysnmp",
+      "name": "pysnmp corpus",
+      "configuredEnabled": true,
+      "module": "IF-MIB",
+      "status": "found",
+      "elapsedMs": 556,
+      "location": "https://mibs.pysnmp.com/asn1/IF-MIB",
+      "declaredModule": "IF-MIB",
+      "bytes": 71751,
+      "sha256": "91df18ae09db2df6a85d519c23533514c81e5464d44da4f21a4465ec9449e752",
+      "warnings": []
+    },
+    {
+      "id": "pysnmp-github",
+      "name": "pysnmp GitHub mirror",
+      "configuredEnabled": true,
+      "module": "IF-MIB",
+      "status": "found",
+      "elapsedMs": 69,
+      "location": "https://raw.githubusercontent.com/lextudio/mibs.pysnmp.com/master/asn1/IF-MIB",
+      "declaredModule": "IF-MIB",
+      "bytes": 71751,
+      "sha256": "91df18ae09db2df6a85d519c23533514c81e5464d44da4f21a4465ec9449e752",
+      "warnings": []
+    },
+    {
+      "id": "librenms",
+      "name": "LibreNMS collection",
+      "configuredEnabled": true,
+      "module": "IF-MIB",
+      "status": "found",
+      "elapsedMs": 996,
+      "location": "https://raw.githubusercontent.com/librenms/librenms/master/mibs/IF-MIB",
+      "declaredModule": "IF-MIB",
+      "bytes": 71691,
+      "sha256": "a41d2d0414bd6e1b3249257d0d035ea11554624c525b830f6910195b72b0c297",
+      "warnings": []
+    },
+    {
+      "id": "cisco",
+      "name": "Cisco official",
+      "configuredEnabled": true,
+      "module": "CISCO-SMI",
+      "status": "found",
+      "elapsedMs": 24,
+      "location": "https://raw.githubusercontent.com/cisco/cisco-mibs/main/v2/CISCO-SMI.my",
+      "declaredModule": "CISCO-SMI",
+      "bytes": 16811,
+      "sha256": "3ea80f8160af50ba77e7309b7f95b4b6edb3ddc57dbe67eb0ee18ae1b56fd332",
+      "warnings": []
+    },
+    {
+      "id": "cisco-mirror",
+      "name": "Cisco official mirror",
+      "configuredEnabled": true,
+      "module": "CISCO-SMI",
+      "status": "found",
+      "elapsedMs": 241,
+      "location": "https://cisco.github.io/cisco-mibs/v2/CISCO-SMI.my",
+      "declaredModule": "CISCO-SMI",
+      "bytes": 16811,
+      "sha256": "3ea80f8160af50ba77e7309b7f95b4b6edb3ddc57dbe67eb0ee18ae1b56fd332",
+      "warnings": []
+    },
+    {
+      "id": "netdisco",
+      "name": "netdisco-mibs",
+      "configuredEnabled": true,
+      "module": "IF-MIB",
+      "status": "found",
+      "elapsedMs": 198,
+      "location": "https://raw.githubusercontent.com/netdisco/netdisco-mibs/master/rfc/IF-MIB.txt",
+      "declaredModule": "IF-MIB",
+      "bytes": 71691,
+      "sha256": "a41d2d0414bd6e1b3249257d0d035ea11554624c525b830f6910195b72b0c297",
+      "warnings": []
+    },
+    {
+      "id": "mibbrowser-online",
+      "name": "mibbrowser.online",
+      "configuredEnabled": true,
+      "module": "IF-MIB",
+      "status": "found",
+      "elapsedMs": 930,
+      "location": "https://mibbrowser.online/mibs/IF-MIB.mib",
+      "declaredModule": "IF-MIB",
+      "bytes": 71777,
+      "sha256": "5adcea8442e68cdfbb635e332dc22b219c112d5c3baf8d86a2249dba06778fe2",
+      "warnings": []
+    },
+    {
+      "id": "circitor",
+      "name": "Circitor",
+      "configuredEnabled": false,
+      "module": "IF-MIB",
+      "status": "not-found",
+      "elapsedMs": 2046,
+      "stage": "validation",
+      "reason": "Validation failed: Response contains HTML, not a MIB"
+    }
+  ]
+}

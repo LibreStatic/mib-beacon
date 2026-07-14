@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T22:41:20Z",
+  "durationMs": 40918,
+  "artifact": "MIB-Beacon-0.0.1-beta.1-linux-x86_64.flatpak",
+  "artifactSha256": "eeda5732f9871734ccd69b9962ac00573ee47e11cbcee42aa425964672e383b3",
+  "session": "Wayland-only Flatpak",
+  "portal": {
+    "interface": "org.freedesktop.portal.FileChooser",
+    "method": "OpenFile",
+    "multiple": true,
+    "mibFilterObserved": true,
+    "nativeSelectionCompletedViaAtSpi": true
+  },
+  "import": {
+    "fixture": "FIXTURE-MIB.mib",
+    "reviewObserved": true,
+    "loadedModule": "FIXTURE-MIB",
+    "persistedAcrossRestart": true
+  },
+  "fileAssociations": {
+    "desktopEntry": "com.librestatic.mibbeacon.desktop",
+    "extensions": [
+      ".mib",
+      ".my",
+      ".smi"
+    ],
+    "mimeTypes": {
+      "mib": "application/x-mib",
+      "my": "application/x-mib",
+      "smi": "application/smil+xml"
+    },
+    "reviewFlowOpenedViaGio": true
+  },
+  "settings": {
+    "theme": "dark",
+    "density": "comfortable",
+    "persistedAcrossRestart": true
+  },
+  "keyboardOnly": {
+    "nativePortalImport": true,
+    "shortcutOverlay": true,
+    "searchShortcut": true,
+    "snmpGet": true,
+    "streamedWalk": true,
+    "tableViewOpened": true,
+    "missingDependencyResolved": true,
+    "trapReceive": true,
+    "settingsChanged": true
+  },
+  "accessibilitySnapshots": {
+    "browse": {
+      "nodeCount": 399,
+      "requiredNames": [
+        "Browse",
+        "Import",
+        "Search name, OID, or description\u2026",
+        "Expand iso"
+      ]
+    },
+    "query": {
+      "nodeCount": 726,
+      "requiredNames": [
+        "Query",
+        "Host",
+        "Port",
+        "OID",
+        "Run Walk",
+        "CSV",
+        "JSON"
+      ]
+    },
+    "traps": {
+      "nodeCount": 435,
+      "requiredNames": [
+        "Traps",
+        "Receive",
+        "Send",
+        "Listen port",
+        "udp4"
+      ]
+    }
+  },
+  "packagedVisuals": {
+    "chartRendered": true,
+    "chartScreenshot": "docs/audits/flatpak-interactive-chart.png",
+    "tooltipObserved": true,
+    "pngExported": true,
+    "pngExport": "docs/audits/flatpak-interactive-chart-export.png",
+    "watchBreached": true,
+    "desktopNotificationObservedViaDbus": true
+  },
+  "launches": 2,
+  "screenshot": "docs/audits/flatpak-interactive-settings.png",
+  "result": "passed"
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-13T22:54:28.742Z",
+  "platform": "linux-x86_64-AppImage",
+  "transport": "localhost-only generic updater feed",
+  "fromVersion": "0.0.1-rc.1",
+  "expectedVersion": "0.0.1-rc.2",
+  "rc1Sha256": "e96a53ab879bda565e3158676afd6fbae995b71c449794b1bcc8e1ce761fbc18",
+  "rc2Sha256": "623eea5e388c1fd2fd595b50c3fa9516a3e4dee11a191aad199a3051ee5923e3",
+  "installedSha256": "623eea5e388c1fd2fd595b50c3fa9516a3e4dee11a191aad199a3051ee5923e3",
+  "marker": {
+    "schemaVersion": 1,
+    "fromVersion": "0.0.1-rc.1",
+    "expectedVersion": "0.0.1-rc.2",
+    "state": "complete",
+    "updatedAt": "2026-07-13T22:54:27.338Z"
+  },
+  "log": "appimage-update-smoke.log",
+  "result": "passed"
+}
