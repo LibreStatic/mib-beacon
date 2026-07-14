@@ -17,17 +17,26 @@ describe('web LAN runtime', () => {
     expect(readme).toContain('no authentication');
   });
 
-  it('defines a persistent, health-checked LAN service with explicit ports', () => {
+  it('shares the Linux host network so SNMP can reach agents on the server host', () => {
     const compose = read('compose.yml');
 
     expect(compose).toContain('mibbeacon-server:');
+    expect(compose).toContain('network_mode: host');
     expect(compose).toContain('MIB_BEACON_SERVER_HOST: 0.0.0.0');
+    expect(compose).toContain('MIB_BEACON_SERVER_PORT: ${MIB_BEACON_SERVER_PORT:-8899}');
     expect(compose).toContain('MIB_BEACON_SERVER_DATA: /data');
-    expect(compose).toContain('${MIB_BEACON_SERVER_PORT:-8899}:8899');
-    expect(compose).toContain('${MIB_BEACON_TRAP_PORT:-1162}:1162/udp');
+    expect(compose).not.toContain('ports:');
     expect(compose).toContain('mibbeacon-server-data:/data');
     expect(compose).toContain('healthcheck:');
     expect(compose).toContain('no-new-privileges:true');
+  });
+
+  it('documents host networking and local-agent addressing', () => {
+    const readme = read('README.md');
+
+    expect(readme).toContain('network_mode: host');
+    expect(readme).toContain('127.0.0.1');
+    expect(readme).toContain('Linux');
   });
 
   it('keeps the legacy Docker Compose filename as a link to the canonical file', () => {

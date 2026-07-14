@@ -359,8 +359,11 @@ pnpm --filter @mibbeacon/mobile ios
 
 The LAN server runs the SNMP engine on one trusted host and serves the UI to browsers on
 the same network. Docker Compose is the easiest way to bring up this runtime kind; it
-builds the browser/server bundles, publishes TCP 8899, publishes UDP 1162 for traps, and
-persists application data in a named volume:
+builds the browser/server bundles, uses the Linux host network, and persists application
+data in a named volume. Host networking lets the engine reach SNMP agents running on the
+same computer: `127.0.0.1` refers to the Docker host rather than an isolated container,
+and requests to the host's LAN address retain a source address accepted by LAN-only agent
+ACLs.
 
 `compose.yml` is the canonical definition. `docker-compose.yml` is a compatibility
 symlink for tools that still require the legacy filename.
@@ -372,7 +375,9 @@ docker compose logs -f mibbeacon-server
 
 When the health check reports `healthy`, open `http://<server-lan-ip>:8899` from another
 device on the LAN. On Linux, `hostname -I` is a quick way to list candidate server
-addresses. In MIB Beacon, use trap receiver port **1162** to match the Compose UDP mapping.
+addresses. The Compose service uses `network_mode: host`, so TCP 8899 and any configured
+trap receiver port (normally UDP 1162) bind directly on the Linux host. Those ports must
+be free before startup.
 
 Stop the runtime without deleting its data:
 
@@ -381,16 +386,17 @@ docker compose down
 ```
 
 `docker compose down -v` also deletes the named data volume and is therefore destructive.
-To change the host-facing ports, set Compose variables before starting it:
+To change the HTTP/WebSocket port, set the server variable before starting it:
 
 ```bash
-MIB_BEACON_SERVER_PORT=9000 MIB_BEACON_TRAP_PORT=2162 docker compose up --build -d
-# Open http://<server-lan-ip>:9000 and configure trap receiver port 1162 in the UI.
+MIB_BEACON_SERVER_PORT=9000 docker compose up --build -d
+# Open http://<server-lan-ip>:9000.
 ```
 
-The Compose port values change only the host-facing ports; the container continues to use
-8899/TCP and 1162/UDP internally. Allow the selected ports through the host firewall, but
-do not forward them from the router.
+Choose the trap receiver port in MIB Beacon itself; host networking does not remap it.
+Allow the selected ports through the host firewall, but do not forward them from the
+router. An SNMP daemon must also authorize the queried address: host networking makes
+`127.0.0.1` reachable, but it cannot override the daemon's own source-address ACL.
 
 For source development without Docker:
 
