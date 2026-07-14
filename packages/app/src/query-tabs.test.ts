@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from './store';
-import { queryResultTabAccessibilityLabel } from './query-tabs';
+import { queryResultTabAccessibilityLabel, queryResultTabPresentation } from './query-tabs';
 
 describe('query result tabs', () => {
   beforeEach(() => {
@@ -47,5 +47,32 @@ describe('query result tabs', () => {
         createdAt: 1,
       }),
     ).toBe('Result tab Lab · walk · 1.3.6.1.2.1, 1761 varbinds, 89 batches, 10076 milliseconds');
+  });
+
+  it('exposes pin and close as explicit controls on every result tab', () => {
+    const tab = {
+      id: 'walk',
+      title: 'Lab · walk · 1.3.6.1.2.1',
+      results: [],
+      stats: { count: 0, batches: 0, ms: 0 },
+      pinned: false,
+      createdAt: 1,
+    };
+
+    expect(queryResultTabPresentation(tab, 'walk')).toMatchObject({
+      selected: true,
+      pinned: false,
+      pinIcon: '📌',
+      pinLabel: 'Pin result tab Lab · walk · 1.3.6.1.2.1',
+      closeLabel: 'Close result tab Lab · walk · 1.3.6.1.2.1',
+      closeDisabled: false,
+    });
+
+    expect(queryResultTabPresentation({ ...tab, pinned: true }, 'other')).toMatchObject({
+      selected: false,
+      pinned: true,
+      pinIcon: '📌',
+      closeDisabled: true,
+    });
   });
 });

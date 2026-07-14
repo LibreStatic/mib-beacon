@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, ScrollView, Share, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, ScrollView, Share, StyleSheet } from 'react-native';
 import {
   Card,
   SectionTitle,
@@ -27,8 +27,7 @@ import type {
 import { useEngine } from '../engine-context';
 import { useAppStore, type QueryOperation } from '../store';
 import { canUseBrowserEventTarget, queryShortcut } from '../browser-shortcuts';
-import { queryResultTabAccessibilityLabel } from '../query-tabs';
-import { SwipeActionRow } from '../components/SwipeActionRow';
+import { queryResultTabAccessibilityLabel, queryResultTabPresentation } from '../query-tabs';
 import {
   runGet,
   runGetBulk,
@@ -433,40 +432,69 @@ export function QueryScreen({
     <>
       {queryTabs.length > 0 ? (
         <View style={[styles.resultTabs, { borderBottomColor: t.border }]}>
-          <Row style={styles.wrap}>
-            {queryTabs.map((tab) => (
-              <SwipeActionRow
-                key={tab.id}
-                accessibilityLabel={queryResultTabAccessibilityLabel(tab)}
-                leftLabel="Close"
-                rightLabel={tab.pinned ? 'Unpin' : 'Pin'}
-                onSwipeLeft={() => useAppStore.getState().closeQueryResultTab(tab.id)}
-                onSwipeRight={() => useAppStore.getState().toggleQueryResultTabPin(tab.id)}
-              >
-                <Chip
-                  label={`${tab.pinned ? '◆ ' : ''}${tab.title}`}
-                  active={tab.id === activeQueryTabId}
-                  onPress={() => useAppStore.getState().selectQueryResultTab(tab.id)}
-                />
-              </SwipeActionRow>
-            ))}
-          </Row>
-          {activeQueryTabId ? (
-            <Row>
-              <Button
-                title="Pin"
-                small
-                variant="ghost"
-                onPress={() => useAppStore.getState().toggleQueryResultTabPin(activeQueryTabId)}
-              />
-              <Button
-                title="Close"
-                small
-                variant="ghost"
-                onPress={() => useAppStore.getState().closeQueryResultTab(activeQueryTabId)}
-              />
-            </Row>
-          ) : null}
+          <View style={styles.resultTabList}>
+            {queryTabs.map((tab) => {
+              const presentation = queryResultTabPresentation(tab, activeQueryTabId);
+              return (
+                <View
+                  key={tab.id}
+                  style={[
+                    styles.resultTab,
+                    {
+                      backgroundColor: presentation.selected ? t.accentSoft : t.surfaceAlt,
+                      borderColor: presentation.selected ? t.accent : t.border,
+                    },
+                  ]}
+                >
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={presentation.pinLabel}
+                    accessibilityState={{ selected: presentation.pinned }}
+                    onPress={() => useAppStore.getState().toggleQueryResultTabPin(tab.id)}
+                    style={({ pressed }) => [
+                      styles.resultTabPin,
+                      { borderRightColor: t.border },
+                      presentation.pinned || pressed ? { backgroundColor: t.accentSoft } : null,
+                    ]}
+                  >
+                    <Text style={styles.resultTabPinIcon}>{presentation.pinIcon}</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityLabel={queryResultTabAccessibilityLabel(tab)}
+                    accessibilityState={{ selected: presentation.selected }}
+                    onPress={() => useAppStore.getState().selectQueryResultTab(tab.id)}
+                    style={({ pressed }) => [
+                      styles.resultTabSelect,
+                      pressed ? { backgroundColor: t.accentSoft } : null,
+                    ]}
+                  >
+                    <Text numberOfLines={1} style={[styles.resultTabTitle, { color: t.text }]}>
+                      {tab.title}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={presentation.closeLabel}
+                    accessibilityState={{ disabled: presentation.closeDisabled }}
+                    disabled={presentation.closeDisabled}
+                    onPress={() => useAppStore.getState().closeQueryResultTab(tab.id)}
+                    style={({ pressed }) => [
+                      styles.resultTabAction,
+                      styles.resultTabClose,
+                      { borderLeftColor: t.border },
+                      presentation.closeDisabled ? styles.resultTabActionDisabled : null,
+                      pressed ? { backgroundColor: t.accentSoft } : null,
+                    ]}
+                  >
+                    <Text style={[styles.resultTabCloseText, { color: t.semantic.status.down }]}>
+                      ×
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
         </View>
       ) : null}
       <View style={styles.resultsHead}>
@@ -1312,6 +1340,44 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 6,
   },
+  resultTabList: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 6 },
+  resultTab: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    maxWidth: '100%',
+    minWidth: 0,
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  resultTabSelect: {
+    minWidth: 112,
+    maxWidth: 260,
+    minHeight: 42,
+    flexShrink: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  resultTabTitle: { fontSize: 12, fontWeight: '700' },
+  resultTabPin: {
+    width: 38,
+    minHeight: 42,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultTabPinIcon: { fontSize: 14, lineHeight: 18 },
+  resultTabAction: {
+    minWidth: 36,
+    minHeight: 42,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  resultTabClose: { minWidth: 36, paddingHorizontal: 6 },
+  resultTabCloseText: { fontSize: 18, fontWeight: '800', lineHeight: 20 },
+  resultTabActionDisabled: { opacity: 0.38 },
   error: { marginBottom: 8 },
   vbRow: {
     flexDirection: 'column',
