@@ -1,0 +1,9 @@
+NEEDS-IF-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+  ifIndex
+    FROM IF-MIB;
+
+auditIfIndex OBJECT IDENTIFIER ::= { ifIndex 999 }
+
+END

@@ -18,6 +18,9 @@
   </provides>
   <content_rating type="oars-1.1" />
   <releases>
-    <release version="0.0.0" date="2026-07-12" type="development" />
+    <release version="0.0.1-beta.1" date="2026-07-13" type="development">
+      <url>https://github.com/LibreStatic/mibbeacon/releases/tag/v0.0.1-beta.1</url>
+      <description><p>Initial beta with MIB catalog, SNMP operations, traps, resolver, tools, and responsive desktop/mobile interfaces.</p></description>
+    </release>
   </releases>
 </component>

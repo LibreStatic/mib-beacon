@@ -13,6 +13,9 @@ finish-args:
   - --socket=wayland
   - --socket=x11
   - --device=dri
+  # Electron safeStorage uses the host Secret Service (libsecret) on Linux.
+  # Keep credential persistence encrypted rather than falling back to plaintext.
+  - --talk-name=org.freedesktop.secrets
 
 modules:
   - name: mib-beacon
@@ -21,6 +24,7 @@ modules:
       - install -Dm755 mib-beacon /app/bin/mib-beacon
       - cp -a app /app/mib-beacon
       - install -Dm644 com.librestatic.mibbeacon.desktop /app/share/applications/com.librestatic.mibbeacon.desktop
+      - install -Dm644 com.librestatic.mibbeacon.xml /app/share/mime/packages/com.librestatic.mibbeacon.xml
       - install -Dm644 com.librestatic.mibbeacon.metainfo.xml /app/share/metainfo/com.librestatic.mibbeacon.metainfo.xml
       - install -Dm644 com.librestatic.mibbeacon.svg /app/share/icons/hicolor/scalable/apps/com.librestatic.mibbeacon.svg
     sources:
@@ -32,10 +36,14 @@ modules:
       - type: file
         path: com.librestatic.mibbeacon.desktop
       - type: file
+        path: com.librestatic.mibbeacon.xml
+      - type: file
         path: com.librestatic.mibbeacon.metainfo.xml
       - type: file
         path: com.librestatic.mibbeacon.svg
       - type: script
         dest-filename: mib-beacon
         commands:
-          - exec zypak-wrapper /app/mib-beacon/mib-beacon "$@"
+          # The sandbox exposes Secret Service above; force Chromium to use
+          # libsecret instead of guessing an inaccessible KDE wallet backend.
+          - exec zypak-wrapper /app/mib-beacon/mib-beacon --password-store=gnome-libsecret --ozone-platform-hint=auto "$@"

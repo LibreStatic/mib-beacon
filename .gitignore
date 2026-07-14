@@ -24,9 +24,22 @@ apps/desktop/release/
 # test / coverage
 coverage/
 *.log
+__pycache__/
+*.py[cod]
+!docs/audits/appimage-update-smoke.log
+!docs/audits/artifact-identity.log
+!docs/audits/flatpak-update-smoke.log
+!docs/audits/nsis-build-smoke.log
+!docs/audits/ubuntu-vm-appimage-smoke.log
 
-# corpus (fetched, not committed — see plan 03)
-dev/corpus/
+# corpus downloads/reports are local; harness source and revision lock are committed
+dev/corpus/*
+!dev/corpus/fetch-corpus.ts
+!dev/corpus/run-corpus.ts
+!dev/corpus/report.ts
+!dev/corpus/parse-worker.mjs
+!dev/corpus/parse-worker.ts
+!dev/corpus/corpus-lock.json
 
 # local env / secrets
 .env

@@ -1,6 +1,6 @@
 {
   "name": "mibbeacon",
-  "version": "0.0.0",
+  "version": "0.0.1-beta.1",
   "private": true,
   "description": "Open-source cross-platform SNMP toolkit",
   "homepage": "https://librestatic.com",
@@ -31,9 +31,18 @@
     "test": "vitest run",
     "build:desktop": "pnpm --filter @mibbeacon/desktop build",
     "dist:desktop": "pnpm --filter @mibbeacon/desktop dist",
+    "release:prepare": "node dev/license-audit.mjs",
+    "verify:licenses": "node dev/license-audit.mjs --check",
+    "verify:artifacts": "node dev/scan-release-artifacts.mjs apps/desktop/out apps/mobile/android/app/build/outputs/apk/release apps/mobile/android/app/build/outputs/bundle/release",
+    "audit:linux-packages": "dev/audit/linux-package-smoke.sh",
+    "audit:flatpak-interactive": "python3 dev/audit/flatpak-interactive-smoke.py",
+    "audit:live-resolver": "tsx dev/audit/live-resolver-sources.ts --output docs/audits/live-resolver-sources.json",
     "verify:release-metadata": "vitest run tests/release-identity.test.ts",
     "spike:engine": "pnpm --filter @mibbeacon/core spike",
-    "corpus": "echo 'corpus harness lands in plan 03'"
+    "corpus:fetch": "tsx dev/corpus/fetch-corpus.ts",
+    "corpus": "tsx dev/corpus/run-corpus.ts",
+    "audit:artifact-identity": "dev/audit/artifact-identity-smoke.sh",
+    "audit:ubuntu-vm-appimage": "dev/audit/ubuntu-vm-appimage-smoke/run.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -51,6 +60,7 @@
     "tslib": "^2.8.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
-    "vitest": "^3.0.2"
+    "vitest": "^3.0.2",
+    "tsx": "^4.19.2"
   }
 }

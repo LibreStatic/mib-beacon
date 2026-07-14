@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-mib">
+    <comment>SNMP MIB module</comment>
+    <glob pattern="*.mib"/>
+    <glob pattern="*.MIB"/>
+    <glob pattern="*.my"/>
+    <glob pattern="*.MY"/>
+  </mime-type>
+  <mime-type type="text/x-smi">
+    <comment>SMI module</comment>
+    <!-- Flatpak exports custom globs at low priority and strips MIME magic. -->
+    <glob pattern="*.smi"/>
+    <glob pattern="*.SMI"/>
+  </mime-type>
+</mime-info>

@@ -8,16 +8,45 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_STORAGE_CAP_BYTES: 524288000
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate release tag and version
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "Release runs must target an existing v* tag, not $GITHUB_REF" >&2
+            exit 1
+          fi
+          version=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).version")
+          tag="v${version}"
+          if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $version (expected $tag)" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - uses: pnpm/action-setup@v4
         with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:licenses
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
@@ -30,10 +59,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            platform: linux
             command: dist:linux
           - os: windows-latest
+            platform: windows
             command: dist:windows
           - os: macos-latest
+            platform: macos
             command: dist:mac
     runs-on: ${{ matrix.os }}
     steps:
@@ -44,16 +76,369 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - name: Install Linux package tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        shell: bash
+        run: |
+          sudo apt-get update
+          fuse_package=libfuse2
+          if apt-cache show libfuse2t64 >/dev/null 2>&1; then fuse_package=libfuse2t64; fi
+          sudo apt-get install -y rpm xvfb "$fuse_package"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @mibbeacon/desktop ${{ matrix.command }}
+      - name: Require Windows signing credentials
+        if: runner.os == 'Windows'
+        shell: bash
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - uses: actions/upload-artifact@v4
+          WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WINDOWS_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          for name in WINDOWS_CSC_LINK WINDOWS_CSC_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required Windows release-signing secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Require macOS signing and notarization credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          MACOS_CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in MACOS_CSC_LINK MACOS_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required macOS signing/notarization secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Build desktop packages
+        run: pnpm --filter @mibbeacon/desktop ${{ matrix.command }}
+        env:
+          CSC_LINK: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK || runner.os == 'macOS' && secrets.MACOS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_KEY_PASSWORD || runner.os == 'macOS' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK != '') || (runner.os == 'macOS' && secrets.MACOS_CSC_LINK != '') }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify Windows Authenticode signature
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $executables = @(Get-ChildItem apps/desktop/release -Filter '*.exe' -File)
+          if ($executables.Count -eq 0) { throw 'No NSIS executable was produced' }
+          @('## Windows Authenticode verification', '') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature on $($executable.Name): $($signature.Status) $($signature.StatusMessage)"
+            }
+            Write-Host "$($executable.Name): $($signature.SignerCertificate.Subject)"
+            @(
+              "- Artifact: ``$($executable.Name)``",
+              "- Status: $($signature.Status)",
+              "- Signer: $($signature.SignerCertificate.Subject)",
+              "- Certificate SHA-1: $($signature.SignerCertificate.Thumbprint)",
+              ''
+            ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+
+      - name: Install, launch, and uninstall NSIS package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem apps/desktop/release -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'No NSIS installer was produced' }
+
+          $installation = Start-Process $installer.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($installation.ExitCode -ne 0) { throw "NSIS install failed: $($installation.ExitCode)" }
+
+          $uninstallKey = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            ForEach-Object { Get-ItemProperty $_.PSPath } |
+            Where-Object { $_.DisplayName -eq 'MIB Beacon' } |
+            Select-Object -First 1
+          if (-not $uninstallKey) { throw 'MIB Beacon uninstall registration was not created' }
+          if ($uninstallKey.Publisher -ne 'LibreStatic') {
+            throw "Unexpected installed publisher: $($uninstallKey.Publisher)"
+          }
+          if ($uninstallKey.DisplayVersion -ne '${{ needs.verify.outputs.version }}') {
+            throw "Unexpected installed version: $($uninstallKey.DisplayVersion)"
+          }
+
+          $app = Join-Path $uninstallKey.InstallLocation 'mib-beacon.exe'
+          if (-not (Test-Path $app -PathType Leaf)) { throw "Installed executable missing: $app" }
+          $versionInfo = (Get-Item $app).VersionInfo
+          if ($versionInfo.ProductName -ne 'MIB Beacon') {
+            throw "Unexpected executable product name: $($versionInfo.ProductName)"
+          }
+          if ($versionInfo.CompanyName -ne 'LibreStatic') {
+            throw "Unexpected executable company: $($versionInfo.CompanyName)"
+          }
+          $appSignature = Get-AuthenticodeSignature $app
+          if ($appSignature.Status -ne 'Valid') {
+            throw "Installed executable signature is invalid: $($appSignature.Status)"
+          }
+
+          foreach ($extension in @('.mib', '.my', '.smi')) {
+            $extensionKey = "HKCU:\Software\Classes\$extension"
+            if (-not (Test-Path $extensionKey)) { throw "Missing file association: $extension" }
+            $progId = (Get-Item $extensionKey).GetValue('')
+            if (-not $progId) { throw "Missing ProgID for $extension" }
+            $commandKey = "HKCU:\Software\Classes\$progId\shell\open\command"
+            if (-not (Test-Path $commandKey)) { throw "Missing open command for $extension ($progId)" }
+            $openCommand = (Get-Item $commandKey).GetValue('')
+            if ($openCommand -notlike '*mib-beacon.exe*') {
+              throw "Unexpected open command for $extension`: $openCommand"
+            }
+          }
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'windows-package-smoke.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'windows-package-smoke.stderr.log'
+          $smoke = Start-Process $app -ArgumentList '--smoke-test' -PassThru -Wait `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content $stdout, $stderr | Tee-Object -FilePath windows-package-smoke.log
+          if ($smoke.ExitCode -ne 0) { throw "Installed application smoke failed: $($smoke.ExitCode)" }
+          if (-not (Select-String -Path windows-package-smoke.log -SimpleMatch 'ENGINE_READY' -Quiet)) {
+            throw 'Installed application did not report ENGINE_READY'
+          }
+          if (-not (Select-String -Path windows-package-smoke.log -SimpleMatch 'SMOKE_MAIN_WINDOW_READY' -Quiet)) {
+            throw 'Installed application did not report SMOKE_MAIN_WINDOW_READY'
+          }
+
+          $uninstaller = Get-ChildItem $uninstallKey.InstallLocation -Filter 'Uninstall*.exe' -File |
+            Select-Object -First 1
+          if (-not $uninstaller) { throw 'NSIS uninstaller was not installed' }
+          $removal = Start-Process $uninstaller.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($removal.ExitCode -ne 0) { throw "NSIS uninstall failed: $($removal.ExitCode)" }
+          for ($attempt = 0; $attempt -lt 30 -and (Test-Path $app); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path $app) { throw 'Installed executable remained after uninstall' }
+
+          @(
+            '## Windows NSIS package smoke',
+            '',
+            "- Installer: ``$($installer.Name)``",
+            '- Installed publisher/version: passed',
+            '- Installed Authenticode signature: valid',
+            '- File associations: `.mib`, `.my`, `.smi` passed',
+            '- Main-window smoke: passed',
+            '- Silent uninstall: passed'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Verify notarized macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(find apps/desktop/release -maxdepth 1 -type f -name '*.dmg' -print -quit)
+          [[ -n "$dmg" ]] || { echo 'No dmg was produced' >&2; exit 1; }
+          mountpoint=$(mktemp -d)
+          cleanup() {
+            hdiutil detach "$mountpoint" -quiet >/dev/null 2>&1 || true
+            rmdir "$mountpoint" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mountpoint" -quiet
+          app_path=$(find "$mountpoint" -maxdepth 1 -type d -name '*.app' -print -quit)
+          [[ -n "$app_path" ]] || { echo 'No application bundle found in dmg' >&2; exit 1; }
+          plist="$app_path/Contents/Info.plist"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
+          bundle_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$plist")
+          bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          [[ "$bundle_id" == 'com.librestatic.mibbeacon' ]]
+          [[ "$bundle_name" == 'MIB Beacon' ]]
+          [[ "$bundle_version" == '${{ needs.verify.outputs.version }}' ]]
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
+          codesign --display --verbose=4 "$app_path" 2>&1 | tee macos-signature.log
+          grep -q 'TeamIdentifier=' macos-signature.log
+
+          "$app_path/Contents/MacOS/$executable" --smoke-test >macos-package-smoke.log 2>&1 & smoke_pid=$!
+          for _ in $(seq 1 120); do
+            if ! kill -0 "$smoke_pid" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          if kill -0 "$smoke_pid" >/dev/null 2>&1; then
+            kill "$smoke_pid" >/dev/null 2>&1 || true
+            wait "$smoke_pid" >/dev/null 2>&1 || true
+            cat macos-package-smoke.log
+            echo 'Packaged macOS application smoke timed out' >&2
+            exit 1
+          fi
+          wait "$smoke_pid"
+          cat macos-package-smoke.log
+          grep -q 'ENGINE_READY' macos-package-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' macos-package-smoke.log
+
+          team_identifier=$(sed -n 's/^TeamIdentifier=//p' macos-signature.log | head -1)
+          authority=$(sed -n 's/^Authority=//p' macos-signature.log | head -1)
+          {
+            echo '## macOS signing and notarization verification'
+            echo
+            echo "- Artifact: \`$(basename "$dmg")\`"
+            echo "- Application: \`$(basename "$app_path")\`"
+            echo "- Signing authority: $authority"
+            echo "- Team identifier: $team_identifier"
+            echo "- Bundle identifier/name/version: $bundle_id / $bundle_name / $bundle_version"
+            echo '- Gatekeeper assessment: passed'
+            echo '- Stapled notarization ticket: valid'
+            echo '- Mounted DMG main-window smoke: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan desktop application payload
+        shell: bash
+        run: node dev/scan-release-artifacts.mjs apps/desktop/out
+
+      - name: Upload target-host package evidence
+        if: runner.os == 'Windows' || runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ runner.os }}
-          path: apps/desktop/release/*
+          name: package-smoke-${{ matrix.platform }}
+          path: |
+            windows-package-smoke.log
+            macos-package-smoke.log
+            macos-signature.log
           if-no-files-found: error
+          retention-days: 1
+
+      - name: Prepare immutable Flatpak source archives
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          version='${{ needs.verify.outputs.version }}'
+          for item in 'x86_64:linux-unpacked' 'aarch64:linux-arm64-unpacked'; do
+            arch=${item%%:*}
+            directory=${item#*:}
+            if [[ ! -d "apps/desktop/release/$directory" ]]; then
+              echo "Missing electron-builder unpacked directory for $arch: $directory" >&2
+              exit 1
+            fi
+            mkdir -p "flatpak-source-$arch/app"
+            cp -a "apps/desktop/release/$directory/." "flatpak-source-$arch/app/"
+            tar -C "flatpak-source-$arch" -cJf "apps/desktop/release/MIB-Beacon-${version}-flatpak-source-${arch}.tar.xz" app
+          done
+          x64_asset="MIB-Beacon-${version}-flatpak-source-x86_64.tar.xz"
+          arm64_asset="MIB-Beacon-${version}-flatpak-source-aarch64.tar.xz"
+          x64_sha=$(sha256sum "apps/desktop/release/$x64_asset" | cut -d' ' -f1)
+          arm64_sha=$(sha256sum "apps/desktop/release/$arm64_asset" | cut -d' ' -f1)
+          base="https://github.com/LibreStatic/mibbeacon/releases/download/${GITHUB_REF_NAME}"
+          node packaging/flatpak/scripts/prepare-flatpak-release.mjs \
+            --version "$version" \
+            --x64-url "$base/$x64_asset" --x64-sha256 "$x64_sha" \
+            --arm64-url "$base/$arm64_asset" --arm64-sha256 "$arm64_sha" \
+            --output apps/desktop/release/com.librestatic.mibbeacon.release.yml
+
+      - name: Smoke-test packaged Electron main window
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 45s xvfb-run --auto-servernum apps/desktop/release/linux-unpacked/mib-beacon --smoke-test 2>&1 | tee electron-smoke.log
+          grep -q 'ENGINE_READY' electron-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' electron-smoke.log
+
+      - name: Exercise hosted AppImage and deb packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ needs.verify.outputs.version }}'
+          appimage="apps/desktop/release/MIB-Beacon-${version}-linux-x86_64.AppImage"
+          deb="apps/desktop/release/MIB-Beacon-${version}-linux-amd64.deb"
+          [[ -f "$appimage" && -f "$deb" ]]
+
+          chmod +x "$appimage"
+          appimage_home=$(mktemp -d)
+          HOME="$appimage_home" timeout 120s xvfb-run --auto-servernum "$appimage" --smoke-test \
+            >appimage-package-smoke.log 2>&1
+          grep -q 'ENGINE_READY' appimage-package-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' appimage-package-smoke.log
+          rm -rf "$appimage_home"
+
+          sudo apt-get install -y "$PWD/$deb"
+          installed='/opt/MIB Beacon/mib-beacon'
+          [[ -x "$installed" ]]
+          deb_home=$(mktemp -d)
+          HOME="$deb_home" timeout 120s xvfb-run --auto-servernum "$installed" --smoke-test \
+            >deb-package-smoke.log 2>&1
+          grep -q 'ENGINE_READY' deb-package-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' deb-package-smoke.log
+          rm -rf "$deb_home"
+          sudo apt-get remove -y mib-beacon
+          [[ ! -e "$installed" ]]
+
+          {
+            echo '## Hosted Linux package smoke'
+            echo
+            echo '- x86_64 AppImage FUSE launch: passed'
+            echo '- amd64 deb install/main-window launch/uninstall: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload hosted Linux package evidence
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-smoke-linux
+          path: |
+            electron-smoke.log
+            appimage-package-smoke.log
+            deb-package-smoke.log
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Linux packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+            apps/desktop/release/*.rpm
+            apps/desktop/release/latest-linux*.yml
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*flatpak-source-*.tar.xz
+            apps/desktop/release/com.librestatic.mibbeacon.release.yml
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Flatpak staging application
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-staging
+          path: apps/desktop/release/linux-unpacked
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload Windows packages
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload macOS packages
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/latest-mac.yml
+            apps/desktop/release/*.blockmap
+          if-no-files-found: error
+          retention-days: 1
 
   flatpak:
     needs: [verify, desktop]
@@ -62,27 +447,54 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: desktop-Linux
-          path: apps/desktop/release
+          name: flatpak-staging
+          path: packaging/flatpak/staging/app
       - name: Install Flatpak tooling
-        run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder
+        run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder xvfb
       - name: Install runtime and SDK
         run: |
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.electronjs.Electron2.BaseApp//24.08
-      - name: Stage Electron application
-        run: |
-          mkdir -p packaging/flatpak/staging/app
-          cp -a apps/desktop/release/linux-unpacked/. packaging/flatpak/staging/app/
       - name: Build Flatpak bundle
         working-directory: packaging/flatpak
         run: |
+          version='${{ needs.verify.outputs.version }}'
           flatpak-builder --user --force-clean --repo=repo build com.librestatic.mibbeacon.yml
-          flatpak build-bundle repo MIB-Beacon-${GITHUB_REF_NAME}.flatpak com.librestatic.mibbeacon
+          flatpak build-bundle repo "MIB-Beacon-${version}-linux-x86_64.flatpak" com.librestatic.mibbeacon
+      - name: Install and launch hosted Flatpak bundle
+        working-directory: packaging/flatpak
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ needs.verify.outputs.version }}'
+          bundle="MIB-Beacon-${version}-linux-x86_64.flatpak"
+          [[ -f "$bundle" ]]
+          flatpak install --user --noninteractive --bundle "$bundle"
+          timeout 120s xvfb-run --auto-servernum \
+            flatpak run --user com.librestatic.mibbeacon --smoke-test \
+            >flatpak-package-smoke.log 2>&1
+          grep -q 'ENGINE_READY' flatpak-package-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' flatpak-package-smoke.log
+          flatpak uninstall --user --noninteractive --delete-data com.librestatic.mibbeacon
+          ! flatpak info --user com.librestatic.mibbeacon >/dev/null 2>&1
+          {
+            echo '## Hosted Flatpak package smoke'
+            echo
+            echo '- Bundle identity: `com.librestatic.mibbeacon`'
+            echo '- Install/main-window launch/uninstall: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: flatpak
+          name: package-smoke-flatpak
+          path: packaging/flatpak/flatpak-package-smoke.log
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-flatpak
           path: packaging/flatpak/*.flatpak
+          if-no-files-found: error
+          retention-days: 1
 
   android:
     needs: verify
@@ -98,18 +510,96 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generate Android project from canonical Expo metadata
         run: pnpm --filter @mibbeacon/mobile exec expo prebuild --platform android --clean --no-install
-      - name: Build sideload APK and Play bundle
+      - name: Require Android release-signing credentials
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          MIBBEACON_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          MIBBEACON_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MIBBEACON_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 MIBBEACON_ANDROID_STORE_PASSWORD MIBBEACON_ANDROID_KEY_ALIAS MIBBEACON_ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required Android release-signing secret: $name" >&2
+              exit 1
+            fi
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mibbeacon-release.jks"
+          chmod 600 "$RUNNER_TEMP/mibbeacon-release.jks"
+      - name: Build signed sideload APK and Play bundle
         working-directory: apps/mobile/android
+        env:
+          MIBBEACON_ANDROID_KEYSTORE: ${{ runner.temp }}/mibbeacon-release.jks
+          MIBBEACON_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          MIBBEACON_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          MIBBEACON_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease bundleRelease --no-daemon
+      - name: Verify Android release signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+          aab=$(find apps/mobile/android/app/build/outputs/bundle/release -name '*.aab' -print -quit)
+          [[ -n "$apk" && -n "$aab" ]] || { echo 'Signed APK/AAB outputs are missing' >&2; exit 1; }
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          "$apksigner" verify --verbose --print-certs "$apk" | tee android-apk-signature.log
+          jarsigner -verify -strict -certs "$aab"
+          keytool -printcert -jarfile "$aab" > android-aab-signature.log
+          cat android-aab-signature.log
+          apk_subject=$(sed -n \
+            -e 's/^Signer #1 certificate DN: //p' \
+            -e 's/^V[^:]* Signer: certificate DN: //p' \
+            android-apk-signature.log | head -1)
+          apk_sha256=$(sed -n \
+            -e 's/^Signer #1 certificate SHA-256 digest: //p' \
+            -e 's/^V[^:]* Signer: certificate SHA-256 digest: //p' \
+            android-apk-signature.log | head -1)
+          aab_owner=$(sed -n 's/^Owner: //p' android-aab-signature.log | head -1)
+          aab_sha256=$(sed -n 's/^[[:space:]]*SHA256: //p' android-aab-signature.log | head -1)
+          [[ -n "$apk_subject" && -n "$apk_sha256" && -n "$aab_owner" && -n "$aab_sha256" ]]
+          {
+            echo '## Android publication-signature verification'
+            echo
+            echo "- APK: \`$(basename "$apk")\`"
+            echo "- APK signer: $apk_subject"
+            echo "- APK certificate SHA-256: $apk_sha256"
+            echo "- AAB: \`$(basename "$aab")\`"
+            echo "- AAB signer: $aab_owner"
+            echo "- AAB certificate SHA-256: $aab_sha256"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Audit merged Android permissions
+        run: >-
+          node dev/verify-android-permissions.mjs
+          apps/mobile/android/app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
+      - name: Scan Android application payloads
+        run: >-
+          node dev/scan-release-artifacts.mjs
+          apps/mobile/android/app/build/outputs/apk/release
+          apps/mobile/android/app/build/outputs/bundle/release
+      - name: Start Android SNMP fixture
+        run: docker compose -f dev/snmpd/docker-compose.yml up -d --build
+      - name: Exercise release APK SNMP and trap paths
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_6
+          script: |
+            apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+            dev/audit/android-release-smoke/run.sh "$apk"
+      - name: Stop Android SNMP fixture
+        if: always()
+        run: docker compose -f dev/snmpd/docker-compose.yml down --volumes
       - uses: actions/upload-artifact@v4
         with:
-          name: android
+          name: release-android
           path: |
             apps/mobile/android/app/build/outputs/apk/release/*.apk
             apps/mobile/android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+          retention-days: 1
 
-  ios-validation:
+  ios:
     needs: verify
     runs-on: macos-latest
     steps:
@@ -124,22 +614,318 @@ jobs:
       - name: Install CocoaPods
         working-directory: apps/mobile/ios
         run: pod install
-      - name: Validate unsigned iOS build
+      - name: Build unsigned iOS device application
         working-directory: apps/mobile/ios
-        run: xcodebuild -workspace MIBBeacon.xcworkspace -scheme MIBBeacon -configuration Release -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+        run: |
+          xcodebuild \
+            -workspace MIBBeacon.xcworkspace \
+            -scheme MIBBeacon \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+          app_path=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' -print -quit)
+          if [[ -z "$app_path" ]]; then
+            echo "Unsigned iOS .app was not produced" >&2
+            exit 1
+          fi
+          mkdir -p build/ipa/Payload
+          ditto "$app_path" build/ipa/Payload/MIBBeacon.app
+          (cd build/ipa && zip -qry --symlinks "../MIB-Beacon-${{ needs.verify.outputs.version }}-ios-unsigned.ipa" Payload)
+      - name: Inspect unsigned iOS device archive
+        shell: bash
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          ipa=$(find build -maxdepth 1 -type f -name '*-ios-unsigned.ipa' -print -quit)
+          if [[ -z "$ipa" ]]; then
+            echo "Unsigned IPA was not produced" >&2
+            exit 1
+          fi
+          unzip -t "$ipa"
+          rm -rf build/ipa-inspection
+          mkdir -p build/ipa-inspection
+          unzip -q "$ipa" -d build/ipa-inspection
 
-  draft-release:
-    needs: [desktop, flatpak, android, ios-validation]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { path: artifacts, merge-multiple: true }
-      - name: Generate checksums
-        run: find artifacts -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+          app_count=$(find build/ipa-inspection/Payload -maxdepth 1 -type d -name '*.app' | wc -l | tr -d ' ')
+          if [[ "$app_count" != 1 ]]; then
+            echo "Expected exactly one .app in Payload, found $app_count" >&2
+            exit 1
+          fi
+          app_path=$(find build/ipa-inspection/Payload -maxdepth 1 -type d -name '*.app' -print -quit)
+          plist="$app_path/Info.plist"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
+          platform=$(/usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$plist")
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          [[ "$bundle_id" == 'com.librestatic.mibbeacon' ]]
+          [[ "$platform" == 'iphoneos' ]]
+          test -x "$app_path/$executable"
+          file "$app_path/$executable" | grep -q 'Mach-O'
+          lipo -archs "$app_path/$executable" | grep -qw arm64
+          test ! -e "$app_path/_CodeSignature/CodeResources"
+          if codesign --verify --deep --strict "$app_path" >/dev/null 2>&1; then
+            echo 'Expected an unsigned application, but codesign verification succeeded' >&2
+            exit 1
+          fi
+
+          {
+            echo '## Unsigned iOS archive inspection'
+            echo
+            echo "- Archive: $(basename "$ipa")"
+            echo "- Bundle identifier: $bundle_id"
+            echo "- Platform: $platform"
+            echo "- Architectures: $(lipo -archs "$app_path/$executable")"
+            echo '- Signature: absent, as required for the unsigned sideload/resign artifact'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
         with:
-          draft: true
-          generate_release_notes: true
-          files: |
-            artifacts/**/*
-            SHA256SUMS
+          name: release-ios
+          path: apps/mobile/ios/build/*.ipa
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [verify, desktop, flatpak, android, ios]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+      RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+
+      - name: Verify release inventory and generate checksums
+        shell: bash
+        run: |
+          mkdir publish-assets
+          while IFS= read -r -d '' source; do
+            destination="publish-assets/$(basename "$source")"
+            if [[ -e "$destination" ]]; then
+              echo "Duplicate release asset filename: $(basename "$source")" >&2
+              exit 1
+            fi
+            cp "$source" "$destination"
+          done < <(find release-assets -type f -print0)
+
+          node dev/scan-release-artifacts.mjs release-assets
+
+          for pattern in '*.AppImage' '*.deb' '*.rpm' '*.flatpak' '*.exe' '*.dmg' '*.apk' '*.aab' '*.ipa'; do
+            if ! find publish-assets -type f -name "$pattern" -print -quit | grep -q .; then
+              echo "Missing required release asset: $pattern" >&2
+              exit 1
+            fi
+          done
+          (
+            cd publish-assets
+            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum
+          ) > publish-assets/SHA256SUMS
+
+      - name: Plan release housekeeping
+        id: housekeeping
+        shell: bash
+        run: |
+          new_bytes=$(find publish-assets -type f -printf '%s\n' | awk '{ total += $1 } END { print total + 0 }')
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > releases.json
+          node dev/release-policy.mjs \
+            --releases releases.json \
+            --target-tag "$RELEASE_TAG" \
+            --new-bytes "$new_bytes" \
+            --cap-bytes "$RELEASE_STORAGE_CAP_BYTES" > cleanup-plan.json
+          cat cleanup-plan.json
+
+      - name: Delete releases selected by housekeeping
+        shell: bash
+        run: |
+          while IFS=$'\t' read -r id tag bytes kind; do
+            [[ -z "$id" ]] && continue
+            echo "Deleting oldest $kind release $tag ($bytes bytes); preserving its Git tag"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${id}"
+          done < <(jq -r '.deleted[] | [.id, .tag, .bytes, .kind] | @tsv' cleanup-plan.json)
+
+          {
+            echo "## Release storage housekeeping"
+            echo
+            echo "Custom cap: $(jq -r '.capBytes' cleanup-plan.json) bytes"
+            echo "New release: $(jq -r '.newReleaseBytes' cleanup-plan.json) bytes"
+            echo "Projected total: $(jq -r '.projectedBytes' cleanup-plan.json) bytes"
+            if [[ "$(jq -r '.oversizeNewRelease' cleanup-plan.json)" == true ]]; then
+              echo
+              echo "> [!WARNING]"
+              echo "> This release alone exceeds the custom cap and will be published as requested."
+            fi
+            echo
+            echo "Deleted releases:"
+            jq -r '.deleted[]? | "- `\(.tag)` (\(.kind), \(.bytes) bytes)"' cleanup-plan.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update GitHub release
+        shell: bash
+        run: |
+          prerelease_args=()
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "MIB Beacon $RELEASE_VERSION" \
+              "${prerelease_args[@]}"
+          else
+            gh release create "$RELEASE_TAG" \
+              --verify-tag \
+              --title "MIB Beacon $RELEASE_VERSION" \
+              --generate-notes \
+              "${prerelease_args[@]}"
+          fi
+
+      - name: Upload release assets
+        shell: bash
+        run: |
+          mapfile -d '' assets < <(find publish-assets -type f -print0 | sort -z)
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+
+      - name: Verify published inventory and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf published-assets
+          mkdir published-assets
+          gh release download "$RELEASE_TAG" --dir published-assets
+
+          find publish-assets -maxdepth 1 -type f -printf '%f\n' | sort > expected-assets.txt
+          find published-assets -maxdepth 1 -type f -printf '%f\n' | sort > published-assets.txt
+          diff -u expected-assets.txt published-assets.txt
+          (cd published-assets && sha256sum --check --strict SHA256SUMS) | tee published-checksums.log
+
+          {
+            echo '## Published release verification'
+            echo
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- Exact asset count: $(wc -l < published-assets.txt | tr -d ' ')"
+            echo '- Published inventory: exact match'
+            echo '- Downloaded SHA-256 checksums: all passed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  update-smoke:
+    needs: [verify, publish]
+    if: ${{ endsWith(needs.verify.outputs.version, '-rc.2') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            pattern: '*linux-x86_64.AppImage'
+          - os: windows-latest
+            platform: windows
+            pattern: '*.exe'
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: Derive consecutive release candidates
+        id: release_pair
+        shell: bash
+        run: |
+          previous_version="${RELEASE_VERSION%-rc.2}-rc.1"
+          echo "previous_version=$previous_version" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=v$previous_version" >> "$GITHUB_OUTPUT"
+
+      - name: Download the rc1 installer
+        shell: bash
+        run: |
+          mkdir -p previous update-smoke-evidence
+          gh release download '${{ steps.release_pair.outputs.previous_tag }}' \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir previous \
+            --pattern '${{ matrix.pattern }}'
+
+      - name: Exercise AppImage rc1 to rc2 update
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 xvfb
+          appimage=$(find previous -maxdepth 1 -type f -name '*.AppImage' -print -quit)
+          [[ -n "$appimage" ]] || { echo 'rc1 AppImage not found' >&2; exit 1; }
+          chmod +x "$appimage"
+          export HOME="$RUNNER_TEMP/update-smoke-home"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          mkdir -p "$XDG_CONFIG_HOME"
+          timeout 600s xvfb-run --auto-servernum "$appimage" --update-smoke-test \
+            >update-smoke-evidence/app.log 2>&1 & launcher=$!
+
+          marker=''
+          for _ in $(seq 1 600); do
+            marker=$(find "$XDG_CONFIG_HOME" -type f -name update-smoke.json -print -quit 2>/dev/null || true)
+            if [[ -n "$marker" ]]; then
+              state=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1])).state" "$marker")
+              [[ "$state" == error ]] && { cat "$marker"; cat update-smoke-evidence/app.log; exit 1; }
+              [[ "$state" == complete ]] && break
+            fi
+            sleep 1
+          done
+          [[ -n "$marker" ]] || { cat update-smoke-evidence/app.log; echo 'Update marker was not created' >&2; exit 1; }
+          cp "$marker" update-smoke-evidence/update-smoke.json
+          node - "$marker" '${{ steps.release_pair.outputs.previous_version }}' "$RELEASE_VERSION" <<'NODE'
+          const [markerPath, from, expected] = process.argv.slice(2);
+          const marker = JSON.parse(require('fs').readFileSync(markerPath));
+          if (marker.state !== 'complete' || marker.fromVersion !== from || marker.expectedVersion !== expected) {
+            throw new Error(`Unexpected update evidence: ${JSON.stringify(marker)}`);
+          }
+          NODE
+          kill "$launcher" >/dev/null 2>&1 || true
+          wait "$launcher" >/dev/null 2>&1 || true
+
+      - name: Exercise NSIS rc1 to rc2 update
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem previous -Filter '*.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'rc1 NSIS installer not found' }
+          $install = Start-Process $installer.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "rc1 NSIS install failed: $($install.ExitCode)" }
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'mib-beacon.exe' -File |
+            Select-Object -First 1
+          if (-not $app) { throw 'Installed mib-beacon.exe not found' }
+
+          $env:APPDATA = "$env:RUNNER_TEMP\update-smoke-appdata"
+          New-Item -ItemType Directory -Force $env:APPDATA | Out-Null
+          Start-Process $app.FullName -ArgumentList '--update-smoke-test'
+          $marker = $null
+          $markerData = $null
+          for ($attempt = 0; $attempt -lt 600; $attempt++) {
+            $marker = Get-ChildItem $env:APPDATA -Recurse -Filter 'update-smoke.json' -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if ($marker) {
+              $markerData = Get-Content $marker.FullName -Raw | ConvertFrom-Json
+              if ($markerData.state -eq 'error') { throw "Updater failed: $($markerData.error)" }
+              if ($markerData.state -eq 'complete') { break }
+            }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $marker -or $markerData.state -ne 'complete') { throw 'NSIS update did not complete' }
+          if ($markerData.fromVersion -ne '${{ steps.release_pair.outputs.previous_version }}' -or
+              $markerData.expectedVersion -ne $env:RELEASE_VERSION) {
+            throw "Unexpected update evidence: $($markerData | ConvertTo-Json -Compress)"
+          }
+          Copy-Item $marker.FullName update-smoke-evidence/update-smoke.json
+          $uninstaller = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter 'Uninstall*.exe' -File |
+            Select-Object -First 1
+          if ($uninstaller) { Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update-smoke-${{ matrix.platform }}
+          path: update-smoke-evidence
+          if-no-files-found: error
+          retention-days: 1
