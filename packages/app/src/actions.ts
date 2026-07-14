@@ -1151,6 +1151,45 @@ export async function openSearchHit(engine: EngineAPI, oid: string): Promise<voi
   }
 }
 
+export class MibObjectNotFoundError extends Error {
+  readonly code = 'MIB_OBJECT_NOT_FOUND';
+
+  constructor(readonly oid: string) {
+    super(`MIB object is no longer available: ${oid}`);
+    this.name = 'MibObjectNotFoundError';
+  }
+}
+
+/** Resolve an object globally, then leave module focus and reveal it in the full catalog tree. */
+export async function openGlobalCatalogObject(
+  engine: EngineAPI,
+  oid: string,
+): Promise<MibNodeDetail> {
+  const detail = await engine.mibs.node(oid);
+  if (!detail) throw new MibObjectNotFoundError(oid);
+
+  const prefixes = getOidAncestorPrefixes(detail.oid);
+  const [root, ...branches] = await Promise.all([
+    engine.mibs.tree(undefined),
+    ...prefixes.map((prefix) => engine.mibs.tree(prefix)),
+  ]);
+
+  const state = useAppStore.getState();
+  state.setModuleFocus(null);
+  state.clearChildrenCache();
+  state.setChildren('', root);
+  prefixes.forEach((prefix, index) => {
+    state.setChildren(prefix, branches[index] ?? []);
+    state.setExpanded(prefix, true);
+  });
+  state.setSearch('');
+  state.setHits([]);
+  state.setSearchPhase('idle');
+  state.setSearchError(null);
+  state.setSelected(detail);
+  return detail;
+}
+
 export interface NodeOperationPlan {
   allowed: boolean;
   oid: string;

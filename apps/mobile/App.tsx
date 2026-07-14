@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Platform, SafeAreaView, StatusBar, useColorScheme } from 'react-native';
+import Storage from 'expo-sqlite/kv-store';
 import { createReactNativeTransport } from '@mibbeacon/transport/react-native';
 import { createEngine } from '@mibbeacon/core';
 import type { AgentSpec } from '@mibbeacon/core/client';
@@ -8,6 +9,7 @@ import {
   AppRoot,
   FileImportProvider,
   type FileImportAdapter,
+  type PaletteHistoryStorage,
 } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
 import { getMobileSafeAreaPaddingTop } from './src/safe-area';
@@ -77,6 +79,14 @@ export default function App() {
     }),
     [],
   );
+  const paletteHistoryStorage = useMemo<PaletteHistoryStorage>(
+    () => ({
+      getItem: (key) => Storage.getItem(key),
+      setItem: (key, value) => Storage.setItem(key, value),
+      removeItem: (key) => Storage.removeItem(key),
+    }),
+    [],
+  );
   const safeAreaPaddingTop = getMobileSafeAreaPaddingTop(Platform.OS, StatusBar.currentHeight);
   return (
     <SafeAreaView
@@ -89,7 +99,7 @@ export default function App() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <EngineProvider engine={engine}>
         <FileImportProvider adapter={fileImportAdapter}>
-          <AppRoot />
+          <AppRoot paletteHistoryStorage={paletteHistoryStorage} />
         </FileImportProvider>
       </EngineProvider>
     </SafeAreaView>

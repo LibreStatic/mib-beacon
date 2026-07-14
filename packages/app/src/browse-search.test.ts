@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAPI, MibNodeDetail, MibSearchHit } from '@omc/core/client';
-import { getOidAncestorPrefixes, openSearchHit, revealOid, runSearch } from './actions';
+import {
+  MibObjectNotFoundError,
+  getOidAncestorPrefixes,
+  openGlobalCatalogObject,
+  openSearchHit,
+  revealOid,
+  runSearch,
+} from './actions';
 import { useAppStore } from './store';
 
 const detail = {
@@ -78,6 +85,77 @@ describe('Browse search state', () => {
 });
 
 describe('OID reveal', () => {
+  it('resolves globally before clearing module focus and reveals the selected object', async () => {
+    useAppStore.setState({
+      moduleFocus: { module: { name: 'OLD-MIB' } },
+      selected: null,
+      search: 'old query',
+      hits: [hit],
+      childrenCache: { stale: [] },
+    } as never);
+    const node = vi.fn().mockResolvedValue(detail);
+    const tree = vi.fn().mockResolvedValue([]);
+    const engine = { mibs: { node, tree } } as unknown as EngineAPI;
+
+    await openGlobalCatalogObject(engine, detail.oid);
+
+    expect(node).toHaveBeenCalledWith(detail.oid);
+    expect(useAppStore.getState()).toMatchObject({
+      moduleFocus: null,
+      selected: detail,
+      search: '',
+      hits: [],
+      searchPhase: 'idle',
+      searchError: null,
+    });
+    expect(tree).toHaveBeenCalledWith(undefined);
+    expect(tree).toHaveBeenCalledWith('1.3.6.1.2.1.1');
+  });
+
+  it('does not mutate browse state when the global object no longer exists', async () => {
+    const focus = { module: { name: 'OLD-MIB' } };
+    useAppStore.setState({ moduleFocus: focus, search: 'keep me', hits: [hit] } as never);
+    const engine = {
+      mibs: { node: vi.fn().mockResolvedValue(null), tree: vi.fn() },
+    } as unknown as EngineAPI;
+
+    await expect(openGlobalCatalogObject(engine, detail.oid)).rejects.toBeInstanceOf(
+      MibObjectNotFoundError,
+    );
+    expect(useAppStore.getState().moduleFocus).toBe(focus);
+    expect(useAppStore.getState().search).toBe('keep me');
+    expect(useAppStore.getState().hits).toEqual([hit]);
+  });
+
+  it('does not mutate browse state when the global tree cannot be loaded', async () => {
+    const focus = { module: { name: 'OLD-MIB' } };
+    const cache = { stale: [] };
+    useAppStore.setState({
+      moduleFocus: focus,
+      selected: null,
+      search: 'keep me',
+      hits: [hit],
+      childrenCache: cache,
+      expanded: {},
+    } as never);
+    const engine = {
+      mibs: {
+        node: vi.fn().mockResolvedValue(detail),
+        tree: vi.fn().mockRejectedValue(new Error('engine restarting')),
+      },
+    } as unknown as EngineAPI;
+
+    await expect(openGlobalCatalogObject(engine, detail.oid)).rejects.toThrow('engine restarting');
+    expect(useAppStore.getState()).toMatchObject({
+      moduleFocus: focus,
+      selected: null,
+      search: 'keep me',
+      hits: [hit],
+      childrenCache: cache,
+      expanded: {},
+    });
+  });
+
   it('generates every parent prefix without including the selected node', () => {
     expect(getOidAncestorPrefixes('1.3.6.1.2.1.1.1')).toEqual([
       '1',

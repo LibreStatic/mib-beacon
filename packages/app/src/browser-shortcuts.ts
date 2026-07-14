@@ -18,10 +18,53 @@ export function isSearchFocusShortcut(event: {
   return event.key.toLowerCase() === 'f' && Boolean(event.ctrlKey || event.metaKey);
 }
 
+export function isCommandPaletteShortcut(
+  event: {
+    key: string;
+    code?: string;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+  },
+  allowWebFallback: boolean,
+): boolean {
+  if (!event.shiftKey || event.altKey || !(event.ctrlKey || event.metaKey)) return false;
+  if (event.key.toLowerCase() === 'p') return true;
+  return allowWebFallback && (event.code === 'Space' || event.key === ' ');
+}
+
+export function subscribeCommandPaletteShortcut(
+  target: {
+    addEventListener(
+      type: 'keydown',
+      listener: (event: KeyboardEvent) => void,
+      capture?: boolean,
+    ): void;
+    removeEventListener(
+      type: 'keydown',
+      listener: (event: KeyboardEvent) => void,
+      capture?: boolean,
+    ): void;
+  },
+  allowWebFallback: boolean,
+  onShortcut: () => void,
+): () => void {
+  const listener = (event: KeyboardEvent) => {
+    if (!isCommandPaletteShortcut(event, allowWebFallback)) return;
+    event.preventDefault();
+    onShortcut();
+  };
+  target.addEventListener('keydown', listener, true);
+  return () => target.removeEventListener('keydown', listener, true);
+}
+
 export type QueryShortcut = 'get' | 'getNext' | 'getBulk' | 'set' | 'walk' | 'stop' | 'repeat';
 
 export const SHORTCUTS = [
   ['?', 'Open this shortcut overlay'],
+  ['Ctrl/Cmd + Shift + P', 'Open the command palette (desktop and supported browsers)'],
+  ['Ctrl/Cmd + Shift + Space', 'Open the command palette in Web LAN'],
   ['Ctrl/Cmd + F', 'Focus MIB search'],
   ['Ctrl/Cmd + G', 'Get'],
   ['Ctrl/Cmd + N', 'Get Next'],

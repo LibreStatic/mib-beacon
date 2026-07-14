@@ -55,9 +55,11 @@ import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } fro
 export function BrowseScreen({
   info = null,
   unified = false,
+  focusSearchRequest = 0,
 }: {
   info?: EngineInfo | null;
   unified?: boolean;
+  focusSearchRequest?: number;
 }) {
   const engine = useEngine();
   const t = useTheme();
@@ -103,6 +105,10 @@ export function BrowseScreen({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (focusSearchRequest > 0) searchInput.current?.focus();
+  }, [focusSearchRequest]);
 
   useEffect(() => setTabletDrawerOpen(false), [selected?.oid]);
 

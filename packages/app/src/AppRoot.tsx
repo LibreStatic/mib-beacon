@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Linking,
   Platform,
@@ -20,6 +20,7 @@ import {
   refreshResolverState,
   refreshAgentProfiles,
   refreshAgentGroups,
+  openGlobalCatalogObject,
   respondResolverConsent,
 } from './actions';
 import { BrowseScreen } from './screens/BrowseScreen';
@@ -32,13 +33,21 @@ import { ToolsScreen } from './screens/ToolsScreen';
 import { ResponsiveLayoutProvider, useResponsiveLayout } from './responsive-context';
 import { getNavigationTabs, type NavigationTab } from './navigation';
 import { routeForTab, tabFromUrl } from './routes';
-import { SHORTCUTS } from './browser-shortcuts';
+import { SHORTCUTS, subscribeCommandPaletteShortcut } from './browser-shortcuts';
 import { FileImportReviewModal } from './components/FileImportFlow';
+import { CommandPalette } from './components/CommandPalette';
 import {
   createInitialFileSelection,
   stageAcquiredFileImport,
   type RawSelectedFile,
 } from './file-import';
+import {
+  applyPaletteCommandEffect,
+  createBrowserPaletteHistoryStorage,
+  getPaletteCommands,
+  type PaletteCommand,
+  type PaletteHistoryStorage,
+} from './command-palette';
 
 export interface HostUpdateStatus {
   phase:
@@ -73,15 +82,27 @@ export interface AppHostAdapter {
   subscribeOpenFiles?: (listener: (files: RawSelectedFile[]) => void) => () => void;
 }
 
-export function AppRoot({ host }: { host?: AppHostAdapter }) {
+export function AppRoot({
+  host,
+  paletteHistoryStorage,
+}: {
+  host?: AppHostAdapter;
+  paletteHistoryStorage?: PaletteHistoryStorage;
+}) {
   return (
     <ResponsiveLayoutProvider>
-      <ThemedAppRoot host={host} />
+      <ThemedAppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
     </ResponsiveLayoutProvider>
   );
 }
 
-function ThemedAppRoot({ host }: { host?: AppHostAdapter }) {
+function ThemedAppRoot({
+  host,
+  paletteHistoryStorage,
+}: {
+  host?: AppHostAdapter;
+  paletteHistoryStorage?: PaletteHistoryStorage;
+}) {
   const { mode } = useResponsiveLayout();
   const themeMode = useAppStore((state) => state.themeMode);
   const densityMode = useAppStore((state) => state.densityMode);
@@ -89,12 +110,18 @@ function ThemedAppRoot({ host }: { host?: AppHostAdapter }) {
     densityMode === 'auto' ? (mode === 'expanded' ? 'compact' : 'comfortable') : densityMode;
   return (
     <ThemeProvider mode={themeMode} density={density}>
-      <ResponsiveAppRoot host={host} />
+      <ResponsiveAppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
     </ThemeProvider>
   );
 }
 
-function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
+function ResponsiveAppRoot({
+  host,
+  paletteHistoryStorage,
+}: {
+  host?: AppHostAdapter;
+  paletteHistoryStorage?: PaletteHistoryStorage;
+}) {
   const engine = useEngine();
   const t = useTheme();
   const { mode } = useResponsiveLayout();
@@ -106,6 +133,16 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
   const consent = useAppStore((s) => s.consent);
   const [info, setInfo] = useState<EngineInfo | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [browseSearchFocusRequest, setBrowseSearchFocusRequest] = useState(0);
+  const resolvedPaletteStorage = useMemo(
+    () => paletteHistoryStorage ?? createBrowserPaletteHistoryStorage(),
+    [paletteHistoryStorage],
+  );
+  const paletteCommands = useMemo(
+    () => getPaletteCommands(tabs, Boolean(host?.canOpenWindow)),
+    [host?.canOpenWindow, tabs],
+  );
   const selectTab = useCallback(
     (next: Tab) => {
       setTab(next);
@@ -170,19 +207,51 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    return subscribeCommandPaletteShortcut(window, !host, () => {
+      setShortcutsOpen(false);
+      setPaletteOpen((open) => !open);
+    });
+  }, [host]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const editable =
         target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
       if (event.key === 'Escape' && shortcutsOpen) setShortcutsOpen(false);
-      else if (event.key === '?' && !editable) {
+      else if (event.key === '?' && !editable && !paletteOpen) {
         event.preventDefault();
         setShortcutsOpen((value) => !value);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [shortcutsOpen]);
+  }, [paletteOpen, shortcutsOpen]);
+
+  const executePaletteCommand = useCallback(
+    (command: PaletteCommand) => {
+      const state = useAppStore.getState();
+      applyPaletteCommandEffect(command.effect, {
+        navigate: selectTab,
+        focusBrowseSearch: () => setBrowseSearchFocusRequest((request) => request + 1),
+        importMib: () => state.setBrowserImportOpen(true),
+        showShortcuts: () => setShortcutsOpen(true),
+        newWindow: host?.canOpenWindow ? host.newWindow : undefined,
+        prepareQuery: state.setQueryOperation,
+        openTraps: state.setTrapMode,
+      });
+    },
+    [host, selectTab],
+  );
+
+  const openPaletteOid = useCallback(
+    async (oid: string) => {
+      await openGlobalCatalogObject(engine, oid);
+      selectTab('browse');
+    },
+    [engine, selectTab],
+  );
 
   useEffect(() => {
     const label = tabs.find((item) => item.key === activeTab)?.label ?? 'MIB Beacon';
@@ -335,6 +404,7 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
               </Text>
             ) : null}
           </View>
+          <PaletteLauncher onPress={() => setPaletteOpen(true)} />
           <Button title="?" small variant="ghost" onPress={() => setShortcutsOpen(true)} />
         </View>
       ) : null}
@@ -349,11 +419,14 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
             info={info}
             onSelect={selectTab}
             onNewWindow={host?.canOpenWindow ? host.newWindow : undefined}
+            onCommands={() => setPaletteOpen(true)}
             onShortcuts={() => setShortcutsOpen(true)}
           />
         ) : null}
         <View style={styles.body}>
-          {activeTab === 'browse' ? <BrowseScreen info={info} unified /> : null}
+          {activeTab === 'browse' ? (
+            <BrowseScreen info={info} unified focusSearchRequest={browseSearchFocusRequest} />
+          ) : null}
           {activeTab === 'query' ? <QueryScreen info={info} /> : null}
           {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}
@@ -373,6 +446,16 @@ function ResponsiveAppRoot({ host }: { host?: AppHostAdapter }) {
       />
 
       <ShortcutOverlay visible={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      <CommandPalette
+        visible={paletteOpen}
+        commands={paletteCommands}
+        historyStorage={resolvedPaletteStorage}
+        shortcutHint={host ? 'Ctrl/Cmd + Shift + P' : 'Ctrl/Cmd + Shift + Space'}
+        onClose={() => setPaletteOpen(false)}
+        onExecute={executePaletteCommand}
+        onOpenOid={openPaletteOid}
+      />
 
       {mode === 'compact' ? (
         <BottomNavigation tabs={tabs} tab={activeTab} trapCount={trapCount} onSelect={selectTab} />
@@ -486,6 +569,7 @@ function AppNavigation({
   info,
   onSelect,
   onNewWindow,
+  onCommands,
   onShortcuts,
 }: {
   tabs: NavigationTab[];
@@ -495,6 +579,7 @@ function AppNavigation({
   info: EngineInfo | null;
   onSelect: (tab: Tab) => void;
   onNewWindow?: () => void;
+  onCommands: () => void;
   onShortcuts: () => void;
 }) {
   const t = useTheme();
@@ -529,6 +614,19 @@ function AppNavigation({
         ))}
       </View>
       <View style={styles.sidebarFooter}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Command palette"
+          onPress={onCommands}
+          style={({ pressed }) => [
+            styles.newWindow,
+            expanded ? styles.navItemExpanded : styles.navItemRail,
+            { backgroundColor: pressed ? t.surfaceAlt : 'transparent', borderColor: t.border },
+          ]}
+        >
+          <Text style={[styles.newWindowGlyph, { color: t.accent }]}>⌘</Text>
+          {expanded ? <Text style={[styles.navLabel, { color: t.text }]}>Commands</Text> : null}
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Keyboard shortcuts"
@@ -570,6 +668,27 @@ function AppNavigation({
         ) : null}
       </View>
     </View>
+  );
+}
+
+function PaletteLauncher({ onPress }: { onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Open command palette"
+      accessibilityHint="Search commands and loaded MIB objects"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.paletteLauncher,
+        {
+          backgroundColor: pressed ? t.accentSoft : 'transparent',
+          borderColor: t.border,
+        },
+      ]}
+    >
+      <Text style={[styles.paletteLauncherGlyph, { color: t.accent }]}>⌘</Text>
+    </Pressable>
   );
 }
 
@@ -739,6 +858,15 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800' },
   sub: { fontSize: 11, marginTop: 2 },
+  paletteLauncher: {
+    width: 36,
+    height: 34,
+    borderWidth: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paletteLauncherGlyph: { fontSize: 17, fontWeight: '800' },
   body: { flex: 1, minHeight: 0 },
   sidebar: { borderRightWidth: 1, paddingVertical: 14, alignItems: 'center' },
   sidebarExpanded: { width: 220, paddingHorizontal: 10 },
