@@ -1,13 +1,15 @@
 {
   "name": "@mibbeacon/server",
-  "version": "0.0.0",
+  "version": "0.0.1-beta.1",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "MIB Beacon — SNMP toolkit LAN server (headless engine + web UI)",
   "type": "module",
   "scripts": {
+    "build": "pnpm build:web && pnpm build:server",
+    "build:server": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=cjs --define:import.meta.dirname=__dirname --outfile=dist/server.cjs",
     "build:web": "vite build",
-    "start": "node --import tsx src/server.ts",
+    "start": "node dist/server.cjs",
     "dev": "vite build && node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
