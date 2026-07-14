@@ -34,13 +34,17 @@ def assert_moved(before: float, after: float, expected_delta: float) -> None:
         assert actual_delta > 20, (before, after, expected_delta)
 
 
-def open_operation_console(page: Page) -> Locator:
+def open_operation_console(page: Page) -> tuple[Locator, Locator]:
     page.get_by_role("button", name="Focus SNMPv2-MIB").click()
     page.get_by_role("button", name="View details for iso").click()
     page.get_by_role("button", name="Walk here").click()
     vertical = page.get_by_role("slider", name="Resize MIB operation console")
     vertical.wait_for()
-    return vertical
+    console_split = page.get_by_role(
+        "slider", name="Resize SNMP operation console panes"
+    )
+    console_split.wait_for(timeout=3_000)
+    return vertical, console_split
 
 
 with sync_playwright() as playwright:
@@ -81,19 +85,28 @@ with sync_playwright() as playwright:
     assert abs(axis_position(outer, "x") - outer_after) < 2
     assert abs(axis_position(inner, "x") - inner_after) < 2
 
-    vertical = open_operation_console(page)
+    vertical, console_split = open_operation_console(page)
     assert vertical.evaluate("node => getComputedStyle(node).cursor") == "row-resize"
+    assert console_split.evaluate("node => getComputedStyle(node).cursor") == "col-resize"
     vertical_before = axis_position(vertical, "y")
     drag(page, vertical, dy=-80)
     vertical_after = axis_position(vertical, "y")
     assert_moved(vertical_before, vertical_after, -80)
+    console_split_before = axis_position(console_split, "x")
+    drag(page, console_split, dx=100)
+    console_split_after = axis_position(console_split, "x")
+    assert_moved(console_split_before, console_split_after, 100)
     assert page.evaluate(
         "localStorage.getItem('mibbeacon:browser:dock:mib-navigation')"
     ) is not None
+    assert page.evaluate(
+        "localStorage.getItem('mibbeacon:split:browser:operationConsole')"
+    ) is not None
 
     page.reload(wait_until="networkidle")
-    vertical = open_operation_console(page)
+    vertical, console_split = open_operation_console(page)
     assert abs(axis_position(vertical, "y") - vertical_after) < 2
+    assert abs(axis_position(console_split, "x") - console_split_after) < 2
     assert console_errors == []
 
     context.close()

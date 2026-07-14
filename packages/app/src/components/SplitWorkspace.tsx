@@ -45,12 +45,14 @@ function writeRatio(key: string, ratio: number): void {
 
 export function SplitWorkspace({
   workspace,
+  accessibilityLabel,
   primary,
   secondary,
   minPrimary = 280,
   minSecondary = 340,
 }: {
   workspace: WorkspaceKey;
+  accessibilityLabel?: string;
   primary: ReactNode;
   secondary: ReactNode;
   minPrimary?: number;
@@ -143,7 +145,7 @@ export function SplitWorkspace({
       <View style={[styles.pane, { flexBasis: primaryBasis }]}>{primary}</View>
       <Pressable
         accessibilityRole="adjustable"
-        accessibilityLabel={`Resize ${workspace} workspace panes`}
+        accessibilityLabel={accessibilityLabel ?? `Resize ${workspace} workspace panes`}
         accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}
         accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
         onAccessibilityAction={(event) => {

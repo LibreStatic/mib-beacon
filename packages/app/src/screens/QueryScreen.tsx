@@ -548,28 +548,38 @@ export function QueryScreen({
     />
   );
 
-  if (embedded) {
+  if (embedded && supportsSplitView) {
     return (
-      <View style={[styles.console, { backgroundColor: t.bg }]}>
-        <ScrollView
-          style={styles.consoleConfig}
-          contentContainerStyle={styles.consoleConfigContent}
-        >
-          <AgentCard info={info} />
-          {operationCard}
-          {artifactsCard}
-        </ScrollView>
-        <View style={[styles.consoleResults, { borderLeftColor: t.border }]}>
-          <View
-            style={[
-              styles.resultsToolbar,
-              { backgroundColor: t.surface, borderBottomColor: t.border },
-            ]}
-          >
-            {resultsHeader}
-          </View>
-          {resultContent}
-        </View>
+      <View style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: t.bg }}>
+        <SplitWorkspace
+          workspace="operationConsole"
+          accessibilityLabel="Resize SNMP operation console panes"
+          minPrimary={340}
+          minSecondary={360}
+          primary={
+            <ScrollView
+              style={styles.consoleConfig}
+              contentContainerStyle={styles.consoleConfigContent}
+            >
+              <AgentCard info={info} />
+              {operationCard}
+              {artifactsCard}
+            </ScrollView>
+          }
+          secondary={
+            <View style={styles.consoleResults}>
+              <View
+                style={[
+                  styles.resultsToolbar,
+                  { backgroundColor: t.surface, borderBottomColor: t.border },
+                ]}
+              >
+                {resultsHeader}
+              </View>
+              {resultContent}
+            </View>
+          }
+        />
       </View>
     );
   }
@@ -1271,10 +1281,9 @@ async function graphVarbind(
 }
 
 const styles = StyleSheet.create({
-  console: { flex: 1, minWidth: 0, minHeight: 0, flexDirection: 'row' },
-  consoleConfig: { width: '42%', minWidth: 330 },
+  consoleConfig: { flex: 1 },
   consoleConfigContent: { padding: 10, paddingBottom: 18 },
-  consoleResults: { flex: 1, minWidth: 0, minHeight: 0, borderLeftWidth: 1 },
+  consoleResults: { flex: 1, minWidth: 0, minHeight: 0 },
   workspace: { flex: 1, minWidth: 0, minHeight: 0 },
   configuration: { flex: 1 },
   configurationContent: { padding: 14, paddingBottom: 28 },
