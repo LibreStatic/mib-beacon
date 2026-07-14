@@ -13,7 +13,9 @@ def axis_position(locator: Locator, axis: str) -> float:
     return box[axis]
 
 
-def drag(page: Page, locator: Locator, *, dx: float = 0, dy: float = 0) -> None:
+def drag(
+    page: Page, locator: Locator, *, dx: float = 0, dy: float = 0, steps: int = 12
+) -> None:
     box = locator.bounding_box()
     if box is None:
         raise AssertionError(f"missing bounding box for {locator}")
@@ -21,7 +23,7 @@ def drag(page: Page, locator: Locator, *, dx: float = 0, dy: float = 0) -> None:
     y = box["y"] + box["height"] / 2
     page.mouse.move(x, y)
     page.mouse.down()
-    page.mouse.move(x + dx, y + dy, steps=12)
+    page.mouse.move(x + dx, y + dy, steps=steps)
     page.mouse.up()
     page.wait_for_timeout(100)
 
@@ -88,10 +90,21 @@ with sync_playwright() as playwright:
     vertical, console_split = open_operation_console(page)
     assert vertical.evaluate("node => getComputedStyle(node).cursor") == "row-resize"
     assert console_split.evaluate("node => getComputedStyle(node).cursor") == "col-resize"
+    vertical_box = vertical.bounding_box()
+    assert vertical_box is not None
+    assert vertical_box["height"] >= 16, vertical_box
+    page.evaluate(
+        "window.__setPointerCapture = Element.prototype.setPointerCapture; "
+        "Element.prototype.setPointerCapture = undefined"
+    )
     vertical_before = axis_position(vertical, "y")
-    drag(page, vertical, dy=-80)
+    drag(page, vertical, dy=-80, steps=1)
     vertical_after = axis_position(vertical, "y")
     assert_moved(vertical_before, vertical_after, -80)
+    page.evaluate(
+        "Element.prototype.setPointerCapture = window.__setPointerCapture; "
+        "delete window.__setPointerCapture"
+    )
     console_split_before = axis_position(console_split, "x")
     drag(page, console_split, dx=100)
     console_split_after = axis_position(console_split, "x")
