@@ -11,6 +11,13 @@ export function getResponsiveMode(width: number): ResponsiveMode {
   return 'expanded';
 }
 
+export function shouldUseEmbeddedQuerySplit(
+  embedded: boolean,
+  supportsSplitView: boolean,
+): boolean {
+  return embedded && supportsSplitView;
+}
+
 export function getWindowScopedStorageKey(windowId: string, preference: string): string {
   return `mibbeacon:${windowId}:${preference}`;
 }

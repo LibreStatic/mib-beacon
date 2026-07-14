@@ -3,6 +3,7 @@ import {
   adjustSplitRatio,
   clampSplitRatio,
   getResponsiveMode,
+  shouldUseEmbeddedQuerySplit,
   getWindowScopedStorageKey,
   getWorkspaceDefaultRatio,
 } from './responsive-layout';
@@ -19,6 +20,17 @@ describe('getResponsiveMode', () => {
 
   it('uses the expanded sidebar at desktop widths', () => {
     expect(getResponsiveMode(1024)).toBe('expanded');
+  });
+});
+
+describe('embedded query layout', () => {
+  it('keeps the phone operation sheet in one column', () => {
+    expect(shouldUseEmbeddedQuerySplit(true, false)).toBe(false);
+  });
+
+  it('uses the console split only when the viewport supports it', () => {
+    expect(shouldUseEmbeddedQuerySplit(true, true)).toBe(true);
+    expect(shouldUseEmbeddedQuerySplit(false, true)).toBe(false);
   });
 });
 

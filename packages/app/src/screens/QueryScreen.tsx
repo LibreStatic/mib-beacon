@@ -47,6 +47,7 @@ import { OidLookupPanel } from '../components/OidLookupPanel';
 import { SplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import { shouldUseEmbeddedQuerySplit } from '../responsive-layout';
 import { serializeQueryResults, type ResultExportFormat } from '../result-export';
 import {
   buildTableRows,
@@ -548,7 +549,7 @@ export function QueryScreen({
     />
   );
 
-  if (embedded && supportsSplitView) {
+  if (shouldUseEmbeddedQuerySplit(embedded, supportsSplitView)) {
     return (
       <View style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: t.bg }}>
         <SplitWorkspace
