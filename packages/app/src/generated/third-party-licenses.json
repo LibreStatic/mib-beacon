@@ -2917,6 +2917,15 @@
       ]
     },
     {
+      "name": "expo-sharing",
+      "version": "14.0.8",
+      "license": "MIT",
+      "homepage": "https://docs.expo.dev/versions/latest/sdk/sharing/",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
       "name": "expo-sqlite",
       "version": "16.0.10",
       "license": "MIT",
