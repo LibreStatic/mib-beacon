@@ -230,12 +230,7 @@ export function ToolsScreen() {
           subtitle="POLLS · GRAPHS · WATCHES · DISCOVERY · DIFF · PORTS · REACHABILITY"
         />
       ) : null}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[styles.tabs, { borderBottomColor: t.border }]}
-        contentContainerStyle={styles.tabContent}
-      >
+      <View style={[styles.tabs, styles.tabContent, { borderBottomColor: t.border }]}>
         {SECTIONS.map((item) => (
           <Chip
             key={item.key}
@@ -244,7 +239,7 @@ export function ToolsScreen() {
             onPress={() => setSection(item.key)}
           />
         ))}
-      </ScrollView>
+      </View>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
@@ -1052,7 +1047,7 @@ function DiffTable({
 const styles = StyleSheet.create({
   root: { flex: 1, minWidth: 0, minHeight: 0 },
   tabs: { flexGrow: 0, borderBottomWidth: 1 },
-  tabContent: { padding: 8, gap: 6 },
+  tabContent: { flexDirection: 'row', flexWrap: 'wrap', padding: 8, gap: 6 },
   content: {
     padding: 12,
     gap: 10,

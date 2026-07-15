@@ -497,9 +497,9 @@ export function QueryScreen({
           </View>
         </View>
       ) : null}
-      <View style={styles.resultsHead}>
+      <View style={[styles.resultsHead, !supportsSplitView ? styles.resultsHeadCompact : null]}>
         <SectionTitle>Results</SectionTitle>
-        <Row style={styles.wrap}>
+        <Row style={[styles.wrap, !supportsSplitView ? styles.resultsActionsCompact : null]}>
           <Text style={{ color: t.textDim, fontSize: 12 }}>
             {stats.count} varbinds · {stats.batches} batches · {stats.ms} ms
             {running ? ' · running…' : ''}
@@ -548,7 +548,7 @@ export function QueryScreen({
           <Label tone="dim" size={11}>
             DECODED REQUEST/RESPONSE PDU LOG · CREDENTIALS REDACTED
           </Label>
-          <ScrollView horizontal>
+          <ScrollView horizontal style={styles.pduLogScroll}>
             <Mono size={10}>{JSON.stringify(operationPduLog, null, 2)}</Mono>
           </ScrollView>
         </View>
@@ -1334,6 +1334,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 6,
   },
+  resultsHeadCompact: { flexDirection: 'column', alignItems: 'stretch', gap: 6 },
+  resultsActionsCompact: { width: '100%' },
   resultTabs: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingBottom: 8,
@@ -1389,7 +1391,18 @@ const styles = StyleSheet.create({
   vbSummary: { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
   lookup: { width: '100%' },
   savedItem: { flexDirection: 'row', alignItems: 'center' },
-  pduLog: { borderWidth: 1, borderRadius: 8, padding: 8, maxHeight: 260, marginBottom: 8 },
+  pduLog: {
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    maxHeight: 260,
+    marginBottom: 8,
+  },
+  pduLogScroll: { width: '100%', maxWidth: '100%' },
   tableView: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 10, margin: 10 },
   headingRow: {
     flexDirection: 'row',
