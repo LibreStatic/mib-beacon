@@ -247,7 +247,7 @@ describe('release identity', () => {
     const main = read('apps/desktop/src/main/index.ts');
     const preload = read('apps/desktop/src/preload/index.ts');
     expect(desktop.dependencies?.['electron-updater']).toBeTruthy();
-    expect(desktop.build?.afterSign).toBe('build/notarize.cjs');
+    expect(desktop.build?.afterSign).toBe('scripts/notarize.cjs');
     expect(desktop.build?.fileAssociations?.map(({ ext }) => ext)).toEqual(['mib', 'my', 'smi']);
     expect(main).toContain("app.on('open-file'");
     expect(main).toContain('mibPathsFromArguments(arguments_)');

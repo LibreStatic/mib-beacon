@@ -29,7 +29,7 @@
     "spike:crypto": "electron-vite build && electron out/main/index.js --probe-crypto"
   },
   "build": {
-    "icon": "build/icon.png",
+    "icon": "../../assets/brand/mib-beacon.png",
     "appId": "com.librestatic.mibbeacon",
     "electronVersion": "37.10.3",
     "executableName": "mib-beacon",
@@ -43,7 +43,7 @@
       "package.json"
     ],
     "artifactName": "MIB-Beacon-${version}-${os}-${arch}.${ext}",
-    "afterSign": "build/notarize.cjs",
+    "afterSign": "scripts/notarize.cjs",
     "fileAssociations": [
       {
         "ext": "mib",

@@ -3,7 +3,7 @@
     "name": "MIB Beacon",
     "slug": "mib-beacon",
     "version": "0.0.1-beta.1",
-    "icon": "../desktop/build/icon.png",
+    "icon": "../../assets/brand/mib-beacon.png",
     "orientation": "default",
     "scheme": "mibbeacon",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     "android": {
       "package": "com.librestatic.mibbeacon",
       "adaptiveIcon": {
-        "foregroundImage": "../desktop/build/icon.png",
+        "foregroundImage": "../../assets/brand/mib-beacon.png",
         "backgroundColor": "#07111F"
       },
       "permissions": ["android.permission.INTERNET"],
