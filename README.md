@@ -33,6 +33,77 @@ Current version: **0.0.1-beta.1**. Treat every build as prerelease software.
 If the GitHub release page is empty or unavailable, no public binary has been
 published yet. Build the application from source using the instructions below.
 
+## Why MIB Beacon instead of iReasoning?
+
+[iReasoning MIB Browser](https://www.ireasoning.com/mibbrowser.shtml) is an active,
+capable product, but it is still a proprietary Java/Swing application: its free tier
+is limited to personal use and 10 loaded MIB modules, while tools such as the trap
+sender, graphs, and discovery sit in paid tiers. MIB Beacon is being built as the
+maintained, genuinely free and open-source alternative: no license keys, no module
+caps, native desktop packages, and a mobile experience for field work.
+
+The rest of the field leaves the same opening. This is the competitive landscape
+captured during the 2026 product-planning research:
+
+| Tool                             | Status                        | Where it falls short                                                                                                              |
+| -------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **iReasoning MIB Browser**       | Active, proprietary           | Java/Swing; free tier is personal-use only and capped at 10 MIBs; trap sender, graphs, and discovery require $495-$895/seat tiers |
+| **SnmpB**                        | Abandoned (last release 2019) | Crash-prone, memory leaks, no packaging pipeline, and a dated Qt UI                                                               |
+| **mbrowse / qtmib / Tkmib**      | Abandoned (2010-2014)         | GTK2/Qt4-era applications limited mostly to walk/get workflows                                                                    |
+| **ManageEngine MibBrowser Free** | Freeware lead generation      | Unmaintained Java application, no trap sender, and not open source                                                                |
+| **net-snmp CLI**                 | Active                        | The command-line workhorse, but it has no GUI, a strict parser, and cryptic errors                                                |
+| **LibreNMS**                     | Active                        | A full NMS rather than an interactive MIB browser; no ad-hoc query UI                                                             |
+
+The clearest opportunity is one none of those products covers: a maintained,
+cross-platform FOSS GUI that can automatically resolve missing MIB dependencies from
+online sources.
+
+### Feature comparison with iReasoning
+
+This matrix describes the intended v1 scope, not a promise that every row is complete
+in the current beta. **✅** means v1 scope, **🔜** means designed now but planned for a
+later release, and **➕** marks a MIB Beacon differentiator. See the
+[product vision and feature matrix](docs/plans/00-product-vision.md) for the planning
+source and accepted gaps.
+
+| Category | Feature                                                                     | iReasoning            | MIB Beacon                                                                      |
+| -------- | --------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------- |
+| MIB      | SMIv1/v2 load and lenient parsing                                           | ✅ headline feature   | ✅ structured diagnostics showing what failed, where, and what was recovered ➕ |
+| MIB      | Module cap                                                                  | 10 in free tier       | ✅ none                                                                         |
+| MIB      | Persistent load list, module metadata, and unload                           | ✅                    | ✅                                                                              |
+| MIB      | **Online dependency auto-resolution**                                       | ❌                    | ✅ ➕                                                                           |
+| MIB      | **Custom MIB sources (FTP/HTTP/JSON catalog/GitHub)**                       | ❌                    | ✅ ➕                                                                           |
+| Browse   | Tree with node-type icons and properties panel                              | ✅                    | ✅                                                                              |
+| Browse   | Find in tree                                                                | ✅ by name            | ✅ fuzzy search across name, OID, and description ➕                            |
+| Browse   | Unknown numeric OID to online lookup                                        | ❌                    | ✅ ➕                                                                           |
+| Query    | Get/GetNext/GetBulk/Set/Walk/GetSubtree                                     | ✅                    | ✅                                                                              |
+| Query    | SNMPv1/v2c/v3 with SHA-2 auth and AES-256 privacy                           | ✅                    | ✅; AES-192 is an accepted engine gap                                           |
+| Query    | Per-agent credential memory and agent table                                 | ✅                    | ✅ encrypted at rest ➕                                                         |
+| Query    | Address groups for multi-agent operations                                   | ✅                    | ✅                                                                              |
+| Query    | Streaming results, cancellation, raw PDU view, and export                   | ✅                    | ✅                                                                              |
+| Query    | Actionable SNMPv3 error messages                                            | ❌ generic errors     | ✅ ➕                                                                           |
+| Table    | Index-decoded rows, polling, rotation, and CSV export                       | ✅                    | ✅                                                                              |
+| Table    | Cell Set and RowStatus row creation/deletion                                | ✅                    | ✅                                                                              |
+| Traps    | Receiver for v1/v2c/v3 and informs, with decode and detail views            | ✅ basic free support | ✅                                                                              |
+| Traps    | Trap persistence and search                                                 | ✅ paid               | ✅                                                                              |
+| Traps    | Sender for v1/v2c traps and informs, presets, and NOTIFICATION-TYPE prefill | ✅ $495 tier          | ✅                                                                              |
+| Traps    | Rules/actions engine: filter to sound, command, email, or forward           | ✅ paid               | 🔜 post-v1                                                                      |
+| Tools    | Performance graphs with rate/delta and export                               | ✅ paid               | ✅                                                                              |
+| Tools    | Watches and polls                                                           | ✅ paid               | ✅; threshold actions 🔜                                                        |
+| Tools    | Subnet discovery                                                            | ✅ paid               | ✅                                                                              |
+| Tools    | Compare two devices side by side                                            | ✅ paid               | ✅                                                                              |
+| Tools    | **Walk-file save/load and offline diff**                                    | Partial               | ✅ ➕                                                                           |
+| Tools    | Port view for interface utilization and errors                              | ✅ paid               | ✅                                                                              |
+| Tools    | Ping and traceroute                                                         | ✅ paid               | ✅ desktop; ping only on mobile                                                 |
+| Tools    | Switch port mapper and Cisco snapshot                                       | ✅ paid               | 🔜 post-v1                                                                      |
+| Platform | Windows, macOS, and Linux                                                   | ✅ Java               | ✅ native packages                                                              |
+| Platform | **Android/iOS phone and tablet**                                            | ❌                    | ✅ ➕                                                                           |
+| Platform | Dark mode, HiDPI, and responsive UI                                         | ❌                    | ✅ ➕                                                                           |
+| Export   | Prometheus `snmp_exporter` and Zabbix configuration exports                 | ❌                    | 🔜 post-v1 ➕                                                                   |
+| Misc     | Bookmarks combining agent, OID, and operation                               | ✅                    | ✅                                                                              |
+| Misc     | Log window with decoded packet exchange                                     | ✅                    | ✅                                                                              |
+| Misc     | CLI and scripting                                                           | ✅ bolted-on `.bat`   | 🔜 post-v1; the engine is already reusable                                      |
+
 ## Runtime kinds
 
 MIB Beacon has three runtime kinds. They share the same application UI and engine API,
