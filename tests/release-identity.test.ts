@@ -96,6 +96,19 @@ describe('release identity', () => {
     expect(desktop.build?.artifactName).toBe('MIB-Beacon-${version}-${os}-${arch}.${ext}');
   });
 
+  it('uses the packaged MIB Beacon mark in the application chrome', () => {
+    const appRoot = read('packages/app/src/AppRoot.tsx');
+    const markComponent = read('packages/app/src/components/MibBeaconMark.tsx');
+    const markSource = read('packages/app/src/mib-beacon-mark.ts');
+    const packagedMark = read('assets/brand/mib-beacon.svg').trim();
+
+    expect(appRoot).toContain("import { MibBeaconMark } from './components/MibBeaconMark';");
+    expect(appRoot).toContain('<MibBeaconMark size={38} />');
+    expect(appRoot).not.toContain('>◉</Text>');
+    expect(markComponent).toContain('MIB_BEACON_MARK_SVG');
+    expect(markSource).toContain(packagedMark);
+  });
+
   it('keeps every package and Expo manifest on the beta release version', () => {
     const rootVersion = JSON.parse(read('package.json')).version;
     const manifests = [

@@ -1,6 +1,8 @@
 import type { PacketTraceEvent } from '@mibbeacon/core/client';
 import type { ResponsiveMode } from './responsive-layout';
 
+export const MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE = 24;
+
 export interface PacketConsoleLayout {
   edge: 'top' | 'bottom';
   overlay: boolean;
@@ -21,7 +23,7 @@ export function getPacketConsoleLayout(
   return {
     edge: compact ? 'top' : 'bottom',
     overlay: compact,
-    collapsedSize: compact ? 24 : 20,
+    collapsedSize: compact ? MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE : 20,
     minSize,
     maxSize,
     size: Math.max(minSize, Math.min(maxSize, Math.round(viewportHeight * ratio))),
@@ -34,8 +36,12 @@ export function formatPacketHexDump(rawHex: string, columns = 16): string {
   for (let offset = 0; offset < bytes.length; offset += columns) {
     const row = bytes.slice(offset, offset + columns);
     const hex = row.map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
-    const ascii = row.map((byte) => (byte >= 32 && byte < 127 ? String.fromCharCode(byte) : '.')).join('');
-    lines.push(`${offset.toString(16).padStart(8, '0')}  ${hex.padEnd(columns * 3 - 1)}  |${ascii}|`);
+    const ascii = row
+      .map((byte) => (byte >= 32 && byte < 127 ? String.fromCharCode(byte) : '.'))
+      .join('');
+    lines.push(
+      `${offset.toString(16).padStart(8, '0')}  ${hex.padEnd(columns * 3 - 1)}  |${ascii}|`,
+    );
   }
   return lines.join('\n');
 }

@@ -72,6 +72,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const error = useAppStore((s) => s.resolverError);
   const themeMode = useAppStore((s) => s.themeMode);
   const densityMode = useAppStore((s) => s.densityMode);
+  const packetStatus = useAppStore((s) => s.packetStatus);
   const [editing, setEditing] = useState<SourceConfig | 'new' | null>(null);
   const [testModule, setTestModule] = useState('IF-MIB');
   const [configTransfer, setConfigTransfer] = useState('');
@@ -80,6 +81,8 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const [updateStatus, setUpdateStatus] = useState<HostUpdateStatus | null>(null);
   const [automaticChecks, setAutomaticChecks] = useState(false);
   const [showLicenses, setShowLicenses] = useState(false);
+  const [packetRetention, setPacketRetention] = useState('32');
+  const [packetMessage, setPacketMessage] = useState<string | null>(null);
   const settingsScroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
@@ -100,6 +103,23 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
       unsubscribe();
     };
   }, [host]);
+  useEffect(() => {
+    if (packetStatus) setPacketRetention(String(packetStatus.retentionMiB));
+  }, [packetStatus]);
+  const savePacketRetention = async () => {
+    const value = Number(packetRetention);
+    if (!Number.isInteger(value) || value < 0 || value > 256) {
+      setPacketMessage('Enter a whole number from 0 through 256 MiB.');
+      return;
+    }
+    try {
+      const status = await engine.packets.updateSettings({ retentionMiB: value });
+      useAppStore.getState().setPacketStatus(status);
+      setPacketMessage(value === 0 ? 'Disk persistence disabled; live RAM capture remains active.' : `Packet history retention set to ${value} MiB.`);
+    } catch (cause) {
+      setPacketMessage(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
   const clearPreview = () => {
     const state = useAppStore.getState();
     if (state.sourcePreviewHandle) void engine.resolver.cancel(state.sourcePreviewHandle);
@@ -517,6 +537,66 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
           </View>
 
           <View style={styles.sectionGroup} onLayout={captureSection('activity')}>
+            <Card>
+              <SectionTitle>Packet capture storage</SectionTitle>
+              <Label tone="dim" size={11}>
+                The live console keeps a bounded RAM feed. Final packet records are also stored as
+                rolling JSON Lines text up to this limit; 0 disables disk persistence.
+              </Label>
+              <Row style={styles.wrap}>
+                <Field
+                  label="Retention (MiB, 0–256)"
+                  value={packetRetention}
+                  onChangeText={setPacketRetention}
+                  keyboardType="number-pad"
+                />
+                <Button title="Save limit" small onPress={() => void savePacketRetention()} />
+                <Button
+                  title="Open packet console"
+                  small
+                  variant="ghost"
+                  onPress={() => useAppStore.getState().setPacketConsoleOpen(true)}
+                />
+                {packetStatus?.persistence === 'degraded' ? (
+                  <Button
+                    title="Retry disk writes"
+                    small
+                    variant="ghost"
+                    onPress={() =>
+                      void engine.packets.retryPersistence().then((status) => {
+                        useAppStore.getState().setPacketStatus(status);
+                        setPacketMessage(status.warning ?? 'Packet persistence is active again.');
+                      })
+                    }
+                  />
+                ) : null}
+              </Row>
+              <Row style={styles.wrap}>
+                <Pill
+                  text={(packetStatus?.persistence ?? 'loading').toUpperCase()}
+                  color={
+                    packetStatus?.persistence === 'degraded'
+                      ? t.error
+                      : packetStatus?.persistence === 'disabled'
+                        ? t.textDim
+                        : t.ok
+                  }
+                />
+                <Label tone="dim" size={10}>
+                  {((packetStatus?.persistedBytes ?? 0) / 1024 / 1024).toFixed(2)} MiB persisted
+                </Label>
+              </Row>
+              {packetStatus?.warning ? <Label tone="error" size={11}>{packetStatus.warning}</Label> : null}
+              {packetMessage ? (
+                <Label tone={packetMessage.includes('Enter') ? 'error' : 'ok'} size={11}>
+                  {packetMessage}
+                </Label>
+              ) : null}
+              <Label tone="warn" size={10}>
+                Raw SNMP can contain community strings and unencrypted values. PCAPNG exports keep
+                exact UDP payload bytes and mark reconstructed IP/UDP headers in packet comments.
+              </Label>
+            </Card>
             <Card>
               <SectionTitle>Recent resolver activity</SectionTitle>
               {!history.length ? (

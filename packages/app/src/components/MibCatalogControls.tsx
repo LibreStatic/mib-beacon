@@ -147,13 +147,13 @@ export function MibModuleStrip() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.stripContent}
       >
-        <PillButton
+        <ModuleFilterButton
           label="All MIBs"
           active={!focused}
           onPress={() => void clearModuleFocus(engine)}
         />
         {modules.map((module) => (
-          <PillButton
+          <ModuleFilterButton
             key={module.name}
             label={module.name}
             active={focused === module.name}
@@ -170,7 +170,7 @@ export function MibModuleStrip() {
   );
 }
 
-function PillButton({
+function ModuleFilterButton({
   label,
   active,
   onPress,
@@ -187,7 +187,7 @@ function PillButton({
       accessibilityState={{ selected: active }}
       onPress={onPress}
       style={[
-        styles.pillButton,
+        styles.moduleFilterButton,
         {
           borderColor: active ? t.accent : t.border,
           backgroundColor: active ? t.accentSoft : t.bg,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   stripContent: { alignItems: 'center', gap: 6, paddingVertical: 7 },
-  pillButton: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  moduleFilterButton: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(5, 9, 16, 0.72)',

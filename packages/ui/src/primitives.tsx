@@ -257,7 +257,7 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
 const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
   sectionTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
-  field: { gap: 4, flex: 1 },
+  field: { gap: 4, flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0 },
   label: { fontSize: 11, fontWeight: '600' },
   input: {
     borderWidth: 1,
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   buttonTextSmall: { fontSize: 12 },
   chip: {
     borderWidth: 1,
-    borderRadius: 999,
+    borderRadius: 8,
     paddingVertical: 5,
     paddingHorizontal: 12,
     alignItems: 'center',

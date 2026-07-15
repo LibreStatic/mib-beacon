@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     bottom: 18,
     minHeight: 48,
     minWidth: 96,
-    borderRadius: 24,
+    borderRadius: 8,
     paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'center',
@@ -820,10 +820,10 @@ const styles = StyleSheet.create({
   operationFabText: { fontSize: 14, fontWeight: '800' },
   phoneSheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.46)' },
   phoneSheet: {
-    height: '82%',
+    height: '88%',
     borderTopWidth: 1,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
     overflow: 'hidden',
   },
   tabletDrawerBar: {

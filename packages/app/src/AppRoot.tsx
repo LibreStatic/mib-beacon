@@ -43,7 +43,9 @@ import { routeForTab, tabFromUrl } from './routes';
 import { SHORTCUTS, subscribeCommandPaletteShortcut } from './browser-shortcuts';
 import { FileImportReviewModal } from './components/FileImportFlow';
 import { CommandPalette } from './components/CommandPalette';
+import { MibBeaconMark } from './components/MibBeaconMark';
 import { PacketActivityLights, PacketConsole } from './components/PacketConsole';
+import { MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE } from './packet-console';
 import {
   createInitialFileSelection,
   stageAcquiredFileImport,
@@ -433,8 +435,17 @@ function ResponsiveAppRoot({
               </Text>
             ) : null}
           </View>
-          <PaletteLauncher onPress={() => setPaletteOpen(true)} />
-          <Button title="?" small variant="ghost" onPress={() => setShortcutsOpen(true)} />
+          <MobileHeaderAction
+            glyph="⌘"
+            label="Open command palette"
+            hint="Search commands and loaded MIB objects"
+            onPress={() => setPaletteOpen(true)}
+          />
+          <MobileHeaderAction
+            glyph="?"
+            label="Keyboard shortcuts"
+            onPress={() => setShortcutsOpen(true)}
+          />
         </View>
       ) : null}
 
@@ -452,7 +463,7 @@ function ResponsiveAppRoot({
             onShortcuts={() => setShortcutsOpen(true)}
           />
         ) : null}
-        <View style={styles.body}>
+        <View style={[styles.body, mode === 'compact' ? styles.mobileBody : null]}>
           {activeTab === 'browse' ? (
             <BrowseScreen info={info} unified focusSearchRequest={browseSearchFocusRequest} />
           ) : null}
@@ -622,9 +633,7 @@ function AppNavigation({
         { backgroundColor: t.surface, borderRightColor: t.border },
       ]}
     >
-      <View style={[styles.brandMark, { backgroundColor: t.accentSoft, borderColor: t.accent }]}>
-        <Text style={[styles.brandGlyph, { color: t.accent }]}>◉</Text>
-      </View>
+      <MibBeaconMark size={38} />
       {expanded ? (
         <View style={styles.brandCopy}>
           <Text style={[styles.brandTitle, { color: t.text }]}>MIB Beacon</Text>
@@ -704,23 +713,33 @@ function AppNavigation({
   );
 }
 
-function PaletteLauncher({ onPress }: { onPress: () => void }) {
+function MobileHeaderAction({
+  glyph,
+  label,
+  hint,
+  onPress,
+}: {
+  glyph: string;
+  label: string;
+  hint?: string;
+  onPress: () => void;
+}) {
   const t = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Open command palette"
-      accessibilityHint="Search commands and loaded MIB objects"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.paletteLauncher,
+        styles.mobileHeaderAction,
         {
           backgroundColor: pressed ? t.accentSoft : 'transparent',
           borderColor: t.border,
         },
       ]}
     >
-      <Text style={[styles.paletteLauncherGlyph, { color: t.accent }]}>⌘</Text>
+      <Text style={[styles.mobileHeaderActionGlyph, { color: t.accent }]}>{glyph}</Text>
     </Pressable>
   );
 }
@@ -891,28 +910,20 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800' },
   sub: { fontSize: 11, marginTop: 2 },
-  paletteLauncher: {
-    width: 36,
-    height: 34,
+  mobileHeaderAction: {
+    width: 44,
+    height: 44,
     borderWidth: 1,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  paletteLauncherGlyph: { fontSize: 17, fontWeight: '800' },
+  mobileHeaderActionGlyph: { fontSize: 18, fontWeight: '800' },
   body: { flex: 1, minHeight: 0 },
+  mobileBody: { paddingTop: MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE },
   sidebar: { borderRightWidth: 1, paddingVertical: 14, alignItems: 'center', zIndex: 1 },
   sidebarExpanded: { width: 220, paddingHorizontal: 10 },
   sidebarRail: { width: 64, paddingHorizontal: 7 },
-  brandMark: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandGlyph: { fontSize: 12, fontWeight: '900', letterSpacing: -0.5 },
   brandCopy: { alignSelf: 'stretch', marginTop: 10, marginBottom: 14, paddingHorizontal: 5 },
   brandTitle: { fontSize: 15, fontWeight: '800' },
   brandKicker: { fontSize: 8, fontWeight: '800', letterSpacing: 1.15, marginTop: 2 },
