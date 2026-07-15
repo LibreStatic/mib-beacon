@@ -4,6 +4,43 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      appimage:
+        description: Build Linux AppImage packages
+        type: boolean
+        default: true
+      deb:
+        description: Build Debian/Ubuntu packages
+        type: boolean
+        default: true
+      rpm:
+        description: Build RPM packages
+        type: boolean
+        default: true
+      flatpak:
+        description: Build the Flatpak bundle
+        type: boolean
+        default: true
+      nsis:
+        description: Build the signed Windows NSIS installer
+        type: boolean
+        default: true
+      dmg:
+        description: Build the signed and notarized macOS DMG
+        type: boolean
+        default: true
+      apk:
+        description: Build the signed Android APK
+        type: boolean
+        default: true
+      aab:
+        description: Build the signed Android App Bundle
+        type: boolean
+        default: true
+      ipa:
+        description: Build the unsigned iOS IPA
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -21,6 +58,17 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      desktop: ${{ steps.selection.outputs.desktop }}
+      desktop_matrix: ${{ steps.selection.outputs.desktop_matrix }}
+      appimage: ${{ steps.selection.outputs.appimage }}
+      deb: ${{ steps.selection.outputs.deb }}
+      rpm: ${{ steps.selection.outputs.rpm }}
+      flatpak: ${{ steps.selection.outputs.flatpak }}
+      nsis: ${{ steps.selection.outputs.nsis }}
+      dmg: ${{ steps.selection.outputs.dmg }}
+      apk: ${{ steps.selection.outputs.apk }}
+      aab: ${{ steps.selection.outputs.aab }}
+      ipa: ${{ steps.selection.outputs.ipa }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +89,19 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      - name: Select release outputs
+        id: selection
+        shell: bash
+        env:
+          RELEASE_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          selection=$(node dev/release-selection.mjs --event "$GITHUB_EVENT_NAME" --inputs "$RELEASE_INPUTS")
+          echo "desktop_matrix=$(jq -c '.desktopMatrix | {include: .}' <<<"$selection")" >> "$GITHUB_OUTPUT"
+          echo "desktop=$(jq -r '(.desktopMatrix | length) > 0' <<<"$selection")" >> "$GITHUB_OUTPUT"
+          for name in appimage deb rpm flatpak nsis dmg apk aab ipa; do
+            echo "$name=$(jq -r --arg name "$name" '.outputs[$name]' <<<"$selection")" >> "$GITHUB_OUTPUT"
+          done
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
@@ -53,19 +114,10 @@ jobs:
 
   desktop:
     needs: verify
+    if: needs.verify.outputs.desktop == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-            command: dist:linux
-          - os: windows-latest
-            platform: windows
-            command: dist:windows
-          - os: macos-latest
-            platform: macos
-            command: dist:mac
+      matrix: ${{ fromJSON(needs.verify.outputs.desktop_matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -111,15 +163,39 @@ jobs:
             fi
           done
       - name: Build desktop packages
-        run: pnpm --filter @mibbeacon/desktop ${{ matrix.command }}
+        shell: bash
         env:
+          BUILD_APPIMAGE: ${{ needs.verify.outputs.appimage }}
+          BUILD_DEB: ${{ needs.verify.outputs.deb }}
+          BUILD_RPM: ${{ needs.verify.outputs.rpm }}
+          BUILD_FLATPAK: ${{ needs.verify.outputs.flatpak }}
           CSC_LINK: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK || runner.os == 'macOS' && secrets.MACOS_CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_KEY_PASSWORD || runner.os == 'macOS' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ (runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK != '') || (runner.os == 'macOS' && secrets.MACOS_CSC_LINK != '') }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
+        run: |
+          pnpm --filter @mibbeacon/desktop build
+          case '${{ matrix.platform }}' in
+            linux)
+              targets=()
+              [[ "$BUILD_APPIMAGE" == true ]] && targets+=(AppImage)
+              [[ "$BUILD_DEB" == true ]] && targets+=(deb)
+              [[ "$BUILD_RPM" == true ]] && targets+=(rpm)
+              if [[ ${#targets[@]} -eq 0 && "$BUILD_FLATPAK" == true ]]; then targets+=(dir); fi
+              pnpm --filter @mibbeacon/desktop exec electron-builder \
+                --linux "${targets[@]}" --x64 --arm64 --publish never
+              ;;
+            windows)
+              pnpm --filter @mibbeacon/desktop exec electron-builder \
+                --win nsis --x64 --publish never
+              ;;
+            macos)
+              pnpm --filter @mibbeacon/desktop exec electron-builder \
+                --mac dmg --x64 --arm64 --publish never
+              ;;
+          esac
       - name: Verify Windows Authenticode signature
         if: runner.os == 'Windows'
         shell: pwsh
@@ -305,10 +381,10 @@ jobs:
           retention-days: 1
 
       - name: Prepare immutable Flatpak source archives
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.verify.outputs.flatpak == 'true'
         shell: bash
         run: |
-          version='${{ needs.verify.outputs.version }}'
+          version="${{ needs.verify.outputs.version }}"
           for item in 'x86_64:linux-unpacked' 'aarch64:linux-arm64-unpacked'; do
             arch=${item%%:*}
             directory=${item#*:}
@@ -341,40 +417,50 @@ jobs:
           grep -q 'SMOKE_MAIN_WINDOW_READY' electron-smoke.log
 
       - name: Exercise hosted AppImage and deb packages
-        if: runner.os == 'Linux'
+        if: >-
+          runner.os == 'Linux' &&
+          (needs.verify.outputs.appimage == 'true' || needs.verify.outputs.deb == 'true')
         shell: bash
+        env:
+          BUILD_APPIMAGE: ${{ needs.verify.outputs.appimage }}
+          BUILD_DEB: ${{ needs.verify.outputs.deb }}
         run: |
           set -euo pipefail
           version='${{ needs.verify.outputs.version }}'
-          appimage="apps/desktop/release/MIB-Beacon-${version}-linux-x86_64.AppImage"
-          deb="apps/desktop/release/MIB-Beacon-${version}-linux-amd64.deb"
-          [[ -f "$appimage" && -f "$deb" ]]
 
-          chmod +x "$appimage"
-          appimage_home=$(mktemp -d)
-          HOME="$appimage_home" timeout 120s xvfb-run --auto-servernum "$appimage" --smoke-test \
-            >appimage-package-smoke.log 2>&1
-          grep -q 'ENGINE_READY' appimage-package-smoke.log
-          grep -q 'SMOKE_MAIN_WINDOW_READY' appimage-package-smoke.log
-          rm -rf "$appimage_home"
+          if [[ "$BUILD_APPIMAGE" == true ]]; then
+            appimage="apps/desktop/release/MIB-Beacon-${version}-linux-x86_64.AppImage"
+            [[ -f "$appimage" ]]
+            chmod +x "$appimage"
+            appimage_home=$(mktemp -d)
+            HOME="$appimage_home" timeout 120s xvfb-run --auto-servernum "$appimage" --smoke-test \
+              >appimage-package-smoke.log 2>&1
+            grep -q 'ENGINE_READY' appimage-package-smoke.log
+            grep -q 'SMOKE_MAIN_WINDOW_READY' appimage-package-smoke.log
+            rm -rf "$appimage_home"
+          fi
 
-          sudo apt-get install -y "$PWD/$deb"
-          installed='/opt/MIB Beacon/mib-beacon'
-          [[ -x "$installed" ]]
-          deb_home=$(mktemp -d)
-          HOME="$deb_home" timeout 120s xvfb-run --auto-servernum "$installed" --smoke-test \
-            >deb-package-smoke.log 2>&1
-          grep -q 'ENGINE_READY' deb-package-smoke.log
-          grep -q 'SMOKE_MAIN_WINDOW_READY' deb-package-smoke.log
-          rm -rf "$deb_home"
-          sudo apt-get remove -y mib-beacon
-          [[ ! -e "$installed" ]]
+          if [[ "$BUILD_DEB" == true ]]; then
+            deb="apps/desktop/release/MIB-Beacon-${version}-linux-amd64.deb"
+            [[ -f "$deb" ]]
+            sudo apt-get install -y "$PWD/$deb"
+            installed='/opt/MIB Beacon/mib-beacon'
+            [[ -x "$installed" ]]
+            deb_home=$(mktemp -d)
+            HOME="$deb_home" timeout 120s xvfb-run --auto-servernum "$installed" --smoke-test \
+              >deb-package-smoke.log 2>&1
+            grep -q 'ENGINE_READY' deb-package-smoke.log
+            grep -q 'SMOKE_MAIN_WINDOW_READY' deb-package-smoke.log
+            rm -rf "$deb_home"
+            sudo apt-get remove -y mib-beacon
+            [[ ! -e "$installed" ]]
+          fi
 
           {
             echo '## Hosted Linux package smoke'
             echo
-            echo '- x86_64 AppImage FUSE launch: passed'
-            echo '- amd64 deb install/main-window launch/uninstall: passed'
+            [[ "$BUILD_APPIMAGE" == true ]] && echo '- x86_64 AppImage FUSE launch: passed'
+            [[ "$BUILD_DEB" == true ]] && echo '- amd64 deb install/main-window launch/uninstall: passed'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload hosted Linux package evidence
@@ -406,7 +492,7 @@ jobs:
           retention-days: 1
 
       - name: Upload Flatpak staging application
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.verify.outputs.flatpak == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: flatpak-staging
@@ -440,6 +526,7 @@ jobs:
 
   flatpak:
     needs: [verify, desktop]
+    if: needs.verify.outputs.flatpak == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -474,7 +561,10 @@ jobs:
           grep -q 'ENGINE_READY' flatpak-package-smoke.log
           grep -q 'SMOKE_MAIN_WINDOW_READY' flatpak-package-smoke.log
           flatpak uninstall --user --noninteractive --delete-data com.librestatic.mibbeacon
-          ! flatpak info --user com.librestatic.mibbeacon >/dev/null 2>&1
+          if flatpak info --user com.librestatic.mibbeacon >/dev/null 2>&1; then
+            echo 'Flatpak remained installed after uninstall' >&2
+            exit 1
+          fi
           {
             echo '## Hosted Flatpak package smoke'
             echo
@@ -496,6 +586,7 @@ jobs:
 
   android:
     needs: verify
+    if: needs.verify.outputs.apk == 'true' || needs.verify.outputs.aab == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -523,59 +614,77 @@ jobs:
           done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mibbeacon-release.jks"
           chmod 600 "$RUNNER_TEMP/mibbeacon-release.jks"
-      - name: Build signed sideload APK and Play bundle
+      - name: Build selected signed Android packages
         working-directory: apps/mobile/android
         env:
           MIBBEACON_ANDROID_KEYSTORE: ${{ runner.temp }}/mibbeacon-release.jks
           MIBBEACON_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           MIBBEACON_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           MIBBEACON_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease bundleRelease --no-daemon
+          BUILD_APK: ${{ needs.verify.outputs.apk }}
+          BUILD_AAB: ${{ needs.verify.outputs.aab }}
+        run: |
+          tasks=()
+          [[ "$BUILD_APK" == true ]] && tasks+=(assembleRelease)
+          [[ "$BUILD_AAB" == true ]] && tasks+=(bundleRelease)
+          ./gradlew "${tasks[@]}" --no-daemon
       - name: Verify Android release signatures
         shell: bash
+        env:
+          BUILD_APK: ${{ needs.verify.outputs.apk }}
+          BUILD_AAB: ${{ needs.verify.outputs.aab }}
         run: |
           set -euo pipefail
-          apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
-          aab=$(find apps/mobile/android/app/build/outputs/bundle/release -name '*.aab' -print -quit)
-          [[ -n "$apk" && -n "$aab" ]] || { echo 'Signed APK/AAB outputs are missing' >&2; exit 1; }
-          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
-          "$apksigner" verify --verbose --print-certs "$apk" | tee android-apk-signature.log
-          jarsigner -verify -strict -certs "$aab"
-          keytool -printcert -jarfile "$aab" > android-aab-signature.log
-          cat android-aab-signature.log
-          apk_subject=$(sed -n \
-            -e 's/^Signer #1 certificate DN: //p' \
-            -e 's/^V[^:]* Signer: certificate DN: //p' \
-            android-apk-signature.log | head -1)
-          apk_sha256=$(sed -n \
-            -e 's/^Signer #1 certificate SHA-256 digest: //p' \
-            -e 's/^V[^:]* Signer: certificate SHA-256 digest: //p' \
-            android-apk-signature.log | head -1)
-          aab_owner=$(sed -n 's/^Owner: //p' android-aab-signature.log | head -1)
-          aab_sha256=$(sed -n 's/^[[:space:]]*SHA256: //p' android-aab-signature.log | head -1)
-          [[ -n "$apk_subject" && -n "$apk_sha256" && -n "$aab_owner" && -n "$aab_sha256" ]]
           {
             echo '## Android publication-signature verification'
             echo
-            echo "- APK: \`$(basename "$apk")\`"
-            echo "- APK signer: $apk_subject"
-            echo "- APK certificate SHA-256: $apk_sha256"
-            echo "- AAB: \`$(basename "$aab")\`"
-            echo "- AAB signer: $aab_owner"
-            echo "- AAB certificate SHA-256: $aab_sha256"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$BUILD_APK" == true ]]; then
+            apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+            [[ -n "$apk" ]] || { echo 'Signed APK output is missing' >&2; exit 1; }
+            apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+            "$apksigner" verify --verbose --print-certs "$apk" | tee android-apk-signature.log
+            apk_subject=$(sed -n -e 's/^Signer #1 certificate DN: //p' \
+              -e 's/^V[^:]* Signer: certificate DN: //p' android-apk-signature.log | head -1)
+            apk_sha256=$(sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' \
+              -e 's/^V[^:]* Signer: certificate SHA-256 digest: //p' android-apk-signature.log | head -1)
+            [[ -n "$apk_subject" && -n "$apk_sha256" ]]
+            printf '%s\n' "- APK: \`$(basename "$apk")\`" "- APK signer: $apk_subject" \
+              "- APK certificate SHA-256: $apk_sha256" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [[ "$BUILD_AAB" == true ]]; then
+            aab=$(find apps/mobile/android/app/build/outputs/bundle/release -name '*.aab' -print -quit)
+            [[ -n "$aab" ]] || { echo 'Signed AAB output is missing' >&2; exit 1; }
+            jarsigner -verify -strict -certs "$aab"
+            keytool -printcert -jarfile "$aab" > android-aab-signature.log
+            cat android-aab-signature.log
+            aab_owner=$(sed -n 's/^Owner: //p' android-aab-signature.log | head -1)
+            aab_sha256=$(sed -n 's/^[[:space:]]*SHA256: //p' android-aab-signature.log | head -1)
+            [[ -n "$aab_owner" && -n "$aab_sha256" ]]
+            printf '%s\n' "- AAB: \`$(basename "$aab")\`" "- AAB signer: $aab_owner" \
+              "- AAB certificate SHA-256: $aab_sha256" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Audit merged Android permissions
         run: >-
           node dev/verify-android-permissions.mjs
           apps/mobile/android/app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
       - name: Scan Android application payloads
-        run: >-
-          node dev/scan-release-artifacts.mjs
-          apps/mobile/android/app/build/outputs/apk/release
-          apps/mobile/android/app/build/outputs/bundle/release
+        shell: bash
+        env:
+          BUILD_APK: ${{ needs.verify.outputs.apk }}
+          BUILD_AAB: ${{ needs.verify.outputs.aab }}
+        run: |
+          paths=()
+          [[ "$BUILD_APK" == true ]] && paths+=(apps/mobile/android/app/build/outputs/apk/release)
+          [[ "$BUILD_AAB" == true ]] && paths+=(apps/mobile/android/app/build/outputs/bundle/release)
+          node dev/scan-release-artifacts.mjs "${paths[@]}"
       - name: Start Android SNMP fixture
+        if: needs.verify.outputs.apk == 'true'
         run: docker compose -f dev/snmpd/docker-compose.yml up -d --build
       - name: Exercise release APK SNMP and trap paths
+        if: needs.verify.outputs.apk == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -585,7 +694,7 @@ jobs:
             apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
             dev/audit/android-release-smoke/run.sh "$apk"
       - name: Stop Android SNMP fixture
-        if: always()
+        if: always() && needs.verify.outputs.apk == 'true'
         run: docker compose -f dev/snmpd/docker-compose.yml down --volumes
       - uses: actions/upload-artifact@v4
         with:
@@ -598,6 +707,7 @@ jobs:
 
   ios:
     needs: verify
+    if: needs.verify.outputs.ipa == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -684,11 +794,29 @@ jobs:
 
   publish:
     needs: [verify, desktop, flatpak, android, ios]
+    if: >-
+      ${{
+        always() &&
+        needs.verify.result == 'success' &&
+        (needs.desktop.result == 'success' || needs.desktop.result == 'skipped') &&
+        (needs.flatpak.result == 'success' || needs.flatpak.result == 'skipped') &&
+        (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+        (needs.ios.result == 'success' || needs.ios.result == 'skipped')
+      }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
       RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+      BUILD_APPIMAGE: ${{ needs.verify.outputs.appimage }}
+      BUILD_DEB: ${{ needs.verify.outputs.deb }}
+      BUILD_RPM: ${{ needs.verify.outputs.rpm }}
+      BUILD_FLATPAK: ${{ needs.verify.outputs.flatpak }}
+      BUILD_NSIS: ${{ needs.verify.outputs.nsis }}
+      BUILD_DMG: ${{ needs.verify.outputs.dmg }}
+      BUILD_APK: ${{ needs.verify.outputs.apk }}
+      BUILD_AAB: ${{ needs.verify.outputs.aab }}
+      BUILD_IPA: ${{ needs.verify.outputs.ipa }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -711,7 +839,17 @@ jobs:
 
           node dev/scan-release-artifacts.mjs release-assets
 
-          for pattern in '*.AppImage' '*.deb' '*.rpm' '*.flatpak' '*.exe' '*.dmg' '*.apk' '*.aab' '*.ipa'; do
+          required_patterns=()
+          [[ "$BUILD_APPIMAGE" == true ]] && required_patterns+=('*.AppImage')
+          [[ "$BUILD_DEB" == true ]] && required_patterns+=('*.deb')
+          [[ "$BUILD_RPM" == true ]] && required_patterns+=('*.rpm')
+          [[ "$BUILD_FLATPAK" == true ]] && required_patterns+=('*.flatpak')
+          [[ "$BUILD_NSIS" == true ]] && required_patterns+=('*.exe')
+          [[ "$BUILD_DMG" == true ]] && required_patterns+=('*.dmg')
+          [[ "$BUILD_APK" == true ]] && required_patterns+=('*.apk')
+          [[ "$BUILD_AAB" == true ]] && required_patterns+=('*.aab')
+          [[ "$BUILD_IPA" == true ]] && required_patterns+=('*.ipa')
+          for pattern in "${required_patterns[@]}"; do
             if ! find publish-assets -type f -name "$pattern" -print -quit | grep -q .; then
               echo "Missing required release asset: $pattern" >&2
               exit 1

@@ -16,6 +16,8 @@ clean-platform, real-credential, publication, or update-path observations.
 - [x] Release CI defines Linux/Windows/macOS/Android/iOS builds, Electron xvfb smoke, Android
       emulator smoke, one-day artifact retention, checksums, prerelease publication, and storage
       housekeeping.
+- [x] Manual tagged runs expose independent AppImage, deb, rpm, Flatpak, NSIS, dmg, APK, AAB,
+      and IPA toggles; tag pushes still select the complete production inventory.
 - [x] Tagged desktop jobs refuse missing Windows/macOS signing credentials and verify Authenticode,
       Developer ID, Gatekeeper assessment, and the stapled notarization ticket; Android CI verifies
       the APK and AAB signatures before upload.

@@ -488,6 +488,20 @@ Configuration variables:
 never forward its ports from a router or expose them to the internet. Anyone who can
 reach this runtime can drive SNMP operations from the server host.
 
+## Run a hosted release build
+
+Pushing a version tag such as `v0.0.1-beta.1` runs the complete production matrix. A
+manual **Release** run from the GitHub Actions web UI must target an existing matching
+version tag, but it can independently enable or disable AppImage, deb, rpm, Flatpak,
+NSIS, dmg, APK, AAB, and unsigned IPA compilation. The published inventory and checksum
+gate adapt to that selection; automatic tag-triggered releases always require every
+documented output.
+
+Disabling an output does not bypass its requirements when it is selected. NSIS and dmg
+still require their signing/notarization credentials, and APK/AAB still require the
+Android release keystore credentials. Use selective manual runs to test available target
+families, not to label unsigned substitutes as production artifacts.
+
 ## Validate a source checkout
 
 ```bash
