@@ -12,7 +12,7 @@ Do **not** open a public issue for a suspected vulnerability or include secrets,
 device addresses, communities, SNMPv3 keys, or packet captures in public.
 Use GitHub's private vulnerability-reporting form:
 
-<https://github.com/LibreStatic/mibbeacon/security/advisories/new>
+<https://github.com/LibreStatic/mib-beacon/security/advisories/new>
 
 Include the affected version/platform, reproduction steps, impact, and the
 smallest sanitized proof available. If the private form is unavailable, wait

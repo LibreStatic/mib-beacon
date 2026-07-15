@@ -181,4 +181,4 @@ export interface Transport {
   readonly hostOs?: string;
 }
 
-export const USER_AGENT = 'MIBBeacon/0.0.0 (+https://github.com/LibreStatic/mibbeacon)';
+export const USER_AGENT = 'MIBBeacon/0.0.0 (+https://github.com/LibreStatic/mib-beacon)';

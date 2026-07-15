@@ -67,7 +67,7 @@ resolveModules(names):
 
 - Streams progress events per module/source attempt (drives UI log: "IF-MIB ✓ mibs.pysnmp.com · CISCO-SMI ✓ cisco-mibs · FOO-MIB ✗ not found in 6 sources").
 - After resolution completes, load the closure into the catalog in dependency order (leaves first), then retry the originally-failed import; final report reuses plan 03's import summary UI.
-- Per-fetch: timeout 15s, one retry, exponential backoff on 429/403 (and per-source cool-down so a rate-limited source doesn't stall the chain), honest `User-Agent: MIBBeacon/<version> (+https://github.com/<org>/mibbeacon)`.
+- Per-fetch: timeout 15s, one retry, exponential backoff on 429/403 (and per-source cool-down so a rate-limited source doesn't stall the chain), honest `User-Agent: MIBBeacon/<version> (+https://github.com/<org>/mib-beacon)`.
 - Concurrency: ≤3 parallel module fetches, ≤2 per host.
 
 ### Unknown-OID lookup (`resolver.lookupOid`)

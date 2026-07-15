@@ -6,7 +6,7 @@
   "homepage": "https://librestatic.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/LibreStatic/mibbeacon.git"
+    "url": "https://github.com/LibreStatic/mib-beacon.git"
   },
   "author": "LibreStatic",
   "license": "GPL-3.0-or-later",

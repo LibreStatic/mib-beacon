@@ -2,6 +2,6 @@
 export const RELEASE_INFO = {
   "version": "0.0.1-beta.1",
   "license": "GPL-3.0-or-later",
-  "repository": "https://github.com/LibreStatic/mibbeacon",
-  "exactSourceUrl": "https://github.com/LibreStatic/mibbeacon/tree/v0.0.1-beta.1"
+  "repository": "https://github.com/LibreStatic/mib-beacon",
+  "exactSourceUrl": "https://github.com/LibreStatic/mib-beacon/tree/v0.0.1-beta.1"
 } as const;

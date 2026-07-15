@@ -21,9 +21,9 @@ Current version: **0.0.1-beta.1**. Treat every build as prerelease software.
 
 ## Quick links
 
-- **Source repository:** <https://github.com/LibreStatic/mibbeacon>
-- **Downloads and releases:** <https://github.com/LibreStatic/mibbeacon/releases>
-- **Latest release:** <https://github.com/LibreStatic/mibbeacon/releases/latest>
+- **Source repository:** <https://github.com/LibreStatic/mib-beacon>
+- **Downloads and releases:** <https://github.com/LibreStatic/mib-beacon/releases>
+- **Latest release:** <https://github.com/LibreStatic/mib-beacon/releases/latest>
 - **Release checklist:** [`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md)
 - **Setup and implementation documentation:** [`docs/plans/README.md`](docs/plans/README.md)
 - **Runtime compatibility findings:** [`docs/plans/SPIKE-RESULTS.md`](docs/plans/SPIKE-RESULTS.md)
@@ -307,8 +307,8 @@ removed when the application is uninstalled.
 Clone and install the workspace:
 
 ```bash
-git clone https://github.com/LibreStatic/mibbeacon.git
-cd mibbeacon
+git clone https://github.com/LibreStatic/mib-beacon.git
+cd mib-beacon
 corepack enable
 corepack prepare pnpm@10.33.2 --activate
 pnpm install --frozen-lockfile

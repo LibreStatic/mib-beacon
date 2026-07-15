@@ -7,8 +7,8 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <url type="homepage">https://librestatic.com</url>
-  <url type="vcs-browser">https://github.com/LibreStatic/mibbeacon</url>
-  <url type="bugtracker">https://github.com/LibreStatic/mibbeacon/issues</url>
+  <url type="vcs-browser">https://github.com/LibreStatic/mib-beacon</url>
+  <url type="bugtracker">https://github.com/LibreStatic/mib-beacon/issues</url>
   <description>
     <p>MIB Beacon is a modern cross-platform SNMP toolkit for importing, exploring, and querying MIB data.</p>
   </description>
@@ -19,7 +19,7 @@
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.0.1-beta.1" date="2026-07-13" type="development">
-      <url>https://github.com/LibreStatic/mibbeacon/releases/tag/v0.0.1-beta.1</url>
+      <url>https://github.com/LibreStatic/mib-beacon/releases/tag/v0.0.1-beta.1</url>
       <description><p>Initial beta with MIB catalog, SNMP operations, traps, resolver, tools, and responsive desktop/mobile interfaces.</p></description>
     </release>
   </releases>

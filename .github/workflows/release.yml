@@ -326,7 +326,7 @@ jobs:
           arm64_asset="MIB-Beacon-${version}-flatpak-source-aarch64.tar.xz"
           x64_sha=$(sha256sum "apps/desktop/release/$x64_asset" | cut -d' ' -f1)
           arm64_sha=$(sha256sum "apps/desktop/release/$arm64_asset" | cut -d' ' -f1)
-          base="https://github.com/LibreStatic/mibbeacon/releases/download/${GITHUB_REF_NAME}"
+          base="https://github.com/LibreStatic/mib-beacon/releases/download/${GITHUB_REF_NAME}"
           node packaging/flatpak/scripts/prepare-flatpak-release.mjs \
             --version "$version" \
             --x64-url "$base/$x64_asset" --x64-sha256 "$x64_sha" \
