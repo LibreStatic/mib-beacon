@@ -538,7 +538,7 @@ jobs:
           name: flatpak-staging
           path: packaging/flatpak/staging/app
       - name: Install Flatpak tooling
-        run: sudo apt-get update && sudo apt-get install -y flatpak flatpak-builder xvfb
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11 flatpak flatpak-builder xvfb
       - name: Install runtime and SDK
         run: |
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -558,7 +558,7 @@ jobs:
           bundle="MIB-Beacon-${version}-linux-x86_64.flatpak"
           [[ -f "$bundle" ]]
           flatpak install --user --noninteractive --bundle "$bundle"
-          timeout 120s xvfb-run --auto-servernum \
+          timeout 120s dbus-run-session -- xvfb-run --auto-servernum \
             flatpak run --user com.librestatic.mibbeacon --smoke-test \
             2>&1 | tee flatpak-package-smoke.log
           grep -q 'ENGINE_READY' flatpak-package-smoke.log
