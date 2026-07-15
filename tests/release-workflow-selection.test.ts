@@ -41,5 +41,7 @@ describe('release workflow output selection', () => {
   it('streams the hosted Flatpak smoke log into Actions output', () => {
     expect(workflow).toContain('2>&1 | tee flatpak-package-smoke.log');
     expect(workflow).toContain('dbus-run-session -- xvfb-run --auto-servernum');
+    expect(workflow).toContain('*-flatpak-source-x86_64.tar.xz');
+    expect(workflow).toContain('[[ -x packaging/flatpak/staging/app/mib-beacon ]]');
   });
 });

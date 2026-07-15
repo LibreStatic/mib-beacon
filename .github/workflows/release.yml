@@ -499,7 +499,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: flatpak-staging
-          path: apps/desktop/release/linux-unpacked
+          path: apps/desktop/release/*-flatpak-source-x86_64.tar.xz
           if-no-files-found: error
           retention-days: 1
 
@@ -536,7 +536,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: flatpak-staging
-          path: packaging/flatpak/staging/app
+          path: packaging/flatpak/staging-source
+      - name: Extract permission-preserving Flatpak source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(find packaging/flatpak/staging-source -maxdepth 1 -name '*-flatpak-source-x86_64.tar.xz' -print -quit)
+          [[ -n "$archive" ]]
+          mkdir -p packaging/flatpak/staging
+          tar -xJf "$archive" -C packaging/flatpak/staging
+          [[ -x packaging/flatpak/staging/app/mib-beacon ]]
       - name: Install Flatpak tooling
         run: sudo apt-get update && sudo apt-get install -y dbus-x11 flatpak flatpak-builder xvfb
       - name: Install runtime and SDK
