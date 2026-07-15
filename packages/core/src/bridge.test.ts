@@ -1,8 +1,18 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { EngineAPI } from './api/engine-api';
-import { dispatchEngineCall } from './bridge';
+import { dispatchEngineCall, ENGINE_METHODS } from './bridge';
 
 describe('engine bridge', () => {
+  it('registers every method invoked by the remote engine proxy', () => {
+    const proxySource = readFileSync(new URL('./proxy.ts', import.meta.url), 'utf8');
+    const proxyMethods = [
+      ...new Set([...proxySource.matchAll(/call\('([^']+)'/g)].map((match) => match[1])),
+    ];
+
+    expect(proxyMethods.filter((method) => !(method in ENGINE_METHODS))).toEqual([]);
+  });
+
   it('dispatches the in-memory logs query, level, and export methods', async () => {
     const query = vi.fn().mockResolvedValue([{ id: 'log-1', level: 'error' }]);
     const setLevel = vi.fn().mockResolvedValue(undefined);
@@ -104,6 +114,18 @@ describe('engine bridge', () => {
       value: ['A-MIB', 'B-MIB'],
     });
     expect(replacementGroup).toHaveBeenCalledWith('A-MIB');
+  });
+
+  it('dispatches MIB translations used by remote web clients', async () => {
+    const translation = { oid: '1', name: 'iso', module: 'SNMPv2-SMI' };
+    const translate = vi.fn().mockResolvedValue(translation);
+    const engine = { mibs: { translate } } as unknown as EngineAPI;
+
+    await expect(dispatchEngineCall(engine, 'mibs.translate', ['iso'])).resolves.toEqual({
+      ok: true,
+      value: translation,
+    });
+    expect(translate).toHaveBeenCalledWith('iso');
   });
 
   it('dispatches unsaved resolver source previews', async () => {

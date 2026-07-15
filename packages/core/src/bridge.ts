@@ -33,6 +33,7 @@ export const ENGINE_METHODS: Record<string, Handler> = {
   'mibs.moduleSearch': (e, moduleName, query, limit) =>
     e.mibs.moduleSearch(moduleName as string, query as string, limit as number | undefined),
   'mibs.resolve': (e, oid) => e.mibs.resolve(oid as string),
+  'mibs.translate': (e, oidOrName) => e.mibs.translate(oidOrName as string),
   'resolver.respondConsent': (e, handleId, response) =>
     e.resolver.respondConsent(handleId as string, response as never),
   'resolver.cancel': (e, handleId) => e.resolver.cancel(handleId as string),
@@ -126,6 +127,7 @@ export const ENGINE_METHODS: Record<string, Handler> = {
   'traps.query': (e, query) => e.traps.query(query as never),
   'traps.markRead': (e, ids, read) =>
     e.traps.markRead(ids as string[], read as boolean | undefined),
+  'traps.delete': (e, ids) => e.traps.delete(ids as string[]),
   'traps.unreadCount': (e) => e.traps.unreadCount(),
   'traps.clear': (e) => e.traps.clear(),
   'traps.v3Users.list': (e) => e.traps.v3Users.list(),
