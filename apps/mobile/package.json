@@ -26,6 +26,7 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.0",
     "expo-secure-store": "~15.0.0",
+    "expo-sharing": "~14.0.8",
     "expo-sqlite": "~16.0.0",
     "expo-updates": "~29.0.18",
     "net-snmp": "^3.26.3",

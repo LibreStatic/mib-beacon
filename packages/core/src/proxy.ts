@@ -41,6 +41,18 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
 
   return {
     system: { info: () => call('system.info') },
+    packets: {
+      history: () => call('packets.history'),
+      status: () => call('packets.status'),
+      updateSettings: (patch) => call('packets.updateSettings', patch),
+      retryPersistence: () => call('packets.retryPersistence'),
+      clear: () => call('packets.clear'),
+      export: {
+        create: () => call('packets.export.create'),
+        readChunk: (id, offset, limit) => call('packets.export.readChunk', id, offset, limit),
+        dispose: (id) => call('packets.export.dispose', id),
+      },
+    },
     mibs: {
       inspectFiles: (files) => call('mibs.inspectFiles', files),
       replacementGroup: (moduleName) => call('mibs.replacementGroup', moduleName),

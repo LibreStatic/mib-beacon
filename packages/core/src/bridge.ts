@@ -14,6 +14,15 @@ type Handler = (engine: EngineAPI, ...args: unknown[]) => unknown;
 
 export const ENGINE_METHODS: Record<string, Handler> = {
   'system.info': (e) => e.system.info(),
+  'packets.history': (e) => e.packets.history(),
+  'packets.status': (e) => e.packets.status(),
+  'packets.updateSettings': (e, patch) => e.packets.updateSettings(patch as never),
+  'packets.retryPersistence': (e) => e.packets.retryPersistence(),
+  'packets.clear': (e) => e.packets.clear(),
+  'packets.export.create': (e) => e.packets.export.create(),
+  'packets.export.readChunk': (e, id, offset, limit) =>
+    e.packets.export.readChunk(id as string, offset as number, limit as number | undefined),
+  'packets.export.dispose': (e, id) => e.packets.export.dispose(id as string),
   'logs.query': (e, filter) => e.logs.query(filter as never),
   'logs.setLevel': (e, level) => e.logs.setLevel(level as never),
   'logs.export': (e, path) => e.logs.export(path as string | undefined),
@@ -154,6 +163,7 @@ export const ENGINE_EVENT_CHANNELS: EngineEventChannel[] = [
   'resolver',
   'tools',
   'logs',
+  'packets',
 ];
 
 export async function dispatchEngineCall(

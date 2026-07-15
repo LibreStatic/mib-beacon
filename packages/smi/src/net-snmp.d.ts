@@ -49,6 +49,7 @@ declare module 'net-snmp' {
     transport?: 'udp4' | 'udp6';
     version?: number;
     idBitsSize?: number;
+    dgramModule?: unknown;
   }
 
   export interface V3User {
@@ -61,6 +62,11 @@ declare module 'net-snmp' {
   }
 
   export interface Session {
+    dgram?: {
+      send(...args: unknown[]): unknown;
+      prependListener?(event: 'message', listener: (data: Uint8Array, rinfo: { address: string; port: number }) => void): void;
+      address?(): { address: string; port: number };
+    };
     get(oids: string[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;
     getNext(oids: string[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;
     set(varbinds: Varbind[], cb: (error: Error | null, varbinds: Varbind[]) => void): void;

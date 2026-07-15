@@ -21,6 +21,7 @@ import { derivePollValue, interfaceUtilization, summarizeSamples } from './math'
 import { diffWalks, parseNumericSnmpwalk, type WalkValue } from './diff';
 import { expandIpv4Target } from './discovery';
 import { buildPingArgs, parsePingSummary } from './reachability';
+import type { PacketTraceEvent } from '../packet-trace';
 
 interface PollSeriesRow {
   id: string;
@@ -65,6 +66,7 @@ export class ToolService {
     private readonly artifacts: QueryArtifactStore,
     private readonly agentTester?: (agent: AgentSpec, oids: string[]) => Promise<DecodedVarbind[]>,
     private readonly now: () => number = Date.now,
+    private readonly onPacket?: (event: PacketTraceEvent) => void,
   ) {
     this.api = this.buildApi();
     this.reschedulePolls();
@@ -730,7 +732,7 @@ export class ToolService {
     signal?: AbortSignal,
   ): Promise<WalkValue[]> {
     const agent = await this.agents.resolve(agentId);
-    const session = new SnmpSession(agent);
+    const session = new SnmpSession(agent, this.onPacket);
     const abort = () => session.close();
     signal?.addEventListener('abort', abort, { once: true });
     const rows: WalkValue[] = [];
@@ -947,7 +949,7 @@ export class ToolService {
 
   private async get(agent: AgentSpec, oids: string[]): Promise<DecodedVarbind[]> {
     if (this.agentTester) return this.agentTester(agent, oids);
-    const session = new SnmpSession(agent);
+    const session = new SnmpSession(agent, this.onPacket);
     try {
       return await session.get(oids);
     } finally {

@@ -10,7 +10,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { Button, Card, Label, SectionTitle, ThemeProvider, useTheme } from '@mibbeacon/ui';
-import type { DecodedVarbind, EngineEvent, EngineInfo, TrapRecord } from '@mibbeacon/core/client';
+import type {
+  DecodedVarbind,
+  EngineEvent,
+  EngineInfo,
+  PacketTraceEvent,
+  PacketTraceServiceStatus,
+  TrapRecord,
+} from '@mibbeacon/core/client';
 import { useEngine } from './engine-context';
 import { useAppStore, type Tab } from './store';
 import {
@@ -36,6 +43,7 @@ import { routeForTab, tabFromUrl } from './routes';
 import { SHORTCUTS, subscribeCommandPaletteShortcut } from './browser-shortcuts';
 import { FileImportReviewModal } from './components/FileImportFlow';
 import { CommandPalette } from './components/CommandPalette';
+import { PacketActivityLights, PacketConsole } from './components/PacketConsole';
 import {
   createInitialFileSelection,
   stageAcquiredFileImport,
@@ -80,6 +88,13 @@ export interface AppHostAdapter {
   setWindowTitle?: (title: string) => void;
   updates?: HostUpdateAdapter;
   subscribeOpenFiles?: (listener: (files: RawSelectedFile[]) => void) => () => void;
+  savePacketCapture?: (capture: PacketCaptureExportReader) => Promise<void>;
+}
+
+export interface PacketCaptureExportReader {
+  fileName: string;
+  byteLength: number;
+  readChunk(offset: number): Promise<{ base64: string; nextOffset: number; done: boolean }>;
 }
 
 export function AppRoot({
@@ -283,6 +298,12 @@ function ResponsiveAppRoot({
     void engine.traps.list().then((records) => {
       store().setTrapRecords(records);
     });
+    void Promise.all([engine.packets.history(), engine.packets.status()]).then(
+      ([packets, status]) => {
+        store().setPacketEvents(packets);
+        store().setPacketStatus(status);
+      },
+    );
 
     const offOps = engine.events.subscribe('ops', (e: EngineEvent) => {
       const s = store();
@@ -384,11 +405,19 @@ function ResponsiveAppRoot({
       }
     });
 
+    const offPackets = engine.events.subscribe('packets', (e: EngineEvent) => {
+      if (e.kind === 'packet') store().addPacketEvent(e.payload as PacketTraceEvent);
+      else if (e.kind === 'status' || e.kind === 'persistence-warning') {
+        store().setPacketStatus(e.payload as PacketTraceServiceStatus);
+      } else if (e.kind === 'cleared') store().clearPacketEvents();
+    });
+
     return () => {
       offOps();
       offTraps();
       offResolver();
       offTools();
+      offPackets();
     };
   }, [engine]);
 
@@ -433,6 +462,7 @@ function ResponsiveAppRoot({
           {activeTab === 'tools' ? <ToolsScreen /> : null}
           {activeTab === 'mibs' ? <MibsScreen /> : null}
           {activeTab === 'settings' ? <SettingsScreen host={host} /> : null}
+          <PacketConsole host={host} />
         </View>
       </View>
 
@@ -614,6 +644,9 @@ function AppNavigation({
         ))}
       </View>
       <View style={styles.sidebarFooter}>
+        <View style={styles.packetLightsDesktop}>
+          <PacketActivityLights compact={!expanded} />
+        </View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Command palette"
@@ -903,6 +936,7 @@ const styles = StyleSheet.create({
   navTooltipText: { fontSize: 12, fontWeight: '700' },
   navLabel: { fontSize: 13, fontWeight: '700' },
   sidebarFooter: { alignSelf: 'stretch', gap: 8 },
+  packetLightsDesktop: { minHeight: 22, alignItems: 'center', justifyContent: 'center' },
   newWindow: { minHeight: 42, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
   newWindowGlyph: { width: 26, textAlign: 'center', fontSize: 20, fontWeight: '700' },
   engineStatus: {

@@ -10,6 +10,14 @@ import type {
   SnmpVarbindInput,
 } from './types';
 import { encodeVarbindInput } from './varbind-input';
+import {
+  bytesToPacketHex,
+  isPlausibleSnmpDatagram,
+  type PacketTraceEvent,
+  type PacketTraceOperation,
+} from '../packet-trace';
+
+let packetSequence = 0;
 
 function versionConst(v: AgentSpec['version']): number {
   return v === 'v1' ? snmp.Version1 : v === 'v2c' ? snmp.Version2c : snmp.Version3;
@@ -96,8 +104,12 @@ export function decodeVarbind(vb: Varbind): DecodedVarbind {
 export class SnmpSession {
   private session: Session;
   private readonly version: AgentSpec['version'];
+  private activeOperation: PacketTraceOperation = 'unknown';
 
-  constructor(spec: AgentSpec) {
+  constructor(
+    private readonly spec: AgentSpec,
+    private readonly onPacket?: (event: PacketTraceEvent) => void,
+  ) {
     this.version = spec.version;
     const options = {
       port: spec.port ?? 161,
@@ -122,9 +134,11 @@ export class SnmpSession {
     } else {
       this.session = snmp.createSession(spec.host, spec.community ?? 'public', options);
     }
+    this.attachPacketTrace();
   }
 
   get(oids: string[]): Promise<DecodedVarbind[]> {
+    this.activeOperation = 'get';
     return new Promise((resolve, reject) => {
       this.session.get(oids, (error, varbinds) => {
         if (error) return reject(mapSnmpError(error));
@@ -134,6 +148,7 @@ export class SnmpSession {
   }
 
   getNext(oids: string[]): Promise<DecodedVarbind[]> {
+    this.activeOperation = 'getNext';
     return new Promise((resolve, reject) => {
       this.session.getNext(oids, (error, varbinds) => {
         if (error) return reject(mapSnmpError(error));
@@ -146,6 +161,7 @@ export class SnmpSession {
     if (this.version === 'v1') {
       return Promise.reject(new MibBeaconError('REQ_FAILED', 'GetBulk requires SNMP v2c or v3'));
     }
+    this.activeOperation = 'getBulk';
     return new Promise((resolve, reject) => {
       const bulkSession = this.session as Session & {
         getBulk(
@@ -163,6 +179,7 @@ export class SnmpSession {
   }
 
   set(inputs: SnmpVarbindInput[]): Promise<DecodedVarbind[]> {
+    this.activeOperation = 'set';
     const encoded = inputs.map(encodeVarbindInput);
     return new Promise((resolve, reject) => {
       this.session.set(encoded, (error, varbinds) => {
@@ -190,6 +207,7 @@ export class SnmpSession {
   }
 
   sendNotification(input: NotificationPayload): Promise<NotificationSendResult> {
+    this.activeOperation = input.kind;
     if (!/^\d+(?:\.\d+)+$/.test(input.trapOid.trim())) {
       return Promise.reject(
         new MibBeaconError('REQ_FAILED', 'Trap OID must be a valid numeric OID.'),
@@ -298,6 +316,7 @@ export class SnmpSession {
     onBatch: (batch: DecodedVarbind[]) => void,
     opts: { maxRepetitions?: number; maxVarbinds?: number } = {},
   ): Promise<number> {
+    this.activeOperation = 'walk';
     return new Promise((resolve, reject) => {
       let total = 0;
       let previousOid: string | null = null;
@@ -342,6 +361,91 @@ export class SnmpSession {
     } catch {
       /* already closed */
     }
+  }
+
+  private attachPacketTrace(): void {
+    if (!this.onPacket) return;
+    const socket = this.session.dgram;
+    if (!socket) return;
+    const originalSend = socket.send.bind(socket) as (...args: unknown[]) => unknown;
+    let delegatingSend = false;
+    socket.send = (...args: unknown[]) => {
+      // Node's legacy six-argument dgram.send overload normalizes itself by
+      // re-entering socket.send with the modern signature. Trace only the
+      // outer library call, not that internal normalization hop.
+      if (delegatingSend) return originalSend(...args);
+      const librarySignature =
+        args.length >= 6 &&
+        typeof args[1] === 'number' &&
+        typeof args[2] === 'number' &&
+        typeof args[3] === 'number' &&
+        typeof args[4] === 'string';
+      if (!librarySignature) return originalSend(...args);
+      const source = args[0] as Uint8Array;
+      const offset = Number(args[1] ?? 0);
+      const length = Number(args[2] ?? source.length);
+      const remotePort = Number(args[3] ?? this.spec.port ?? 161);
+      const remoteAddress = String(args[4] ?? this.spec.host);
+      const callback = args[5] as ((error?: Error | null, bytes?: number) => void) | undefined;
+      const raw = new Uint8Array(source).slice(offset, offset + length);
+      const event = this.packet('tx', raw, remoteAddress, remotePort, 'pending');
+      this.onPacket?.(event);
+      args[5] = (error?: Error | null, bytes?: number) => {
+        const local = socketAddress(socket);
+        this.onPacket?.({
+          ...event,
+          status: error ? 'invalid' : 'valid',
+          ...(local ? { localAddress: local.address, localPort: local.port } : {}),
+          ...(error ? { error: error.message } : {}),
+        });
+        callback?.(error, bytes);
+      };
+      delegatingSend = true;
+      try {
+        return originalSend(...args);
+      } finally {
+        delegatingSend = false;
+      }
+    };
+    socket.prependListener?.('message', (data, rinfo) => {
+      const raw = new Uint8Array(data);
+      const valid = isPlausibleSnmpDatagram(raw);
+      this.onPacket?.({
+        ...this.packet('rx', raw, rinfo.address, rinfo.port, valid ? 'valid' : 'invalid'),
+        ...(valid ? {} : { error: 'Malformed SNMP BER envelope' }),
+      });
+    });
+  }
+
+  private packet(
+    direction: 'tx' | 'rx',
+    raw: Uint8Array,
+    remoteAddress: string,
+    remotePort: number,
+    status: PacketTraceEvent['status'],
+  ): PacketTraceEvent {
+    const local = socketAddress(this.session.dgram);
+    return {
+      id: `packet-${Date.now()}-${packetSequence++}`,
+      timestamp: Date.now(),
+      direction,
+      status,
+      transport: this.spec.transport ?? 'udp4',
+      operation: this.activeOperation,
+      ...(local ? { localAddress: local.address, localPort: local.port } : {}),
+      remoteAddress,
+      remotePort,
+      byteLength: raw.length,
+      rawHex: bytesToPacketHex(raw),
+    };
+  }
+}
+
+function socketAddress(socket: Session['dgram']): { address: string; port: number } | null {
+  try {
+    return socket?.address?.() ?? null;
+  } catch {
+    return null;
   }
 }
 

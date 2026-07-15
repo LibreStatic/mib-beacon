@@ -22,6 +22,7 @@ import { evaluateTrapRules } from './traps/rules';
 import { ToolService } from './tools/service';
 import { ENGINE_VERSION } from './generated/version';
 import { LogService } from './logs';
+import { PacketTraceService, type PacketTraceEvent } from './packet-trace';
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/mibbeacon.db. Pass ':memory:' for tests. */
@@ -45,6 +46,12 @@ function netSnmpVersion(): string {
 
 export function createEngine(transport: Transport, opts: EngineOptions = {}): EngineAPI {
   const bus = new EventBus();
+  const packetTrace = new PacketTraceService(transport.files, (kind, payload) =>
+    bus.emit({ channel: 'packets', kind, payload }),
+    opts.dbPath !== ':memory:',
+  );
+  const packetTraceReady = packetTrace.initialize();
+  const tracePacket = (event: PacketTraceEvent) => packetTrace.record(event);
   const logService = new LogService(bus, Date.now, 1_000, transport.files);
   const dbPath = opts.dbPath ?? transport.files.join(transport.files.dataDir(), 'mibbeacon.db');
   let db: StorageAdapter | null = null;
@@ -138,6 +145,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     queryArtifacts,
     opts.agentTester,
     opts.tools?.now,
+    tracePacket,
   );
 
   function decorateAndStoreTrap(record: TrapRecord): TrapRecord {
@@ -212,7 +220,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     const { agent, sessionKey } = await operationAgent(target);
     return sessions.run(
       sessionKey,
-      () => new SnmpSession(agent),
+      () => new SnmpSession(agent, tracePacket),
       (session) => task(session, agent),
     );
   }
@@ -268,7 +276,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       };
       await sessions.run(
         sessionKey,
-        () => new SnmpSession(agent),
+        () => new SnmpSession(agent, tracePacket),
         async (session) => {
           let active = activeOperations.get(handleId);
           if (!active) {
@@ -443,6 +451,42 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
           netSnmpVersion: netSnmpVersion(),
           ciphers,
         };
+      },
+    },
+
+    packets: {
+      async history() {
+        await packetTraceReady;
+        return packetTrace.history();
+      },
+      async status() {
+        await packetTraceReady;
+        return packetTrace.status();
+      },
+      async updateSettings(patch) {
+        await packetTraceReady;
+        return packetTrace.updateSettings(patch);
+      },
+      async retryPersistence() {
+        await packetTraceReady;
+        return packetTrace.retryPersistence();
+      },
+      async clear() {
+        await packetTraceReady;
+        return packetTrace.clear();
+      },
+      export: {
+        async create() {
+          await packetTraceReady;
+          await packetTrace.flush();
+          return packetTrace.createExport();
+        },
+        async readChunk(id, offset, limit) {
+          return packetTrace.readExportChunk(id, offset, limit);
+        },
+        async dispose(id) {
+          packetTrace.disposeExport(id);
+        },
       },
     },
 
@@ -635,6 +679,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
             bus.emit({ channel: 'traps', kind: 'trap', payload: stored });
           },
           (err) => bus.emit({ channel: 'traps', kind: 'error', payload: String(err) }),
+          tracePacket,
         );
         const requestedPort = cfg.port ?? (transport.platform === 'node' ? 162 : 1162);
         try {
@@ -763,7 +808,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
       async send(req) {
         const target = 'agentId' in req ? await agentStore.resolve(req.agentId) : req.target;
         if ('agentId' in req) await agentStore.api.markUsed(req.agentId);
-        const session = new SnmpSession(target);
+        const session = new SnmpSession(target, tracePacket);
         try {
           const payload =
             'agentId' in req
@@ -798,7 +843,7 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         let varbinds: DecodedVarbind[];
         if (opts.agentTester) varbinds = await opts.agentTester(agent, oids);
         else {
-          const session = new SnmpSession(agent);
+          const session = new SnmpSession(agent, tracePacket);
           try {
             varbinds = await session.get(oids);
           } finally {

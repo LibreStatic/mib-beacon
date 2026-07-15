@@ -13,6 +13,7 @@ import type {
 } from '../snmp/types';
 import type { RowStatusCreateResult } from '../ops/row-status';
 import type { TrapReceiverConfig, TrapRecord } from '../snmp/receiver';
+import type { PacketTraceEvent, PacketTraceServiceStatus, PacketTraceSettings } from '../packet-trace';
 import type {
   ImportResult,
   MibFilesInspection,
@@ -682,6 +683,18 @@ export interface MibsAPI {
 export interface EngineAPI {
   system: {
     info(): Promise<EngineInfo>;
+  };
+  packets: {
+    history(): Promise<PacketTraceEvent[]>;
+    status(): Promise<PacketTraceServiceStatus>;
+    updateSettings(patch: Partial<PacketTraceSettings>): Promise<PacketTraceServiceStatus>;
+    retryPersistence(): Promise<PacketTraceServiceStatus>;
+    clear(): Promise<void>;
+    export: {
+      create(): Promise<{ id: string; fileName: string; byteLength: number }>;
+      readChunk(id: string, offset: number, limit?: number): Promise<{ base64: string; nextOffset: number; done: boolean }>;
+      dispose(id: string): Promise<void>;
+    };
   };
   mibs: MibsAPI;
   ops: {

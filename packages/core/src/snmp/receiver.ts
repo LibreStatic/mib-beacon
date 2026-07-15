@@ -4,6 +4,7 @@ import type { Pdu, Receiver, Notification } from 'net-snmp';
 import { mapSnmpError } from '../errors';
 import { decodeVarbind } from './session';
 import type { DecodedVarbind } from './types';
+import { bytesToPacketHex, type PacketTraceEvent } from '../packet-trace';
 
 export interface TrapRecord {
   id: string;
@@ -74,11 +75,12 @@ export class TrapReceiver {
   private receiver: Receiver | null = null;
   private seq = 0;
   private drops = 0;
-  private readonly rawBySource = new Map<string, Uint8Array>();
+  private readonly rawBySource = new Map<string, RawCapture>();
 
   constructor(
     private readonly onTrap: (rec: TrapRecord) => void,
     private readonly onError?: (err: Error) => void,
+    private readonly onPacket?: (event: PacketTraceEvent) => void,
   ) {}
 
   async start(cfg: TrapReceiverConfig): Promise<{ port: number; transports: ('udp4' | 'udp6')[] }> {
@@ -142,9 +144,10 @@ export class TrapReceiver {
           queueMicrotask(() => {
             const processing = error as Error & { rinfo?: { address?: string; port?: number } };
             if (processing.rinfo?.address && processing.rinfo.port !== undefined) {
-              this.rawBySource.delete(
-                sourceKey({ address: processing.rinfo.address, port: processing.rinfo.port }),
-              );
+              const key = sourceKey({ address: processing.rinfo.address, port: processing.rinfo.port });
+              const capture = this.rawBySource.get(key);
+              this.rawBySource.delete(key);
+              if (capture) this.finishPacket(capture, 'invalid', 'unknown', processing.message);
             }
             const malformed = this.decodeMalformed(error);
             if (malformed) this.onTrap(malformed);
@@ -156,6 +159,13 @@ export class TrapReceiver {
           try {
             const raw = this.rawBySource.get(sourceKey(notification.rinfo));
             this.rawBySource.delete(sourceKey(notification.rinfo));
+            if (raw) {
+              this.finishPacket(
+                raw,
+                'valid',
+                notification.pdu.type === snmp.PduType.InformRequest ? 'inform' : 'trap',
+              );
+            }
             this.onTrap(this.decode(notification, raw));
           } catch (decodeError) {
             this.drops += 1;
@@ -166,7 +176,7 @@ export class TrapReceiver {
     );
   }
 
-  private decode(n: Notification, raw?: Uint8Array): TrapRecord {
+  private decode(n: Notification, raw?: RawCapture): TrapRecord {
     const varbinds = (n.pdu.varbinds ?? []).map(decodeVarbind);
     const trapOid = trapOidFromPdu(n.pdu);
     const version = n.pdu.user
@@ -188,7 +198,7 @@ export class TrapReceiver {
       varbinds,
       trapOid,
       ...(typeof upTimeRaw === 'number' ? { sysUpTime: upTimeRaw } : {}),
-      ...(raw ? { rawPduHex: hex(raw) } : {}),
+      ...(raw ? { rawPduHex: bytesToPacketHex(raw.data) } : {}),
     };
   }
 
@@ -207,20 +217,40 @@ export class TrapReceiver {
       version: -1,
       pduType: -1,
       varbinds: [],
-      rawPduHex: hex(processing.buffer),
+      rawPduHex: bytesToPacketHex(processing.buffer),
       parseError: processing.error?.message ?? processing.message,
     };
   }
 
   private attachRawCapture(receiver: Receiver): void {
     for (const socket of receiverSockets(receiver)) {
+      this.attachRawSendCapture(socket);
       socket.on?.('message', (data, rinfo) => {
         const key = sourceKey(rinfo);
-        this.rawBySource.set(key, data);
+        const address = receiverSocketAddress(socket);
+        const capture: RawCapture = {
+          data: new Uint8Array(data),
+          event: {
+            id: `packet-${Date.now()}-${this.seq++}`,
+            timestamp: Date.now(),
+            direction: 'rx',
+            status: 'pending',
+            transport: rinfo.address.includes(':') ? 'udp6' : 'udp4',
+            operation: 'unknown',
+            ...(address ? { localAddress: address.address, localPort: address.port } : {}),
+            remoteAddress: rinfo.address,
+            remotePort: rinfo.port,
+            byteLength: data.length,
+            rawHex: bytesToPacketHex(data),
+          },
+        };
+        this.rawBySource.set(key, capture);
+        this.onPacket?.(capture.event);
         setTimeout(() => {
-          if (this.rawBySource.get(key) !== data) return;
+          if (this.rawBySource.get(key) !== capture) return;
           this.rawBySource.delete(key);
           this.drops += 1;
+          this.finishPacket(capture, 'invalid', 'unknown', 'Undecodable or unauthorized SNMP notification');
           this.onTrap({
             id: `trap-${Date.now()}-${this.seq++}`,
             receivedAt: Date.now(),
@@ -229,12 +259,71 @@ export class TrapReceiver {
             version: -1,
             pduType: -1,
             varbinds: [],
-            rawPduHex: hex(data),
+            rawPduHex: bytesToPacketHex(data),
             parseError: 'Undecodable or unauthorized SNMP notification',
           });
         }, 50);
       });
     }
+  }
+
+  private attachRawSendCapture(socket: ReceiverSocket): void {
+    if (!this.onPacket || !socket.send) return;
+    const originalSend = socket.send.bind(socket);
+    socket.send = (...args: unknown[]) => {
+      const librarySignature =
+        args.length >= 6 &&
+        typeof args[1] === 'number' &&
+        typeof args[2] === 'number' &&
+        typeof args[3] === 'number' &&
+        typeof args[4] === 'string';
+      if (!librarySignature) return originalSend(...args);
+      const source = args[0] as Uint8Array;
+      const offset = args[1] as number;
+      const length = args[2] as number;
+      const remotePort = args[3] as number;
+      const remoteAddress = args[4] as string;
+      const callback = args[5] as ((error?: Error | null, bytes?: number) => void) | undefined;
+      const raw = new Uint8Array(source).slice(offset, offset + length);
+      const local = receiverSocketAddress(socket);
+      const event: PacketTraceEvent = {
+        id: `packet-${Date.now()}-${this.seq++}`,
+        timestamp: Date.now(),
+        direction: 'tx',
+        status: 'pending',
+        transport: remoteAddress.includes(':') ? 'udp6' : 'udp4',
+        operation: 'response',
+        ...(local ? { localAddress: local.address, localPort: local.port } : {}),
+        remoteAddress,
+        remotePort,
+        byteLength: raw.length,
+        rawHex: bytesToPacketHex(raw),
+      };
+      this.onPacket?.(event);
+      args[5] = (error?: Error | null, bytes?: number) => {
+        this.onPacket?.({
+          ...event,
+          status: error ? 'invalid' : 'valid',
+          ...(error ? { error: error.message } : {}),
+        });
+        callback?.(error, bytes);
+      };
+      return originalSend(...args);
+    };
+  }
+
+  private finishPacket(
+    capture: RawCapture,
+    status: 'valid' | 'invalid',
+    operation: PacketTraceEvent['operation'],
+    error?: string,
+  ): void {
+    this.onPacket?.({
+      ...capture.event,
+      status,
+      operation,
+      ...(error ? { error } : {}),
+    });
   }
 
   async stop(): Promise<void> {
@@ -281,6 +370,7 @@ interface ReceiverSocket {
   off(event: 'listening', listener: () => void): this;
   off(event: 'error', listener: (error: Error) => void): this;
   on?(event: 'message', listener: (data: Uint8Array, rinfo: { address: string; port: number }) => void): this;
+  send?(...args: unknown[]): unknown;
   address(): unknown;
   close(callback?: () => void): this;
 }
@@ -289,12 +379,21 @@ function sourceKey(rinfo: { address: string; port: number }): string {
   return `${rinfo.address}:${rinfo.port}`;
 }
 
-function hex(bytes: Uint8Array): string {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
-}
+interface RawCapture { data: Uint8Array; event: PacketTraceEvent }
 
 interface ReceiverWithSockets extends Receiver {
   listener?: { sockets?: Record<string, ReceiverSocket> };
+}
+
+function receiverSocketAddress(socket: ReceiverSocket): { address: string; port: number } | null {
+  try {
+    const value = socket.address() as { address?: string; port?: number };
+    return typeof value.address === 'string' && typeof value.port === 'number'
+      ? { address: value.address, port: value.port }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function receiverSockets(receiver: Receiver): ReceiverSocket[] {

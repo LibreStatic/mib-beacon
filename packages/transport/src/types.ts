@@ -79,6 +79,7 @@ export interface CryptoProvider {
 export interface FileStore {
   readText(path: string): Promise<string>;
   writeText(path: string, content: string): Promise<void>;
+  appendText(path: string, content: string): Promise<void>;
   readBytes(path: string): Promise<Uint8Array>;
   writeBytes(path: string, data: Uint8Array): Promise<void>;
   exists(path: string): Promise<boolean>;

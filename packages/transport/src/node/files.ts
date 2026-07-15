@@ -13,6 +13,10 @@ export function createNodeFileStore(dataDir?: string): FileStore {
       await fs.mkdir(path.dirname(p), { recursive: true });
       await fs.writeFile(p, content, 'utf8');
     },
+    async appendText(p, content) {
+      await fs.mkdir(path.dirname(p), { recursive: true });
+      await fs.appendFile(p, content, 'utf8');
+    },
     async readBytes(p) {
       return new Uint8Array(await fs.readFile(p));
     },

@@ -3,7 +3,7 @@
  * carrying a handleId, per docs/plans/01. Maps 1:1 onto Electron IPC on desktop
  * and an in-process emitter on mobile.
  */
-export type EngineEventChannel = 'ops' | 'traps' | 'resolver' | 'tools' | 'logs';
+export type EngineEventChannel = 'ops' | 'traps' | 'resolver' | 'tools' | 'logs' | 'packets';
 
 export interface EngineEvent<T = unknown> {
   channel: EngineEventChannel;

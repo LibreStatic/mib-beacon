@@ -117,4 +117,5 @@ export type {
   NotificationSendResult,
 } from './snmp/types';
 export type { TrapRecord, TrapReceiverConfig, TrapV3User } from './snmp/receiver';
+export type { PacketTraceEvent, PacketTraceServiceStatus, PacketTraceSettings } from './packet-trace';
 export { createEngineProxy, type ProxyAdapter, type BridgeResult } from './proxy';

@@ -1,6 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { Platform, SafeAreaView, StatusBar, useColorScheme } from 'react-native';
+import { File, Paths } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
+import * as Sharing from 'expo-sharing';
+import { Buffer } from 'buffer';
 import { createReactNativeTransport } from '@mibbeacon/transport/react-native';
 import { createEngine } from '@mibbeacon/core';
 import type { AgentSpec } from '@mibbeacon/core/client';
@@ -9,6 +12,7 @@ import {
   AppRoot,
   FileImportProvider,
   type FileImportAdapter,
+  type AppHostAdapter,
   type PaletteHistoryStorage,
 } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
@@ -79,6 +83,35 @@ export default function App() {
     }),
     [],
   );
+  const host = useMemo<AppHostAdapter>(
+    () => ({
+      canOpenWindow: false,
+      newWindow: () => undefined,
+      async savePacketCapture(capture) {
+        if (!(await Sharing.isAvailableAsync())) throw new Error('File sharing is unavailable.');
+        const file = new File(Paths.cache, capture.fileName);
+        if (file.exists) file.delete();
+        file.create({ intermediates: true });
+        const handle = file.open();
+        try {
+          let offset = 0;
+          while (offset < capture.byteLength) {
+            const chunk = await capture.readChunk(offset);
+            handle.writeBytes(new Uint8Array(Buffer.from(chunk.base64, 'base64')));
+            offset = chunk.nextOffset;
+            if (chunk.done) break;
+          }
+        } finally {
+          handle.close();
+        }
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'application/vnd.tcpdump.pcap',
+          dialogTitle: 'Export MIB Beacon packet capture',
+        });
+      },
+    }),
+    [],
+  );
   const paletteHistoryStorage = useMemo<PaletteHistoryStorage>(
     () => ({
       getItem: (key) => Storage.getItem(key),
@@ -99,7 +132,7 @@ export default function App() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <EngineProvider engine={engine}>
         <FileImportProvider adapter={fileImportAdapter}>
-          <AppRoot paletteHistoryStorage={paletteHistoryStorage} />
+          <AppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
         </FileImportProvider>
       </EngineProvider>
     </SafeAreaView>

@@ -30,7 +30,10 @@ import type {
   AgentProfile,
   AgentGroup,
   TableIndexDescriptor,
+  PacketTraceEvent,
+  PacketTraceServiceStatus,
 } from '@mibbeacon/core/client';
+import { upsertPacketTrace } from './packet-console';
 
 export type Tab = 'browse' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
 export type AppThemeMode = 'system' | 'light' | 'dark';
@@ -126,6 +129,17 @@ export interface AppState {
   densityMode: AppDensityMode;
   setThemeMode: (mode: AppThemeMode) => void;
   setDensityMode: (mode: AppDensityMode) => void;
+
+  packetConsoleOpen: boolean;
+  packetFeedPaused: boolean;
+  packetEvents: PacketTraceEvent[];
+  packetStatus: PacketTraceServiceStatus | null;
+  setPacketConsoleOpen: (open: boolean) => void;
+  setPacketFeedPaused: (paused: boolean) => void;
+  setPacketEvents: (events: PacketTraceEvent[]) => void;
+  addPacketEvent: (event: PacketTraceEvent) => void;
+  setPacketStatus: (status: PacketTraceServiceStatus) => void;
+  clearPacketEvents: () => void;
 
   // --- browse ---
   expanded: Record<string, boolean>;
@@ -400,6 +414,19 @@ export const useAppStore = create<AppState>((set) => ({
     writeUiPreference('mibbeacon:density', densityMode);
     set({ densityMode });
   },
+  packetConsoleOpen: false,
+  packetFeedPaused: false,
+  packetEvents: [],
+  packetStatus: null,
+  setPacketConsoleOpen: (packetConsoleOpen) => set({ packetConsoleOpen }),
+  setPacketFeedPaused: (packetFeedPaused) => set({ packetFeedPaused }),
+  setPacketEvents: (packetEvents) => set({ packetEvents: packetEvents.slice(-500) }),
+  addPacketEvent: (event) =>
+    set((state) =>
+      state.packetFeedPaused ? {} : { packetEvents: upsertPacketTrace(state.packetEvents, event) },
+    ),
+  setPacketStatus: (packetStatus) => set({ packetStatus }),
+  clearPacketEvents: () => set({ packetEvents: [] }),
 
   expanded: {},
   childrenCache: {},

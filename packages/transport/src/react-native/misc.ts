@@ -2,6 +2,7 @@
 // SDK 54 moved the string-path API to the /legacy entry (the new File/Directory
 // API lands with the MIB cache work in plan 03).
 import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import QuickCrypto from 'react-native-quick-crypto';
 import type { CryptoProvider, FileStore, SecretStore, HttpClient } from '../types';
@@ -27,6 +28,17 @@ export function createRnFileStore(): FileStore {
     },
     async writeText(p, content) {
       await FileSystem.writeAsStringAsync(p, content);
+    },
+    async appendText(p, content) {
+      const file = new File(p);
+      if (!file.exists) file.create({ intermediates: true });
+      const handle = file.open();
+      try {
+        handle.offset = handle.size ?? 0;
+        handle.writeBytes(new TextEncoder().encode(content));
+      } finally {
+        handle.close();
+      }
     },
     async readBytes(p) {
       const b64 = await FileSystem.readAsStringAsync(p, {
