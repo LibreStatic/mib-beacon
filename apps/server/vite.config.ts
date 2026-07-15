@@ -9,6 +9,7 @@ export default defineConfig({
     extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
   },
   define: {
+    global: 'globalThis',
     __DEV__: 'false',
     'process.env.NODE_ENV': '"production"',
   },

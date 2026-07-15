@@ -60,4 +60,12 @@ describe('web LAN runtime', () => {
     expect(dockerfile).toContain('HEALTHCHECK');
     expect(dockerfile).toContain('CMD ["node", "dist/server.cjs"]');
   });
+
+  it('provides the Node-style global expected by React Native animation internals', () => {
+    const serverVite = read('apps/server/vite.config.ts');
+    const desktopVite = read('apps/desktop/electron.vite.config.ts');
+
+    expect(serverVite).toContain("global: 'globalThis'");
+    expect(desktopVite).toContain("global: 'globalThis'");
+  });
 });

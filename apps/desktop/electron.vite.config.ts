@@ -19,6 +19,7 @@ export default defineConfig({
       extensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
     },
     define: {
+      global: 'globalThis',
       __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'development'),
     },
