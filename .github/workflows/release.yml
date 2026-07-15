@@ -560,7 +560,7 @@ jobs:
           flatpak install --user --noninteractive --bundle "$bundle"
           timeout 120s xvfb-run --auto-servernum \
             flatpak run --user com.librestatic.mibbeacon --smoke-test \
-            >flatpak-package-smoke.log 2>&1
+            2>&1 | tee flatpak-package-smoke.log
           grep -q 'ENGINE_READY' flatpak-package-smoke.log
           grep -q 'SMOKE_MAIN_WINDOW_READY' flatpak-package-smoke.log
           flatpak uninstall --user --noninteractive --delete-data com.librestatic.mibbeacon

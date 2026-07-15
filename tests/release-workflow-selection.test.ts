@@ -37,4 +37,8 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain('sudo chown root:root "$sandbox"');
     expect(workflow).toContain('sudo chmod 4755 "$sandbox"');
   });
+
+  it('streams the hosted Flatpak smoke log into Actions output', () => {
+    expect(workflow).toContain('2>&1 | tee flatpak-package-smoke.log');
+  });
 });
