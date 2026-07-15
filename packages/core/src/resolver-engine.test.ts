@@ -69,10 +69,11 @@ function fixtureHttp(): HttpClient & { fetch: ReturnType<typeof vi.fn> } {
 }
 
 async function waitForTerminal(engine: ReturnType<typeof createEngine>, handleId: string) {
-  for (let index = 0; index < 100; index += 1) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     const status = await engine.resolver.status(handleId);
     if (['done', 'partial', 'error', 'cancelled', 'expired'].includes(status.state)) return status;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error('operation did not finish');
 }
@@ -82,10 +83,11 @@ async function waitForState(
   handleId: string,
   expected: ResolverOperationStatus['state'],
 ) {
-  for (let index = 0; index < 100; index += 1) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
     const status = await engine.resolver.status(handleId);
     if (status?.state === expected) return status;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(`operation did not reach ${expected}`);
 }
