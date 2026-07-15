@@ -43,5 +43,11 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain('dbus-run-session -- xvfb-run --auto-servernum');
     expect(workflow).toContain('*-flatpak-source-x86_64.tar.xz');
     expect(workflow).toContain('[[ -x packaging/flatpak/staging/app/mib-beacon ]]');
+    expect(workflow).toContain('libnspr4');
+    expect(workflow).toContain('libgtk-3-0t64');
+    expect(workflow).toContain('[[ "${ACT:-}" == true ]] && electron_args+=(--no-sandbox)');
+    expect(workflow).toContain('flatpak_args+=(--no-sandbox)');
+    expect(workflow).toContain('dbus-daemon --system --fork');
+    expect(workflow).toContain('dbus-run-session -- flatpak uninstall');
   });
 });
