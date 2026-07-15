@@ -412,6 +412,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          sandbox=apps/desktop/release/linux-unpacked/chrome-sandbox
+          sudo chown root:root "$sandbox"
+          sudo chmod 4755 "$sandbox"
           timeout 45s xvfb-run --auto-servernum apps/desktop/release/linux-unpacked/mib-beacon --smoke-test 2>&1 | tee electron-smoke.log
           grep -q 'ENGINE_READY' electron-smoke.log
           grep -q 'SMOKE_MAIN_WINDOW_READY' electron-smoke.log
@@ -568,7 +571,7 @@ jobs:
           {
             echo '## Hosted Flatpak package smoke'
             echo
-            echo '- Bundle identity: `com.librestatic.mibbeacon`'
+            echo "- Bundle identity: \`com.librestatic.mibbeacon\`"
             echo '- Install/main-window launch/uninstall: passed'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

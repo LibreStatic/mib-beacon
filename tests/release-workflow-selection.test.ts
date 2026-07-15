@@ -32,4 +32,9 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain("needs.verify.outputs.apk == 'true'");
     expect(workflow).toContain("needs.verify.outputs.ipa == 'true'");
   });
+
+  it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {
+    expect(workflow).toContain('sudo chown root:root "$sandbox"');
+    expect(workflow).toContain('sudo chmod 4755 "$sandbox"');
+  });
 });
