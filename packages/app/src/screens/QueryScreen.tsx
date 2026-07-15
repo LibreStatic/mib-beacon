@@ -23,6 +23,7 @@ import type {
   SecurityLevel,
   SnmpVersion,
   WalkSnapshotSummary,
+  MibNodeDetail,
 } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore, type QueryOperation } from '../store';
@@ -48,6 +49,11 @@ import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
 import { shouldUseEmbeddedQuerySplit } from '../responsive-layout';
 import { serializeQueryResults, type ResultExportFormat } from '../result-export';
+import {
+  canOpenResultTable,
+  copyResultText,
+  resolveResultNode,
+} from '../query-result-actions';
 import {
   buildTableRows,
   encodeTableIndex,
@@ -1172,6 +1178,27 @@ function TableViewResult() {
 function VarbindRow({ vb }: { vb: DecodedVarbind }) {
   const engine = useEngine();
   const t = useTheme();
+  const [resolvedNode, setResolvedNode] = useState<MibNodeDetail | null | undefined>(undefined);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setResolvedNode(undefined);
+    void resolveResultNode(engine.mibs, vb.oid)
+      .then((node) => {
+        if (active) setResolvedNode(node);
+      })
+      .catch(() => {
+        if (active) setResolvedNode(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [engine, vb.oid]);
+
+  const loadNode = () =>
+    resolvedNode === undefined ? resolveResultNode(engine.mibs, vb.oid) : Promise.resolve(resolvedNode);
+
   return (
     <View style={[styles.vbRow, { borderBottomColor: t.border }]}>
       <View style={styles.vbSummary}>
@@ -1210,47 +1237,67 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
           title="Set…"
           small
           variant="ghost"
-          onPress={() =>
-            void engine.mibs.node(vb.oid).then((node) => {
-              const state = useAppStore.getState();
-              if (node && !/write|create/i.test(node.access ?? '')) {
-                state.setQueryError(`${node.name} is not writable according to the loaded MIB.`);
-                return;
-              }
-              state.setOid(vb.oid);
-              state.setQueryOperation('set');
-              state.updateSetDraft({
-                oid: vb.oid,
-                type: inferWireType(node?.syntax),
-                value: String(vb.rawValue ?? vb.value),
-              });
-            })
-          }
+          onPress={() => {
+            void loadNode()
+              .then((node) => {
+                const state = useAppStore.getState();
+                if (node && !/write|create/i.test(node.access ?? '')) {
+                  state.setQueryError(`${node.name} is not writable according to the loaded MIB.`);
+                  return;
+                }
+                state.setOid(vb.oid);
+                state.setQueryOperation('set');
+                state.updateSetDraft({
+                  oid: vb.oid,
+                  type: inferWireType(node?.syntax),
+                  value: String(vb.rawValue ?? vb.value),
+                });
+              })
+              .catch((nodeError) =>
+                useAppStore
+                  .getState()
+                  .setQueryError(nodeError instanceof Error ? nodeError.message : String(nodeError)),
+              );
+          }}
         />
         <Button
           title="Inspect"
           small
           variant="ghost"
-          onPress={() =>
-            void engine.mibs.node(vb.oid).then((node) => {
-              if (!node) return;
-              const state = useAppStore.getState();
-              state.setSelected(node);
-              state.setTab('browse');
-            })
-          }
+          onPress={() => {
+            void loadNode()
+              .then((node) => {
+                if (!node) {
+                  useAppStore
+                    .getState()
+                    .setQueryError(`No loaded MIB definition matches ${vb.oid}.`);
+                  return;
+                }
+                const state = useAppStore.getState();
+                state.setSelected(node);
+                state.setTab('browse');
+              })
+              .catch((nodeError) =>
+                useAppStore
+                  .getState()
+                  .setQueryError(nodeError instanceof Error ? nodeError.message : String(nodeError)),
+              );
+          }}
         />
-        <Button
-          title="Open table"
-          small
-          variant="ghost"
-          onPress={() =>
-            void engine.mibs.resolve(vb.oid).then(async (resolved) => {
-              const node = resolved ? await engine.mibs.node(resolved.definitionOid) : null;
-              if (node) await openTableView(engine, node);
-            })
-          }
-        />
+        {canOpenResultTable(resolvedNode) ? (
+          <Button
+            title="Open table"
+            small
+            variant="ghost"
+            onPress={() => {
+              void openTableView(engine, resolvedNode!).catch((error) =>
+                useAppStore
+                  .getState()
+                  .setQueryError(error instanceof Error ? error.message : String(error)),
+              );
+            }}
+          />
+        ) : null}
         {isNumericVarbind(vb) && (vb.agentId || useAppStore.getState().selectedAgentId) ? (
           <Button
             title="Graph"
@@ -1260,16 +1307,22 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
           />
         ) : null}
         <Button
-          title="Copy row"
+          title={copied ? 'Copied' : 'Copy row'}
           small
           variant="ghost"
           onPress={() => {
             const text = `${vb.name ?? vb.oid}\t${vb.formattedValue ?? vb.value}\t${vb.typeName}`;
-            if (typeof navigator !== 'undefined' && navigator.clipboard) {
-              void navigator.clipboard.writeText(text);
-            } else {
-              void Share.share({ message: text, title: 'MIB Beacon result row' });
-            }
+            const action =
+              typeof document !== 'undefined'
+                ? copyResultText(text)
+                : Share.share({ message: text, title: 'MIB Beacon result row' }).then(() => undefined);
+            void action
+              .then(() => setCopied(true))
+              .catch((copyError) =>
+                useAppStore
+                  .getState()
+                  .setQueryError(copyError instanceof Error ? copyError.message : String(copyError)),
+              );
           }}
         />
       </Row>
