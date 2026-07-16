@@ -242,6 +242,9 @@ published on Flathub, install the downloaded `.flatpak` file directly.
 3. Run the installer and choose the installation directory when prompted.
 4. Start **MIB Beacon** from the Start menu.
 
+The installer is machine-wide so it can register `.mib`, `.my`, and `.smi` file
+associations; Windows will ask for administrator approval.
+
 The tag workflow distributes a clearly named unsigned Windows beta installer by default.
 It verifies that the installer and installed executable are intentionally unsigned, then
 installs, launches, verifies file associations, and uninstalls it before publication.

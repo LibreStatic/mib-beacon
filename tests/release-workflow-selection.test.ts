@@ -68,6 +68,7 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain("'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall'");
     expect(workflow).toContain("'HKCU:\\Software\\Classes'");
     expect(workflow).toContain("'HKLM:\\Software\\Classes'");
+    expect(workflow).toContain("DisplayName -eq 'MIB Beacon ${{ needs.verify.outputs.version }}'");
   });
 
   it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {

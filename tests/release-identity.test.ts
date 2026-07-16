@@ -84,7 +84,7 @@ describe('release identity', () => {
     const desktop = JSON.parse(read('apps/desktop/package.json')) as {
       name: string;
       description: string;
-      build?: { productName?: string; artifactName?: string };
+      build?: { productName?: string; artifactName?: string; nsis?: { perMachine?: boolean } };
     };
 
     expect(mobile.expo.name).toBe(PRODUCT_NAME);
@@ -94,6 +94,7 @@ describe('release identity', () => {
     expect(desktop.description).toContain('SNMP toolkit');
     expect(desktop.build?.productName).toBe(PRODUCT_NAME);
     expect(desktop.build?.artifactName).toBe('MIB-Beacon-${version}-${os}-${arch}.${ext}');
+    expect(desktop.build?.nsis?.perMachine).toBe(true);
   });
 
   it('uses the packaged MIB Beacon mark in the application chrome', () => {
