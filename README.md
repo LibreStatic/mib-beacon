@@ -439,6 +439,19 @@ ACLs.
 `compose.yml` is the canonical definition. `docker-compose.yml` is a compatibility
 symlink for tools that still require the legacy filename.
 
+The server persists saved SNMP credentials only in authenticated encrypted form. Before
+the first start, create a stable 32-byte key and keep it in a password/secret manager;
+the same value is required on every later restart so existing profiles remain readable.
+Do not commit the key or place it in a client-accessible file.
+
+On startup, the server verifies that this key decrypts all saved credentials before it
+begins listening. If the key was changed or a credential file was tampered with, startup
+fails rather than reporting a healthy server that cannot use its saved profiles.
+
+```bash
+export MIB_BEACON_SERVER_SECRET_KEY="$(openssl rand -base64 32)"
+```
+
 ```bash
 docker compose up --build -d
 docker compose logs -f mibbeacon-server
@@ -472,6 +485,7 @@ router. An SNMP daemon must also authorize the queried address: host networking 
 For source development without Docker:
 
 ```bash
+# Set MIB_BEACON_SERVER_SECRET_KEY as shown above before running this command.
 pnpm dev:server
 # Open http://<server-ip>:8899
 ```
@@ -483,6 +497,7 @@ Configuration variables:
 | `MIB_BEACON_SERVER_HOST` | `0.0.0.0`             | Address on which the server listens |
 | `MIB_BEACON_SERVER_PORT` | `8899`                | HTTP/WebSocket port                 |
 | `MIB_BEACON_SERVER_DATA` | `~/.mibbeacon/server` | Database/cache directory            |
+| `MIB_BEACON_SERVER_SECRET_KEY` | Required | Base64-encoded 32-byte key used to encrypt saved credentials |
 
 **The LAN server has no authentication.** Run it only on a trusted, firewalled network;
 never forward its ports from a router or expose them to the internet. Anyone who can

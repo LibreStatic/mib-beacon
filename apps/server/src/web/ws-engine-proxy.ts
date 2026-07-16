@@ -15,6 +15,12 @@ interface EventMessage {
   event: EngineEvent;
 }
 
+export function omitTrailingUndefined(args: readonly unknown[]): unknown[] {
+  let end = args.length;
+  while (end > 0 && args[end - 1] === undefined) end -= 1;
+  return args.slice(0, end);
+}
+
 /**
  * Browser-side EngineAPI: the shared proxy (@mibbeacon/core/client) over a WebSocket to
  * the LAN server, which runs the real engine. Auto-reconnects.
@@ -58,7 +64,7 @@ export function makeWsEngineProxy(): EngineAPI {
       const id = nextId++;
       return new Promise<BridgeResult>((resolve) => {
         pending.set(id, resolve);
-        ws.send(JSON.stringify({ type: 'call', id, method, args }));
+        ws.send(JSON.stringify({ type: 'call', id, method, args: omitTrailingUndefined(args) }));
       });
     },
     subscribe(listener) {

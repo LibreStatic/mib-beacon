@@ -13,6 +13,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { createNodeTransport } from '@mibbeacon/transport/node';
 import { createEngine } from '@mibbeacon/core';
 import { dispatchEngineCall, ENGINE_EVENT_CHANNELS } from '@mibbeacon/core/bridge';
+import { createServerSecretStore, verifyServerSecretStore } from './secrets';
 
 const PORT = Number(process.env.MIB_BEACON_SERVER_PORT ?? 8899);
 const HOST = process.env.MIB_BEACON_SERVER_HOST ?? '0.0.0.0';
@@ -32,7 +33,13 @@ const CONTENT_TYPES: Record<string, string> = {
 
 async function main() {
   await mkdir(DATA_DIR, { recursive: true });
-  const engine = createEngine(createNodeTransport({ dataDir: DATA_DIR }), {
+  const secretStoreOptions = {
+    filePath: path.join(DATA_DIR, 'credentials.json'),
+    key: process.env.MIB_BEACON_SERVER_SECRET_KEY,
+  };
+  await verifyServerSecretStore(secretStoreOptions);
+  const secrets = createServerSecretStore(secretStoreOptions);
+  const engine = createEngine(createNodeTransport({ dataDir: DATA_DIR, secrets }), {
     dbPath: path.join(DATA_DIR, 'mibbeacon.db'),
   });
 
