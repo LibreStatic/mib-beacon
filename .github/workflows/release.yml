@@ -279,7 +279,13 @@ jobs:
           $installation = Start-Process $installer.FullName -ArgumentList '/S' -PassThru -Wait
           if ($installation.ExitCode -ne 0) { throw "NSIS install failed: $($installation.ExitCode)" }
 
-          $uninstallKey = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+          $uninstallRoots = @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          )
+          $uninstallKey = $uninstallRoots |
+            Where-Object { Test-Path $_ } |
+            ForEach-Object { Get-ChildItem $_ } |
             ForEach-Object { Get-ItemProperty $_.PSPath } |
             Where-Object { $_.DisplayName -eq 'MIB Beacon' } |
             Select-Object -First 1
@@ -309,12 +315,20 @@ jobs:
             throw "Installed executable should be unsigned: $($appSignature.Status)"
           }
 
+          $classRoots = @(
+            'HKCU:\Software\Classes',
+            'HKLM:\Software\Classes'
+          )
           foreach ($extension in @('.mib', '.my', '.smi')) {
-            $extensionKey = "HKCU:\Software\Classes\$extension"
+            $extensionKey = $classRoots |
+              ForEach-Object { Join-Path $_ $extension } |
+              Where-Object { Test-Path $_ } |
+              Select-Object -First 1
             if (-not (Test-Path $extensionKey)) { throw "Missing file association: $extension" }
             $progId = (Get-Item $extensionKey).GetValue('')
             if (-not $progId) { throw "Missing ProgID for $extension" }
-            $commandKey = "HKCU:\Software\Classes\$progId\shell\open\command"
+            $classRoot = Split-Path -Parent $extensionKey
+            $commandKey = Join-Path $classRoot "$progId\shell\open\command"
             if (-not (Test-Path $commandKey)) { throw "Missing open command for $extension ($progId)" }
             $openCommand = (Get-Item $commandKey).GetValue('')
             if ($openCommand -notlike '*mib-beacon.exe*') {

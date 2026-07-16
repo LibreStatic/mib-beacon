@@ -63,6 +63,13 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain('Expected an unsigned macOS application');
   });
 
+  it('finds NSIS uninstall and file-association registrations for either install scope', () => {
+    expect(workflow).toContain("'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall'");
+    expect(workflow).toContain("'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall'");
+    expect(workflow).toContain("'HKCU:\\Software\\Classes'");
+    expect(workflow).toContain("'HKLM:\\Software\\Classes'");
+  });
+
   it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {
     expect(workflow).toContain('sudo chown root:root "$sandbox"');
     expect(workflow).toContain('sudo chmod 4755 "$sandbox"');
