@@ -69,6 +69,8 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain("'HKCU:\\Software\\Classes'");
     expect(workflow).toContain("'HKLM:\\Software\\Classes'");
     expect(workflow).toContain("DisplayName -eq 'MIB Beacon ${{ needs.verify.outputs.version }}'");
+    expect(workflow).toContain('$uninstallKey.UninstallString');
+    expect(workflow).toContain('Split-Path -Parent $uninstallerPath');
   });
 
   it('gives the Android release build enough JVM metaspace', () => {

@@ -297,7 +297,14 @@ jobs:
             throw "Unexpected installed version: $($uninstallKey.DisplayVersion)"
           }
 
-          $app = Join-Path $uninstallKey.InstallLocation 'mib-beacon.exe'
+          $uninstallerPath = [regex]::Match($uninstallKey.UninstallString, '^\s*"([^"]+)"').Groups[1].Value
+          if (-not $uninstallerPath) {
+            $uninstallerPath = ($uninstallKey.UninstallString -split '\s+')[0]
+          }
+          if (-not $uninstallerPath) { throw 'MIB Beacon uninstall command is missing' }
+          $installLocation = $uninstallKey.InstallLocation
+          if (-not $installLocation) { $installLocation = Split-Path -Parent $uninstallerPath }
+          $app = Join-Path $installLocation 'mib-beacon.exe'
           if (-not (Test-Path $app -PathType Leaf)) { throw "Installed executable missing: $app" }
           $versionInfo = (Get-Item $app).VersionInfo
           if ($versionInfo.ProductName -ne 'MIB Beacon') {
@@ -349,8 +356,11 @@ jobs:
             throw 'Installed application did not report SMOKE_MAIN_WINDOW_READY'
           }
 
-          $uninstaller = Get-ChildItem $uninstallKey.InstallLocation -Filter 'Uninstall*.exe' -File |
-            Select-Object -First 1
+          $uninstaller = if (Test-Path $uninstallerPath -PathType Leaf) {
+            Get-Item $uninstallerPath
+          } else {
+            Get-ChildItem $installLocation -Filter 'Uninstall*.exe' -File | Select-Object -First 1
+          }
           if (-not $uninstaller) { throw 'NSIS uninstaller was not installed' }
           $removal = Start-Process $uninstaller.FullName -ArgumentList '/S' -PassThru -Wait
           if ($removal.ExitCode -ne 0) { throw "NSIS uninstall failed: $($removal.ExitCode)" }
