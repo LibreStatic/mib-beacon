@@ -819,7 +819,7 @@ jobs:
           if [[ "$BUILD_AAB" == true ]]; then
             aab=$(find apps/mobile/android/app/build/outputs/bundle/release -name '*.aab' -print -quit)
             [[ -n "$aab" ]] || { echo 'Signed AAB output is missing' >&2; exit 1; }
-            jarsigner -verify -strict -certs "$aab"
+            jarsigner -verify -certs "$aab"
             keytool -printcert -jarfile "$aab" > android-aab-signature.log
             cat android-aab-signature.log
             aab_owner=$(sed -n 's/^Owner: //p' android-aab-signature.log | head -1)

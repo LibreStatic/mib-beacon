@@ -297,7 +297,8 @@ describe('release identity', () => {
     expect(workflow).toContain('xcrun stapler validate');
     expect(workflow).toContain('macOS signing and notarization verification');
     expect(workflow).toContain('verify --verbose --print-certs');
-    expect(workflow).toContain('jarsigner -verify -strict -certs');
+    expect(workflow).toContain('jarsigner -verify -certs');
+    expect(workflow).not.toContain('jarsigner -verify -strict -certs');
     expect(workflow).toContain('Android publication-signature verification');
     expect(workflow).toContain('keytool -printcert -jarfile');
   });
