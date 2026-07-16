@@ -2,15 +2,87 @@
  * Runtime copy of the canonical package mark in assets/brand/mib-beacon.svg.
  * tests/release-identity.test.ts keeps both representations byte-for-byte aligned.
  */
-export const MIB_BEACON_MARK_SVG = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">MIB Beacon mark</title>
-  <desc id="desc">A network node emitting three beacon arcs above an OID tree stem.</desc>
-  <rect width="512" height="512" rx="112" fill="#0b0e13"/>
-  <path d="M116 218a198 198 0 0 1 280 0" fill="none" stroke="#72a7ff" stroke-width="34" stroke-linecap="round"/>
-  <path d="M166 270a128 128 0 0 1 180 0" fill="none" stroke="#5ee0ae" stroke-width="34" stroke-linecap="round"/>
-  <path d="M214 320a60 60 0 0 1 84 0" fill="none" stroke="#ffd166" stroke-width="34" stroke-linecap="round"/>
-  <circle cx="256" cy="366" r="34" fill="#e8ecf3"/>
-  <path d="M256 400v42m0-20h-74m74 0h74" fill="none" stroke="#e8ecf3" stroke-width="22" stroke-linecap="round"/>
-  <circle cx="182" cy="442" r="18" fill="#72a7ff"/>
-  <circle cx="330" cy="442" r="18" fill="#5ee0ae"/>
+export const MIB_BEACON_MARK_SVG = String.raw`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <title>MIB Beacon</title>
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <polygon points="200,20 356,110 356,290 200,380 44,290 44,110" fill="url(#bg-grad)" filter="url(#shadow)" stroke="#334155" stroke-width="2" />
+
+  <g stroke="#38BDF8" stroke-width="1.5" opacity="0.12" fill="none">
+    <circle cx="200" cy="200" r="50" />
+    <circle cx="200" cy="200" r="90" />
+    <circle cx="200" cy="200" r="130" />
+    <circle cx="200" cy="200" r="170" />
+    <line x1="45" y1="200" x2="355" y2="200" stroke-dasharray="4 4" />
+    <line x1="200" y1="20" x2="200" y2="380" stroke-dasharray="4 4" />
+  </g>
+
+  <g stroke="#38BDF8" stroke-width="4" stroke-linecap="round" opacity="0.9">
+    <line x1="200" y1="115" x2="110" y2="80" />
+    <line x1="200" y1="115" x2="200" y2="45" />
+    <line x1="200" y1="115" x2="290" y2="80" />
+    <line x1="110" y1="80" x2="75" y2="115" />
+    <line x1="110" y1="80" x2="110" y2="35" />
+    <line x1="290" y1="80" x2="325" y2="115" />
+    <line x1="290" y1="80" x2="290" y2="35" />
+  </g>
+
+  <g fill="#F8FAFC" stroke="#0F172A" stroke-width="3">
+    <circle cx="110" cy="80" r="9" />
+    <circle cx="200" cy="45" r="11" />
+    <circle cx="290" cy="80" r="9" />
+    <circle cx="75" cy="115" r="7" />
+    <circle cx="110" cy="35" r="7" />
+    <circle cx="325" cy="115" r="7" />
+    <circle cx="290" cy="35" r="7" />
+  </g>
+
+  <path d="M 140 340 L 260 340 L 255 355 L 145 355 Z" fill="#475569" />
+  <path d="M 145 355 L 255 355 L 250 365 L 150 365 Z" fill="#1E293B" />
+  <line x1="140" y1="340" x2="260" y2="340" stroke="#64748B" stroke-width="2" />
+
+  <polygon points="200,340 160,340 180,180 200,180" fill="#CBD5E1" />
+  <polygon points="200,340 240,340 220,180 200,180" fill="#F8FAFC" />
+  <polygon points="200,290 166.5,290 173,240 200,240" fill="#0284C7" />
+  <polygon points="200,290 233.5,290 227,240 200,240" fill="#38BDF8" />
+
+  <path d="M 165 180 L 235 180 L 230 186 L 170 186 Z" fill="#475569" />
+  <line x1="168" y1="172" x2="232" y2="172" stroke="#94A3B8" stroke-width="2" />
+  <line x1="168" y1="172" x2="168" y2="180" stroke="#94A3B8" stroke-width="2" />
+  <line x1="184" y1="172" x2="184" y2="180" stroke="#94A3B8" stroke-width="2" />
+  <line x1="200" y1="172" x2="200" y2="180" stroke="#94A3B8" stroke-width="2" />
+  <line x1="216" y1="172" x2="216" y2="180" stroke="#94A3B8" stroke-width="2" />
+  <line x1="232" y1="172" x2="232" y2="180" stroke="#94A3B8" stroke-width="2" />
+
+  <polygon points="180,180 220,180 215,140 185,140" fill="#0F172A" opacity="0.8" />
+  <rect x="196" y="145" width="8" height="35" fill="#1E293B" />
+  <circle cx="200" cy="155" r="45" fill="#FBBF24" opacity="0.1" />
+  <circle cx="200" cy="155" r="25" fill="#FBBF24" opacity="0.25" filter="url(#glow)" />
+  <circle cx="200" cy="155" r="8" fill="#FEF08A" filter="url(#glow)" />
+
+  <polygon points="180,180 200,180 195,140 185,140" fill="#E0F2FE" opacity="0.15" />
+  <line x1="185" y1="140" x2="180" y2="180" stroke="#64748B" stroke-width="1.5" />
+  <line x1="215" y1="140" x2="220" y2="180" stroke="#64748B" stroke-width="1.5" />
+  <line x1="200" y1="140" x2="200" y2="180" stroke="#94A3B8" stroke-width="1.5" />
+  <path d="M 180 140 L 220 140 L 200 115 Z" fill="#334155" />
+  <path d="M 200 140 L 220 140 L 200 115 Z" fill="#475569" />
+
+  <g fill="none" stroke="#FBBF24" stroke-width="3" stroke-linecap="round" opacity="0.8">
+    <path d="M 175 145 A 25 25 0 0 0 175 165" />
+    <path d="M 165 135 A 40 40 0 0 0 165 175" opacity="0.5" />
+    <path d="M 225 145 A 25 25 0 0 1 225 165" />
+    <path d="M 235 135 A 40 40 0 0 1 235 175" opacity="0.5" />
+  </g>
 </svg>`;

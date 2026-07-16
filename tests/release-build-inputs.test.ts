@@ -14,9 +14,12 @@ describe('release build inputs', () => {
     expect(desktop.build.afterSign).toBe('scripts/notarize.cjs');
     expect(mobile.expo.icon).toBe('../../assets/brand/mib-beacon.png');
     expect(mobile.expo.android.adaptiveIcon.foregroundImage).toBe(
-      '../../assets/brand/mib-beacon.png',
+      '../../assets/brand/mib-beacon-adaptive-foreground.png',
     );
     expect(existsSync(new URL('../assets/brand/mib-beacon.png', import.meta.url))).toBe(true);
+    expect(
+      existsSync(new URL('../assets/brand/mib-beacon-adaptive-foreground.png', import.meta.url)),
+    ).toBe(true);
     expect(existsSync(new URL('../apps/desktop/scripts/notarize.cjs', import.meta.url))).toBe(true);
   });
 });

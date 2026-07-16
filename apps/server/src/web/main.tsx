@@ -13,6 +13,20 @@ function Root() {
 }
 
 AppRegistry.registerComponent('MibBeacon', () => Root);
+const root = document.getElementById('root');
+if (!root) throw new Error('Missing application root.');
+
+const bootScreen = root.querySelector<HTMLElement>('.boot-screen');
+const appRoot = document.createElement('div');
+appRoot.id = 'app-root';
+root.append(appRoot);
+
 AppRegistry.runApplication('MibBeacon', {
-  rootTag: document.getElementById('root'),
+  rootTag: appRoot,
+});
+
+window.requestAnimationFrame(() => {
+  bootScreen?.setAttribute('aria-hidden', 'true');
+  bootScreen?.classList.add('boot-screen--exit');
+  window.setTimeout(() => bootScreen?.remove(), 120);
 });

@@ -1,5 +1,9 @@
 # MIB Beacon
 
+<p align="center">
+  <img src="assets/brand/mib-beacon.svg" width="220" alt="MIB Beacon logo" />
+</p>
+
 MIB Beacon is an experimental, open-source, cross-platform SNMP toolkit. It can
 import and browse SMIv1/SMIv2 modules, query SNMP agents, send and receive traps, and
 optionally resolve missing MIB dependencies from configured online sources.

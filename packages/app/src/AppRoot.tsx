@@ -427,13 +427,16 @@ function ResponsiveAppRoot({
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {mode === 'compact' ? (
         <View style={[styles.header, { borderBottomColor: t.border }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
-            {info ? (
-              <Text style={[styles.sub, { color: t.textDim }]}>
-                {info.platform} · net-snmp {info.netSnmpVersion}
-              </Text>
-            ) : null}
+          <View style={styles.compactBrand}>
+            <MibBeaconMark size={30} />
+            <View style={styles.compactBrandCopy}>
+              <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
+              {info ? (
+                <Text style={[styles.sub, { color: t.textDim }]}>
+                  {info.platform} · net-snmp {info.netSnmpVersion}
+                </Text>
+              ) : null}
+            </View>
           </View>
           <MobileHeaderAction
             glyph="⌘"
@@ -470,7 +473,7 @@ function ResponsiveAppRoot({
           {activeTab === 'query' ? <QueryScreen info={info} /> : null}
           {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}
-          {activeTab === 'tools' ? <ToolsScreen /> : null}
+          {activeTab === 'tools' ? <ToolsScreen info={info} /> : null}
           {activeTab === 'mibs' ? <MibsScreen /> : null}
           {activeTab === 'settings' ? <SettingsScreen host={host} /> : null}
           <PacketConsole host={host} />
@@ -633,13 +636,15 @@ function AppNavigation({
         { backgroundColor: t.surface, borderRightColor: t.border },
       ]}
     >
-      <MibBeaconMark size={38} />
-      {expanded ? (
-        <View style={styles.brandCopy}>
-          <Text style={[styles.brandTitle, { color: t.text }]}>MIB Beacon</Text>
-          <Text style={[styles.brandKicker, { color: t.textDim }]}>NETWORK WORKBENCH</Text>
-        </View>
-      ) : null}
+      <View style={expanded ? styles.brandLockup : styles.brandRail}>
+        <MibBeaconMark size={38} />
+        {expanded ? (
+          <View style={styles.brandCopy}>
+            <Text style={[styles.brandTitle, { color: t.text }]}>MIB Beacon</Text>
+            <Text style={[styles.brandKicker, { color: t.textDim }]}>Network workbench</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={styles.navItems}>
         {tabs.map((item) => (
           <NavigationItem
@@ -910,6 +915,8 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800' },
   sub: { fontSize: 11, marginTop: 2 },
+  compactBrand: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  compactBrandCopy: { flex: 1, minWidth: 0 },
   mobileHeaderAction: {
     width: 44,
     height: 44,
@@ -924,10 +931,19 @@ const styles = StyleSheet.create({
   sidebar: { borderRightWidth: 1, paddingVertical: 14, alignItems: 'center', zIndex: 1 },
   sidebarExpanded: { width: 220, paddingHorizontal: 10 },
   sidebarRail: { width: 64, paddingHorizontal: 7 },
-  brandCopy: { alignSelf: 'stretch', marginTop: 10, marginBottom: 14, paddingHorizontal: 5 },
+  brandLockup: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+    paddingHorizontal: 5,
+  },
+  brandRail: { marginBottom: 14 },
+  brandCopy: { flex: 1, minWidth: 0 },
   brandTitle: { fontSize: 15, fontWeight: '800' },
   brandKicker: { fontSize: 8, fontWeight: '800', letterSpacing: 1.15, marginTop: 2 },
-  navItems: { flex: 1, alignSelf: 'stretch', gap: 5, marginTop: 14 },
+  navItems: { flex: 1, alignSelf: 'stretch', gap: 5 },
   navItem: { minHeight: 46, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
   navItemExpanded: { borderRadius: 9, paddingHorizontal: 12, gap: 11 },
   navItemRail: { borderRadius: 10, justifyContent: 'center', paddingHorizontal: 0 },
