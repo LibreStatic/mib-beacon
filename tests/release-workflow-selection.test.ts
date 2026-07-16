@@ -71,6 +71,12 @@ describe('release workflow output selection', () => {
     expect(workflow).toContain("DisplayName -eq 'MIB Beacon ${{ needs.verify.outputs.version }}'");
   });
 
+  it('gives the Android release build enough JVM metaspace', () => {
+    expect(workflow).toContain(
+      "-Dorg.gradle.jvmargs='-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8'",
+    );
+  });
+
   it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {
     expect(workflow).toContain('sudo chown root:root "$sandbox"');
     expect(workflow).toContain('sudo chmod 4755 "$sandbox"');

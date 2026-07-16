@@ -778,7 +778,8 @@ jobs:
           tasks=()
           [[ "$BUILD_APK" == true ]] && tasks+=(assembleRelease)
           [[ "$BUILD_AAB" == true ]] && tasks+=(bundleRelease)
-          ./gradlew "${tasks[@]}" --no-daemon
+          ./gradlew "${tasks[@]}" --no-daemon \
+            -Dorg.gradle.jvmargs='-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8'
       - name: Verify Android release signatures
         shell: bash
         env:
