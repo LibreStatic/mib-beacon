@@ -24,6 +24,14 @@ chart/watch test; it is not a recommended production polling interval.
    `undefined` RPC arguments before JSON serialization. Previously, the optional poll-sample
    limit arrived at the server as `null`, which coerced to zero and was clamped to one sample.
    The graph and sparkline therefore had no visible line despite persisted history.
+3. **Target-first tool onboarding** — Graphs, Compare, and Ports now explain that they need a
+   saved SNMP target before their query controls are shown. Each path has an inline **Add an
+   SNMP target** action rather than requiring users to discover the separate Agents screen.
+4. **Full inline SNMP setup** — the inline target form supports UDP4/UDP6, v1/v2c communities,
+   timeouts/retries/GetBulk tuning, and all v3 inputs (user, security level, auth/privacy
+   protocols and write-only passwords, context name, and context engine ID). The cipher buttons
+   still honor runtime availability. A newly saved target is selected automatically and only the
+   non-secret endpoint/version summary is displayed.
 
 ## Results
 
@@ -35,8 +43,20 @@ chart/watch test; it is not a recommended production polling interval.
 | Compare | Live-walked the two saved local profiles | The aligned diff rendered five changed counter/time rows. The profiles intentionally point at the same host, so time-varying counters are expected to differ between serial walks. |
 | Ports | Loaded local `ifTable` / `ifXTable` | Rendered live interfaces with admin/oper pills, HC-counter availability, speeds, octets, filters, sorts, and graph actions. |
 | Ping | Ran two ICMP probes against `127.0.0.1` | Streamed two replies and showed `2/2 received · 0% loss` plus min/avg/max latency. |
+| Target onboarding | Opened the empty Graphs state, saved v2c and v3 `authPriv` targets, then opened Compare and Ports | The v3-only fields appeared; both saves selected the new target and exposed graph configuration; Compare and Ports each exposed the same full setup path. |
 
 No browser console errors were observed during the final E2E pass.
+
+### Target-onboarding browser pass
+
+The follow-up onboarding passes ran in Chromium at 1440×1000 against fresh, isolated LAN server
+data directories. They verified the empty-state CTA, v2c creation, valid v3 `authPriv` creation
+with SHA-256/AES, automatic Graphs selection, and the inline setup entry points in Compare and
+Ports. The v3 pass verified that neither saved password was rendered after creation. A separate
+browser pass switched from a partially completed Graphs form to Compare and verified that Name,
+Host, and Community were cleared; unfinished credentials therefore cannot carry across tool
+workflows. None of the passes reported browser console or page errors. The v3 check covered
+profile creation and credential handling; it did not perform a live poll against a v3 device.
 
 ## Screenshots
 
@@ -66,6 +86,12 @@ No browser console errors were observed during the final E2E pass.
 
 ![Localhost ping result](2026-07-15-tools-section/06-ping-result.png)
 
+### Graphs target onboarding
+
+![Inline v3 target setup, including auth, privacy, and context fields](2026-07-15-tools-section/07-graphs-inline-v3-setup.png)
+
+![Newly saved target selected before configuring a graph series](2026-07-15-tools-section/08-graphs-target-selected.png)
+
 ## Automated checks
 
 - `pnpm exec vitest run tests/server-secret-storage.test.ts tests/ws-engine-proxy.test.ts` —
@@ -79,3 +105,18 @@ No browser console errors were observed during the final E2E pass.
   exited before listening with `Unable to decrypt saved server credentials`.
 - Browser E2E: saved profiles, graph + PNG export, watch breach, discovery, compare, ports,
   and reachability all completed successfully in the scenario above.
+- Browser E2E follow-up: target-first Graphs flow, v2c and v3 `authPriv` saves with automatic
+  target selection, no rendered v3 secrets after save, Compare and Ports setup entry points, plus
+  cross-tool unfinished-draft reset all passed without browser errors.
+
+## Native Android smoke (limited)
+
+- A fresh `:app:assembleDebug` completed with JDK 17, and its APK installed and launched on the
+  host Pixel 9 Pro Android 16/x86_64 emulator.
+- The actual Tools screen could not be inspected in that dev-client launch because the shared
+  Metro Android bundle request on port 8081 timed out, leaving MainActivity blank without a
+  JavaScript or fatal-exception log. A bounded JDK-17 release-variant attempt passed native and
+  Expo configuration/compilation but did not reach JS bundling before it was stopped; no release
+  APK was produced.
+- Host note: JDK 26 fails React Native plugin resolution for this project; use JDK 17 for Android
+  Gradle checks until that environment issue is resolved.

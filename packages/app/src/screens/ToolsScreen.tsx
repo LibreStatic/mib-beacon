@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type {
+  AgentProfile,
   DiscoveryResult,
   EngineInfo,
   PollSample,
@@ -26,9 +27,15 @@ import {
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { refreshAgentProfiles } from '../actions';
+import { InlineAgentProfileSetup } from '../components/InlineAgentProfileSetup';
 import { ToolLineChart, ToolSparkline } from '../components/ToolLineChart';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import {
+  agentDraftFromEditor,
+  EMPTY_AGENT_EDITOR,
+  type AgentEditorState,
+} from '../agent-profile-form';
 
 interface PingSummary {
   transmitted: number;
@@ -40,6 +47,7 @@ interface PingSummary {
 }
 
 type ToolSection = 'graphs' | 'watches' | 'discovery' | 'compare' | 'ports' | 'reachability';
+type TargetSetupSection = Extract<ToolSection, 'graphs' | 'compare' | 'ports'>;
 const SECTIONS: { key: ToolSection; label: string }[] = [
   { key: 'graphs', label: 'Graphs' },
   { key: 'watches', label: 'Watches' },
@@ -59,7 +67,7 @@ const COLORS = [
   '#8fa63f',
 ];
 
-export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
+export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
@@ -76,6 +84,10 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
   const [seriesOid, setSeriesOid] = useState('1.3.6.1.2.1.1.3.0');
   const [interval, setIntervalText] = useState('5000');
   const [mode, setMode] = useState<PollSeries['mode']>('raw');
+  const [targetSetupSection, setTargetSetupSection] = useState<TargetSetupSection | null>(null);
+  const [targetEditor, setTargetEditor] = useState<AgentEditorState>(EMPTY_AGENT_EDITOR);
+  const [targetBusy, setTargetBusy] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
   const [watchName, setWatchName] = useState('Watch');
   const [watchSeries, setWatchSeries] = useState('');
   const [operator, setOperator] = useState<'>' | '<' | '==' | '!='>('>');
@@ -117,6 +129,36 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
     (value: unknown) => setError(value instanceof Error ? value.message : String(value)),
     [],
   );
+  const openTargetSetup = (next: TargetSetupSection) => {
+    if (targetSetupSection !== next) setTargetEditor(EMPTY_AGENT_EDITOR);
+    setTargetError(null);
+    setTargetSetupSection(next);
+  };
+  const cancelTargetSetup = () => {
+    setTargetSetupSection(null);
+    setTargetEditor(EMPTY_AGENT_EDITOR);
+    setTargetError(null);
+  };
+  const createTarget = async () => {
+    if (!targetSetupSection || targetBusy) return;
+    setTargetBusy(true);
+    setTargetError(null);
+    try {
+      const created = await engine.agents.create(agentDraftFromEditor(targetEditor));
+      await refreshAgentProfiles(engine);
+      if (targetSetupSection === 'graphs') setSeriesAgent(created.id);
+      if (targetSetupSection === 'ports') setPortAgent(created.id);
+      if (targetSetupSection === 'compare') {
+        if (!compareA) setCompareA(created.id);
+        else setCompareB(created.id);
+      }
+      cancelTargetSetup();
+    } catch (caught) {
+      setTargetError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setTargetBusy(false);
+    }
+  };
   const refresh = useCallback(async () => {
     const [nextSeries, nextWatches, nextCharts, nextSnapshots] = await Promise.all([
       engine.tools.polls.list(),
@@ -254,49 +296,72 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
         ) : null}
         {section === 'graphs' ? (
           <>
+            <ToolTargetSelector
+              agents={agents}
+              description="Graphs query a saved SNMP agent. Select the device that should receive this poll."
+              emptyTitle="Start a graph"
+              onAddTarget={() => openTargetSetup('graphs')}
+              onToggle={(id) => setSeriesAgent(id)}
+              selected={[seriesAgent]}
+              title="1. Choose where to poll"
+            />
+            {targetSetupSection === 'graphs' ? (
+              <InlineAgentProfileSetup
+                editor={targetEditor}
+                error={targetError}
+                info={info}
+                busy={targetBusy}
+                onCancel={cancelTargetSetup}
+                onEditorChange={setTargetEditor}
+                onSubmit={() => void createTarget()}
+                submitTitle="Save and use target"
+                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
+                title="Add an SNMP target"
+              />
+            ) : null}
             <Card>
-              <SectionTitle>Poll series</SectionTitle>
-              <AgentChips
-                agents={agents}
-                selected={[seriesAgent]}
-                onToggle={(id) => setSeriesAgent(id)}
-              />
-              <Row style={styles.wrap}>
-                <Field label="Name" value={seriesName} onChangeText={setSeriesName} />
-                <Field label="Numeric OID" value={seriesOid} onChangeText={setSeriesOid} />
-                <Field
-                  label="Interval ms"
-                  value={interval}
-                  onChangeText={setIntervalText}
-                  keyboardType="numeric"
-                />
-              </Row>
-              <Row style={styles.wrap}>
-                {(['raw', 'delta', 'rate-per-sec'] as const).map((value) => (
-                  <Chip
-                    key={value}
-                    label={value}
-                    active={mode === value}
-                    onPress={() => setMode(value)}
+              <SectionTitle>2. Configure the series</SectionTitle>
+              {seriesAgent ? (
+                <>
+                  <Row style={styles.wrap}>
+                    <Field label="Name" value={seriesName} onChangeText={setSeriesName} />
+                    <Field label="Numeric OID" value={seriesOid} onChangeText={setSeriesOid} />
+                    <Field
+                      label="Interval ms"
+                      value={interval}
+                      onChangeText={setIntervalText}
+                      keyboardType="numeric"
+                    />
+                  </Row>
+                  <Row style={styles.wrap}>
+                    {(['raw', 'delta', 'rate-per-sec'] as const).map((value) => (
+                      <Chip
+                        key={value}
+                        label={value}
+                        active={mode === value}
+                        onPress={() => setMode(value)}
+                      />
+                    ))}
+                  </Row>
+                  <Button
+                    title="Create series"
+                    onPress={() =>
+                      void engine.tools.polls
+                        .create({
+                          name: seriesName,
+                          agentId: seriesAgent,
+                          oid: seriesOid,
+                          intervalMs: Number(interval),
+                          mode,
+                        })
+                        .then(refresh)
+                        .catch(report)
+                    }
                   />
-                ))}
-              </Row>
-              <Button
-                title="Create series"
-                disabled={!seriesAgent}
-                onPress={() =>
-                  void engine.tools.polls
-                    .create({
-                      name: seriesName,
-                      agentId: seriesAgent,
-                      oid: seriesOid,
-                      intervalMs: Number(interval),
-                      mode,
-                    })
-                    .then(refresh)
-                    .catch(report)
-                }
-              />
+                </>
+              ) : (
+                <Label tone="dim">Choose a poll target above to configure the OID, interval, and mode.</Label>
+              )}
             </Card>
             <Card>
               {charts.length ? (
@@ -658,40 +723,61 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
         ) : null}
         {section === 'compare' ? (
           <>
-            <Card>
-              <SectionTitle>Live device compare</SectionTitle>
-              <Label tone="dim" size={10}>
-                Choose A, then B.
-              </Label>
-              <AgentChips
-                agents={agents}
-                selected={[compareA, compareB].filter(Boolean)}
-                onToggle={(id) => {
-                  if (id === compareA) setCompareA('');
-                  else if (id === compareB) setCompareB('');
-                  else if (!compareA) setCompareA(id);
-                  else setCompareB(id);
-                }}
+            <ToolTargetSelector
+              agents={agents}
+              description="Compare needs two saved SNMP agents. Choose A, then B."
+              emptyTitle="Start a comparison"
+              onAddTarget={() => openTargetSetup('compare')}
+              onToggle={(id) => {
+                if (id === compareA) setCompareA('');
+                else if (id === compareB) setCompareB('');
+                else if (!compareA) setCompareA(id);
+                else setCompareB(id);
+              }}
+              selected={[compareA, compareB].filter(Boolean)}
+              title="1. Choose two poll targets"
+            />
+            {targetSetupSection === 'compare' ? (
+              <InlineAgentProfileSetup
+                editor={targetEditor}
+                error={targetError}
+                info={info}
+                busy={targetBusy}
+                onCancel={cancelTargetSetup}
+                onEditorChange={setTargetEditor}
+                onSubmit={() => void createTarget()}
+                submitTitle="Save and add target"
+                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
+                title="Add an SNMP target"
               />
-              <Field label="Subtree OID" value={compareOid} onChangeText={setCompareOid} />
-              <Row>
-                <Button
-                  title={compareHandle ? 'Comparing…' : 'Compare live walks'}
-                  disabled={!compareA || !compareB || Boolean(compareHandle)}
-                  onPress={() =>
-                    void engine.tools.compare
-                      .start({ agentAId: compareA, agentBId: compareB, baseOid: compareOid })
-                      .then(({ handleId }) => setCompareHandle(handleId))
-                      .catch(report)
-                  }
-                />
-                <Button
-                  title="Cancel"
-                  variant="ghost"
-                  disabled={!compareHandle}
-                  onPress={() => compareHandle && void engine.tools.compare.cancel(compareHandle)}
-                />
-              </Row>
+            ) : null}
+            <Card>
+              <SectionTitle>2. Configure live comparison</SectionTitle>
+              {compareA && compareB ? (
+                <>
+                  <Field label="Subtree OID" value={compareOid} onChangeText={setCompareOid} />
+                  <Row>
+                    <Button
+                      title={compareHandle ? 'Comparing…' : 'Compare live walks'}
+                      disabled={Boolean(compareHandle)}
+                      onPress={() =>
+                        void engine.tools.compare
+                          .start({ agentAId: compareA, agentBId: compareB, baseOid: compareOid })
+                          .then(({ handleId }) => setCompareHandle(handleId))
+                          .catch(report)
+                      }
+                    />
+                    <Button
+                      title="Cancel"
+                      variant="ghost"
+                      disabled={!compareHandle}
+                      onPress={() => compareHandle && void engine.tools.compare.cancel(compareHandle)}
+                    />
+                  </Row>
+                </>
+              ) : (
+                <Label tone="dim">Choose two poll targets above to compare live SNMP walks.</Label>
+              )}
             </Card>
             <Card>
               <SectionTitle>Saved snapshot diff</SectionTitle>
@@ -751,45 +837,73 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
         ) : null}
         {section === 'ports' ? (
           <>
+            <ToolTargetSelector
+              agents={agents}
+              description="Choose the saved SNMP agent whose interfaces you want to inspect."
+              emptyTitle="Start a port view"
+              onAddTarget={() => openTargetSetup('ports')}
+              onToggle={setPortAgent}
+              selected={[portAgent]}
+              title="1. Choose a port target"
+            />
+            {targetSetupSection === 'ports' ? (
+              <InlineAgentProfileSetup
+                editor={targetEditor}
+                error={targetError}
+                info={info}
+                busy={targetBusy}
+                onCancel={cancelTargetSetup}
+                onEditorChange={setTargetEditor}
+                onSubmit={() => void createTarget()}
+                submitTitle="Save and use target"
+                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
+                title="Add an SNMP target"
+              />
+            ) : null}
             <Card>
-              <SectionTitle>Interface port view</SectionTitle>
-              <AgentChips agents={agents} selected={[portAgent]} onToggle={setPortAgent} />
-              <Row>
-                <Button
-                  title={portHandle ? 'Loading…' : 'Load ifTable / ifXTable'}
-                  disabled={!portAgent || Boolean(portHandle)}
-                  onPress={() =>
-                    void engine.tools.ports
-                      .start(portAgent)
-                      .then(({ handleId }) => setPortHandle(handleId))
-                      .catch(report)
-                  }
-                />
-                <Button
-                  title="Cancel"
-                  variant="ghost"
-                  disabled={!portHandle}
-                  onPress={() => portHandle && void engine.tools.ports.cancel(portHandle)}
-                />
-              </Row>
-              <Row style={styles.wrap}>
-                {(['all', 'up', 'down'] as const).map((value) => (
-                  <Chip
-                    key={value}
-                    label={`Status: ${value}`}
-                    active={portFilter === value}
-                    onPress={() => setPortFilter(value)}
-                  />
-                ))}
-                {(['index', 'name', 'speed'] as const).map((value) => (
-                  <Chip
-                    key={value}
-                    label={`Sort: ${value}`}
-                    active={portSort === value}
-                    onPress={() => setPortSort(value)}
-                  />
-                ))}
-              </Row>
+              <SectionTitle>2. Load interface data</SectionTitle>
+              {portAgent ? (
+                <>
+                  <Row>
+                    <Button
+                      title={portHandle ? 'Loading…' : 'Load ifTable / ifXTable'}
+                      disabled={Boolean(portHandle)}
+                      onPress={() =>
+                        void engine.tools.ports
+                          .start(portAgent)
+                          .then(({ handleId }) => setPortHandle(handleId))
+                          .catch(report)
+                      }
+                    />
+                    <Button
+                      title="Cancel"
+                      variant="ghost"
+                      disabled={!portHandle}
+                      onPress={() => portHandle && void engine.tools.ports.cancel(portHandle)}
+                    />
+                  </Row>
+                  <Row style={styles.wrap}>
+                    {(['all', 'up', 'down'] as const).map((value) => (
+                      <Chip
+                        key={value}
+                        label={`Status: ${value}`}
+                        active={portFilter === value}
+                        onPress={() => setPortFilter(value)}
+                      />
+                    ))}
+                    {(['index', 'name', 'speed'] as const).map((value) => (
+                      <Chip
+                        key={value}
+                        label={`Sort: ${value}`}
+                        active={portSort === value}
+                        onPress={() => setPortSort(value)}
+                      />
+                    ))}
+                  </Row>
+                </>
+              ) : (
+                <Label tone="dim">Choose a port target above to load its interface table.</Label>
+              )}
             </Card>
             {visiblePorts.map((port) => (
               <Card key={port.index}>
@@ -974,6 +1088,62 @@ export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
   );
 }
 
+function ToolTargetSelector({
+  agents,
+  description,
+  emptyTitle,
+  onAddTarget,
+  onToggle,
+  selected,
+  title,
+}: {
+  agents: AgentProfile[];
+  description: string;
+  emptyTitle: string;
+  onAddTarget: () => void;
+  onToggle: (id: string) => void;
+  selected: string[];
+  title: string;
+}) {
+  const selectedProfiles = selected.flatMap((id) => {
+    const profile = agents.find((candidate) => candidate.id === id);
+    return profile ? [profile] : [];
+  });
+  const hasTargets = agents.length > 0;
+  return (
+    <Card>
+      <Row style={styles.between}>
+        <View style={styles.targetCopy}>
+          <SectionTitle>{hasTargets ? title : emptyTitle}</SectionTitle>
+          <Label tone="dim" size={10}>
+            {hasTargets
+              ? description
+              : 'Add a saved SNMP target here, then select it to begin using this utility.'}
+          </Label>
+        </View>
+        {hasTargets ? (
+          <Button title="Add target" small variant="ghost" onPress={onAddTarget} />
+        ) : null}
+      </Row>
+      {hasTargets ? (
+        <>
+          <AgentChips agents={agents} selected={selected} onToggle={onToggle} />
+          <Row style={styles.wrap}>
+            <Button title="Manage profiles" small variant="ghost" onPress={() => useAppStore.getState().setTab('agents')} />
+          </Row>
+        </>
+      ) : (
+        <Button title="Add an SNMP target" onPress={onAddTarget} />
+      )}
+      {selectedProfiles.map((profile) => (
+        <Mono key={profile.id} dim size={10}>
+          Polling: {profile.name} — {profile.host}:{profile.port} · SNMP {profile.version}
+        </Mono>
+      ))}
+    </Card>
+  );
+}
+
 function AgentChips({
   agents,
   selected,
@@ -1072,6 +1242,7 @@ const styles = StyleSheet.create({
   },
   wrap: { flexWrap: 'wrap' },
   between: { justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  targetCopy: { flex: 1, minWidth: 0, gap: 3 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   watchCard: { minWidth: 230, flexGrow: 1, borderWidth: 1 },
   console: { minHeight: 180, maxHeight: 420, padding: 10, borderRadius: 8 },
