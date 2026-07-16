@@ -11,7 +11,8 @@ services:
       MIB_BEACON_SERVER_HOST: 0.0.0.0
       MIB_BEACON_SERVER_PORT: ${MIB_BEACON_SERVER_PORT:-8899}
       MIB_BEACON_SERVER_DATA: /data
-      MIB_BEACON_SERVER_SECRET_KEY: "${MIB_BEACON_SERVER_SECRET_KEY:?Set MIB_BEACON_SERVER_SECRET_KEY to an openssl rand -base64 32 value}"
+      MIB_BEACON_SERVER_SECRET_KEY: "${MIB_BEACON_SERVER_SECRET_KEY:-}"
+      MIB_BEACON_SERVER_GENERATE_SECRET_KEY: "true"
     volumes:
       - mibbeacon-server-data:/data
     read_only: true

@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createPersistentSecretStore, type SecretCodec } from '@mibbeacon/transport/node';
 import type { SecretStore } from '@mibbeacon/transport';
 
@@ -13,8 +14,52 @@ interface ServerSecretStoreOptions {
   key: string | undefined;
 }
 
+interface ServerSecretKeyOptions {
+  dataDir: string;
+  key: string | undefined;
+  allowGeneratedKey: boolean;
+}
+
 export function createServerSecretStore({ filePath, key }: ServerSecretStoreOptions): SecretStore {
   return createPersistentSecretStore({ filePath, codec: createServerSecretCodec(key) });
+}
+
+/**
+ * Compose can opt into a key held in its persistent data volume, keeping the simple
+ * first-run path secure without making a static key part of the project config.
+ */
+export async function resolveServerSecretKey({
+  dataDir,
+  key,
+  allowGeneratedKey,
+}: ServerSecretKeyOptions): Promise<string> {
+  if (key?.trim()) return normalizeServerSecretKey(key);
+  if (!allowGeneratedKey) return normalizeServerSecretKey(key);
+
+  const keyPath = join(dataDir, 'server-secret.key');
+  try {
+    return normalizeServerSecretKey(await readFile(keyPath, 'utf8'));
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  try {
+    await readFile(join(dataDir, 'credentials.json'));
+    throw new Error(
+      'A generated server key is missing for existing credentials; set MIB_BEACON_SERVER_SECRET_KEY to the original key.',
+    );
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  const generatedKey = randomBytes(KEY_BYTES).toString('base64');
+  try {
+    await writeFile(keyPath, `${generatedKey}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    return generatedKey;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    return normalizeServerSecretKey(await readFile(keyPath, 'utf8'));
+  }
 }
 
 /**
@@ -84,6 +129,10 @@ function parseServerSecretKey(value: string | undefined): Buffer {
     );
   }
   return Buffer.from(key, 'base64');
+}
+
+function normalizeServerSecretKey(value: string | undefined): string {
+  return parseServerSecretKey(value).toString('base64');
 }
 
 function decodePayload(value: string): Buffer {

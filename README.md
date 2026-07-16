@@ -439,22 +439,27 @@ ACLs.
 `compose.yml` is the canonical definition. `docker-compose.yml` is a compatibility
 symlink for tools that still require the legacy filename.
 
-The server persists saved SNMP credentials only in authenticated encrypted form. Before
-the first start, create a stable 32-byte key and keep it in a password/secret manager;
-the same value is required on every later restart so existing profiles remain readable.
-Do not commit the key or place it in a client-accessible file.
+The server persists saved SNMP credentials only in authenticated encrypted form. On its
+first Compose start, it creates a random stable key in the private named data volume and
+reuses it on every restart, so the following command works without a separate setup
+step. Preserve that volume: deleting it also deletes the encrypted profiles and their
+key. The generated key is never committed or sent to browser clients.
 
 On startup, the server verifies that this key decrypts all saved credentials before it
 begins listening. If the key was changed or a credential file was tampered with, startup
 fails rather than reporting a healthy server that cannot use its saved profiles.
+
+For a key held outside the Docker volume (for example, when restoring the data volume on
+another host), provide a stable 32-byte value from a password/secret manager before the
+first start. Do not change it while preserving existing profiles:
 
 ```bash
 export MIB_BEACON_SERVER_SECRET_KEY="$(openssl rand -base64 32)"
 ```
 
 ```bash
-docker compose up --build -d
-docker compose logs -f mibbeacon-server
+docker compose -f compose.yml up --build -d
+docker compose -f compose.yml logs -f mibbeacon-server
 ```
 
 When the health check reports `healthy`, open `http://<server-lan-ip>:8899` from another
@@ -466,14 +471,14 @@ be free before startup.
 Stop the runtime without deleting its data:
 
 ```bash
-docker compose down
+docker compose -f compose.yml down
 ```
 
 `docker compose down -v` also deletes the named data volume and is therefore destructive.
 To change the HTTP/WebSocket port, set the server variable before starting it:
 
 ```bash
-MIB_BEACON_SERVER_PORT=9000 docker compose up --build -d
+MIB_BEACON_SERVER_PORT=9000 docker compose -f compose.yml up --build -d
 # Open http://<server-lan-ip>:9000.
 ```
 
@@ -497,7 +502,7 @@ Configuration variables:
 | `MIB_BEACON_SERVER_HOST` | `0.0.0.0`             | Address on which the server listens |
 | `MIB_BEACON_SERVER_PORT` | `8899`                | HTTP/WebSocket port                 |
 | `MIB_BEACON_SERVER_DATA` | `~/.mibbeacon/server` | Database/cache directory            |
-| `MIB_BEACON_SERVER_SECRET_KEY` | Required | Base64-encoded 32-byte key used to encrypt saved credentials |
+| `MIB_BEACON_SERVER_SECRET_KEY` | Generated in Compose; required for source development | Base64-encoded 32-byte key used to encrypt saved credentials |
 
 **The LAN server has no authentication.** Run it only on a trusted, firewalled network;
 never forward its ports from a router or expose them to the internet. Anyone who can

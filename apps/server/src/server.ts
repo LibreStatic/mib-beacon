@@ -13,7 +13,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { createNodeTransport } from '@mibbeacon/transport/node';
 import { createEngine } from '@mibbeacon/core';
 import { dispatchEngineCall, ENGINE_EVENT_CHANNELS } from '@mibbeacon/core/bridge';
-import { createServerSecretStore, verifyServerSecretStore } from './secrets';
+import { createServerSecretStore, resolveServerSecretKey, verifyServerSecretStore } from './secrets';
 
 const PORT = Number(process.env.MIB_BEACON_SERVER_PORT ?? 8899);
 const HOST = process.env.MIB_BEACON_SERVER_HOST ?? '0.0.0.0';
@@ -35,7 +35,11 @@ async function main() {
   await mkdir(DATA_DIR, { recursive: true });
   const secretStoreOptions = {
     filePath: path.join(DATA_DIR, 'credentials.json'),
-    key: process.env.MIB_BEACON_SERVER_SECRET_KEY,
+    key: await resolveServerSecretKey({
+      dataDir: DATA_DIR,
+      key: process.env.MIB_BEACON_SERVER_SECRET_KEY,
+      allowGeneratedKey: process.env.MIB_BEACON_SERVER_GENERATE_SECRET_KEY === 'true',
+    }),
   };
   await verifyServerSecretStore(secretStoreOptions);
   const secrets = createServerSecretStore(secretStoreOptions);

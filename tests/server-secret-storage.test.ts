@@ -3,7 +3,11 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createServerSecretStore, verifyServerSecretStore } from '../apps/server/src/secrets';
+import {
+  createServerSecretStore,
+  resolveServerSecretKey,
+  verifyServerSecretStore,
+} from '../apps/server/src/secrets';
 
 const TEST_KEY = Buffer.alloc(32, 7).toString('base64');
 const WRONG_TEST_KEY = Buffer.alloc(32, 8).toString('base64');
@@ -61,20 +65,45 @@ describe('LAN server credential storage', () => {
     );
   });
 
+  it('persists a generated key only when the runtime explicitly permits it', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-server-secrets-'));
+
+    await expect(
+      resolveServerSecretKey({ dataDir: directory, key: undefined, allowGeneratedKey: false }),
+    ).rejects.toThrow(/MIB_BEACON_SERVER_SECRET_KEY/);
+
+    const generated = await resolveServerSecretKey({
+      dataDir: directory,
+      key: undefined,
+      allowGeneratedKey: true,
+    });
+    const persisted = await readFile(join(directory, 'server-secret.key'), 'utf8');
+
+    expect(Buffer.from(generated, 'base64')).toHaveLength(32);
+    expect(persisted.trim()).toBe(generated);
+    expect((await stat(join(directory, 'server-secret.key'))).mode & 0o777).toBe(0o600);
+    await expect(
+      resolveServerSecretKey({ dataDir: directory, key: undefined, allowGeneratedKey: true }),
+    ).resolves.toBe(generated);
+  });
+
   it('injects the configured encrypted store into the LAN server engine', () => {
     const server = readFileSync(new URL('../apps/server/src/server.ts', import.meta.url), 'utf8');
 
-    expect(server).toContain("import { createServerSecretStore, verifyServerSecretStore } from './secrets';");
+    expect(server).toContain(
+      "import { createServerSecretStore, resolveServerSecretKey, verifyServerSecretStore } from './secrets';",
+    );
     expect(server).toContain("filePath: path.join(DATA_DIR, 'credentials.json')");
-    expect(server).toContain('key: process.env.MIB_BEACON_SERVER_SECRET_KEY');
+    expect(server).toContain('key: await resolveServerSecretKey({');
+    expect(server).toContain("allowGeneratedKey: process.env.MIB_BEACON_SERVER_GENERATE_SECRET_KEY === 'true'");
     expect(server).toContain('await verifyServerSecretStore(secretStoreOptions)');
     expect(server).toContain('createNodeTransport({ dataDir: DATA_DIR, secrets })');
   });
 
-  it('passes the required credential key into the Compose runtime', () => {
+  it('bootstraps a persisted credential key for the Compose runtime', () => {
     const compose = readFileSync(new URL('../compose.yml', import.meta.url), 'utf8');
 
-    expect(compose).toContain('MIB_BEACON_SERVER_SECRET_KEY:');
-    expect(compose).toContain('${MIB_BEACON_SERVER_SECRET_KEY:?');
+    expect(compose).toContain('MIB_BEACON_SERVER_SECRET_KEY: "${MIB_BEACON_SERVER_SECRET_KEY:-}"');
+    expect(compose).toContain('MIB_BEACON_SERVER_GENERATE_SECRET_KEY: "true"');
   });
 });

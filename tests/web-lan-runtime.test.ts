@@ -11,9 +11,9 @@ describe('web LAN runtime', () => {
 
     expect(readme).toContain('## Runtime kinds');
     expect(readme).toContain('Web LAN');
-    expect(readme).toContain('docker compose up --build -d');
-    expect(readme).toContain('docker compose logs -f mibbeacon-server');
-    expect(readme).toContain('docker compose down');
+    expect(readme).toContain('docker compose -f compose.yml up --build -d');
+    expect(readme).toContain('docker compose -f compose.yml logs -f mibbeacon-server');
+    expect(readme).toContain('docker compose -f compose.yml down');
     expect(readme).toContain('no authentication');
   });
 
