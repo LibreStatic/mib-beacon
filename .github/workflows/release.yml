@@ -853,8 +853,8 @@ jobs:
           arch: x86_64
           profile: pixel_6
           script: |
-            apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
-            dev/audit/android-release-smoke/run.sh "$apk"
+            apk=$(find "$GITHUB_WORKSPACE/apps/mobile/android/app/build/outputs/apk/release" -name '*.apk' -print -quit)
+            "$GITHUB_WORKSPACE/dev/audit/android-release-smoke/run.sh" "$apk"
       - name: Stop Android SNMP fixture
         if: always() && needs.verify.outputs.apk == 'true'
         run: docker compose -f dev/snmpd/docker-compose.yml down --volumes
