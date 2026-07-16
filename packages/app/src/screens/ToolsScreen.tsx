@@ -401,7 +401,20 @@ export function ToolsScreen() {
                     onPress={() =>
                       void engine.tools.polls
                         .exportCsv(item.id)
-                        .then((csv) => Share.share({ message: csv, title: `${item.name}.csv` }))
+                        .then((csv) => {
+                          if (Platform.OS === 'web' && typeof document !== 'undefined') {
+                            const url = URL.createObjectURL(
+                              new Blob([csv], { type: 'text/csv;charset=utf-8' }),
+                            );
+                            const anchor = document.createElement('a');
+                            anchor.href = url;
+                            anchor.download = `${item.name}.csv`;
+                            anchor.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 10_000);
+                            return;
+                          }
+                          return Share.share({ message: csv, title: `${item.name}.csv` });
+                        })
                         .catch(report)
                     }
                   />
