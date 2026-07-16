@@ -59,7 +59,7 @@ const COLORS = [
   '#8fa63f',
 ];
 
-export function ToolsScreen({ info }: { info: EngineInfo | null }) {
+export function ToolsScreen({ info: _info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
