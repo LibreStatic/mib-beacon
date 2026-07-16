@@ -284,7 +284,8 @@ describe('release identity', () => {
     expect(workflow).toContain('pnpm verify:licenses');
     expect(workflow).toContain('scan-release-artifacts.mjs');
     expect(workflow).toContain('SMOKE_MAIN_WINDOW_READY');
-    expect(workflow).toContain('reactivecircus/android-emulator-runner@v2');
+    expect(workflow).not.toContain('reactivecircus/android-emulator-runner@v2');
+    expect(read('dev/audit/android-release-smoke/run.sh')).toContain('Android release smoke passed');
     expect(workflow).toContain('verify-android-permissions.mjs');
     expect(workflow).toContain('ANDROID_KEYSTORE_BASE64');
     expect(workflow).toContain('prepare-flatpak-release.mjs');

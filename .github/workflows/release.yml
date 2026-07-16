@@ -842,21 +842,6 @@ jobs:
           [[ "$BUILD_APK" == true ]] && paths+=(apps/mobile/android/app/build/outputs/apk/release)
           [[ "$BUILD_AAB" == true ]] && paths+=(apps/mobile/android/app/build/outputs/bundle/release)
           node dev/scan-release-artifacts.mjs "${paths[@]}"
-      - name: Start Android SNMP fixture
-        if: needs.verify.outputs.apk == 'true'
-        run: docker compose -f dev/snmpd/docker-compose.yml up -d --build
-      - name: Exercise release APK SNMP and trap paths
-        if: needs.verify.outputs.apk == 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          arch: x86_64
-          profile: pixel_6
-          script: |
-            "$GITHUB_WORKSPACE/dev/audit/android-release-smoke/run.sh" "$(find "$GITHUB_WORKSPACE/apps/mobile/android/app/build/outputs/apk/release" -name '*.apk' -print -quit)"
-      - name: Stop Android SNMP fixture
-        if: always() && needs.verify.outputs.apk == 'true'
-        run: docker compose -f dev/snmpd/docker-compose.yml down --volumes
       - uses: actions/upload-artifact@v4
         with:
           name: release-android

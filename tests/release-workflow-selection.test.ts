@@ -79,13 +79,9 @@ describe('release workflow output selection', () => {
     );
   });
 
-  it('resolves release-APK smoke inputs from the workspace inside the emulator action', () => {
-    expect(workflow).toContain('$GITHUB_WORKSPACE/apps/mobile/android/app/build/outputs/apk/release');
-    expect(workflow).toContain('$GITHUB_WORKSPACE/dev/audit/android-release-smoke/run.sh');
-    expect(workflow).toContain('run.sh" "$(find "$GITHUB_WORKSPACE/apps/mobile');
-    expect(workflow).not.toContain(
-      "script: |\n            apk=$(find apps/mobile/android/app/build/outputs/apk/release",
-    );
+  it('leaves Android emulator smoke testing to the local host', () => {
+    expect(workflow).not.toContain('reactivecircus/android-emulator-runner');
+    expect(workflow).not.toContain('Start Android SNMP fixture');
   });
 
   it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {
