@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type {
   DiscoveryResult,
+  EngineInfo,
   PollSample,
   PollChart,
   PollSeries,
@@ -58,7 +59,7 @@ const COLORS = [
   '#8fa63f',
 ];
 
-export function ToolsScreen() {
+export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
