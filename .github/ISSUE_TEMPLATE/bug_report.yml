@@ -8,7 +8,7 @@ body:
       value: Never report vulnerabilities or paste SNMP credentials here. Use SECURITY.md.
   - type: input
     id: version
-    attributes: { label: Version and artifact, placeholder: "0.0.1-beta.1 AppImage x64" }
+    attributes: { label: Version and artifact, placeholder: "0.1.0-beta.1 AppImage x64" }
     validations: { required: true }
   - type: dropdown
     id: platform

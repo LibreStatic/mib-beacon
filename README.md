@@ -4,7 +4,7 @@ MIB Beacon is an experimental, open-source, cross-platform SNMP toolkit. It can
 import and browse SMIv1/SMIv2 modules, query SNMP agents, send and receive traps, and
 optionally resolve missing MIB dependencies from configured online sources.
 
-Current version: **0.0.1-beta.1**. Treat every build as prerelease software.
+Current version: **0.1.0-beta.1**. Treat every build as prerelease software.
 
 > [!CAUTION]
 > **AI-generated, unaudited software — use at your own risk.** This software has been
@@ -242,12 +242,13 @@ published on Flathub, install the downloaded `.flatpak` file directly.
 3. Run the installer and choose the installation directory when prompted.
 4. Start **MIB Beacon** from the Start menu.
 
-The tagged public-release workflow refuses to publish without a valid Windows signing
-certificate and verifies the installed executable after installation. SmartScreen may
-still warn while the certificate/application has little reputation. Do not bypass an
-invalid-signature or unknown-publisher warning; verify the checksum and signature first.
-Locally or unofficially built installers may be unsigned and are not equivalent to a
-tagged project release. Uninstall from **Settings → Apps → Installed apps**.
+The tag workflow distributes a clearly named unsigned Windows beta installer by default.
+It verifies that the installer and installed executable are intentionally unsigned, then
+installs, launches, verifies file associations, and uninstalls it before publication.
+SmartScreen and unknown-publisher warnings are expected. Only proceed after downloading
+from the project release page and verifying `SHA256SUMS`; do not disable Windows security
+features globally. Signed Authenticode installers are an opt-in future release option.
+Uninstall from **Settings → Apps → Installed apps**.
 
 ### macOS
 
@@ -256,11 +257,12 @@ tagged project release. Uninstall from **Settings → Apps → Installed apps**.
 3. Open the DMG and drag **MIB Beacon** into **Applications**.
 4. Eject the DMG, then launch MIB Beacon from Applications.
 
-The tagged public-release workflow refuses to publish without Developer ID signing and
-successful notarization, and verifies Gatekeeper plus the stapled ticket before upload.
-Do not bypass a signature, Gatekeeper, or notarization failure. Locally or unofficially
-built DMGs may be unsigned/unnotarized and are not equivalent to a tagged project
-release. Never disable Gatekeeper globally.
+The tag workflow distributes a clearly named unsigned macOS beta DMG by default. It
+mounts the DMG and smoke-tests the unsigned application before publication. Gatekeeper
+will warn because no Developer ID signature or notarization ticket is present. Only
+proceed after downloading from the project release page and verifying `SHA256SUMS`; use
+Finder's per-app open flow if necessary and never disable Gatekeeper globally. Signed and
+notarized DMGs are an opt-in future release option.
 
 ### Android
 
@@ -497,11 +499,11 @@ pnpm dev:server
 
 Configuration variables:
 
-| Variable                 | Default               | Purpose                             |
-| ------------------------ | --------------------- | ----------------------------------- |
-| `MIB_BEACON_SERVER_HOST` | `0.0.0.0`             | Address on which the server listens |
-| `MIB_BEACON_SERVER_PORT` | `8899`                | HTTP/WebSocket port                 |
-| `MIB_BEACON_SERVER_DATA` | `~/.mibbeacon/server` | Database/cache directory            |
+| Variable                       | Default                                               | Purpose                                                      |
+| ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------ |
+| `MIB_BEACON_SERVER_HOST`       | `0.0.0.0`                                             | Address on which the server listens                          |
+| `MIB_BEACON_SERVER_PORT`       | `8899`                                                | HTTP/WebSocket port                                          |
+| `MIB_BEACON_SERVER_DATA`       | `~/.mibbeacon/server`                                 | Database/cache directory                                     |
 | `MIB_BEACON_SERVER_SECRET_KEY` | Generated in Compose; required for source development | Base64-encoded 32-byte key used to encrypt saved credentials |
 
 **The LAN server has no authentication.** Run it only on a trusted, firewalled network;
@@ -510,17 +512,18 @@ reach this runtime can drive SNMP operations from the server host.
 
 ## Run a hosted release build
 
-Pushing a version tag such as `v0.0.1-beta.1` runs the complete production matrix. A
-manual **Release** run from the GitHub Actions web UI must target an existing matching
-version tag, but it can independently enable or disable AppImage, deb, rpm, Flatpak,
-NSIS, dmg, APK, AAB, and unsigned IPA compilation. The published inventory and checksum
-gate adapt to that selection; automatic tag-triggered releases always require every
-documented output.
+Pushing a version tag such as `v0.1.0-beta.1` runs the complete no-cost beta matrix:
+AppImage, deb, rpm, Flatpak, clearly named unsigned NSIS and DMG packages, signed Android
+APK/AAB, and the unsigned IPA. A manual **Release** run from the GitHub Actions web UI
+must target an existing matching version tag and can independently select each output,
+including either the signed or unsigned Windows/macOS variant. The published inventory
+and checksum gate adapt to that selection.
 
-Disabling an output does not bypass its requirements when it is selected. NSIS and dmg
-still require their signing/notarization credentials, and APK/AAB still require the
-Android release keystore credentials. Use selective manual runs to test available target
-families, not to label unsigned substitutes as production artifacts.
+Signed Windows NSIS and signed/notarized macOS DMG are disabled by default because their
+credentials require paid programs. Selecting a signed variant requires its documented
+credentials; selecting its unsigned beta variant does not. APK/AAB always require the
+Android release-keystore credentials. Use selective manual runs to test target families,
+and label unsigned desktop packages as beta/testing artifacts.
 
 ## Validate a source checkout
 

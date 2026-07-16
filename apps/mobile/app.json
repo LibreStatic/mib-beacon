@@ -2,7 +2,7 @@
   "expo": {
     "name": "MIB Beacon",
     "slug": "mib-beacon",
-    "version": "0.0.1-beta.1",
+    "version": "0.1.0-beta.1",
     "icon": "../../assets/brand/mib-beacon.png",
     "orientation": "default",
     "scheme": "mibbeacon",

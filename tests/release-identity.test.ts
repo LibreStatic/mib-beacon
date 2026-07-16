@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const APP_ID = 'com.librestatic.mibbeacon';
 const PRODUCT_NAME = 'MIB Beacon';
-const RELEASE_VERSION = '0.0.1-beta.1';
+const RELEASE_VERSION = '0.1.0-beta.1';
 
 function read(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -308,11 +308,15 @@ describe('release identity', () => {
     expect(read('docs/user/custom-sources.md')).toContain('Name JSONPath');
     expect(read('docs/user/faq.md')).toContain('Expo Go');
     expect(read('docs/user/updates-signing-and-stores.md')).toContain('Automatic checks are off');
-    expect(read('docs/releases/v0.0.1-beta.1.md')).toContain('Initial public beta');
-    expect(read('packages/app/src/generated/release-info.ts')).toContain('/tree/v0.0.1-beta.1');
+    expect(read('docs/releases/v0.1.0-beta.1.md')).toContain('First feature beta release');
+    expect(read('packages/app/src/generated/release-info.ts')).toContain('/tree/v0.1.0-beta.1');
     expect(read('packages/app/src/screens/SettingsScreen.tsx')).toContain('Dependency licenses');
-    expect(readme).toMatch(/refuses to publish without a valid Windows signing\s+certificate/);
-    expect(readme).toMatch(/refuses to publish without Developer ID signing/);
+    expect(readme).toContain(
+      'The tag workflow distributes a clearly named unsigned Windows beta installer by default.',
+    );
+    expect(readme).toContain(
+      'The tag workflow distributes a clearly named unsigned macOS beta DMG by default.',
+    );
     expect(readme).toContain("'/opt/MIB Beacon/mib-beacon'");
     expect(readme).toContain('pnpm audit:artifact-identity');
     expect(readme).toContain('pnpm audit:ubuntu-vm-appimage');

@@ -22,11 +22,19 @@ on:
         type: boolean
         default: true
       nsis:
-        description: Build the signed Windows NSIS installer
+        description: Build the signed Windows NSIS installer (requires a purchased Authenticode certificate)
+        type: boolean
+        default: false
+      nsis_unsigned:
+        description: Build an unsigned Windows NSIS installer (testing/beta only)
         type: boolean
         default: true
       dmg:
-        description: Build the signed and notarized macOS DMG
+        description: Build the signed and notarized macOS DMG (requires an Apple Developer Program membership)
+        type: boolean
+        default: false
+      dmg_unsigned:
+        description: Build an unsigned macOS DMG (testing/beta only)
         type: boolean
         default: true
       apk:
@@ -65,7 +73,9 @@ jobs:
       rpm: ${{ steps.selection.outputs.rpm }}
       flatpak: ${{ steps.selection.outputs.flatpak }}
       nsis: ${{ steps.selection.outputs.nsis }}
+      nsis_unsigned: ${{ steps.selection.outputs.nsis_unsigned }}
       dmg: ${{ steps.selection.outputs.dmg }}
+      dmg_unsigned: ${{ steps.selection.outputs.dmg_unsigned }}
       apk: ${{ steps.selection.outputs.apk }}
       aab: ${{ steps.selection.outputs.aab }}
       ipa: ${{ steps.selection.outputs.ipa }}
@@ -98,7 +108,7 @@ jobs:
           selection=$(node dev/release-selection.mjs --event "$GITHUB_EVENT_NAME" --inputs "$RELEASE_INPUTS")
           echo "desktop_matrix=$(jq -c '.desktopMatrix | {include: .}' <<<"$selection")" >> "$GITHUB_OUTPUT"
           echo "desktop=$(jq -r '(.desktopMatrix | length) > 0' <<<"$selection")" >> "$GITHUB_OUTPUT"
-          for name in appimage deb rpm flatpak nsis dmg apk aab ipa; do
+          for name in appimage deb rpm flatpak nsis nsis_unsigned dmg dmg_unsigned apk aab ipa; do
             echo "$name=$(jq -r --arg name "$name" '.outputs[$name]' <<<"$selection")" >> "$GITHUB_OUTPUT"
           done
 
@@ -138,7 +148,7 @@ jobs:
             libxkbcommon0 libxrandr2 rpm xvfb "$fuse_package"
       - run: pnpm install --frozen-lockfile
       - name: Require Windows signing credentials
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.verify.outputs.nsis == 'true'
         shell: bash
         env:
           WINDOWS_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
@@ -151,7 +161,7 @@ jobs:
             fi
           done
       - name: Require macOS signing and notarization credentials
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.verify.outputs.dmg == 'true'
         shell: bash
         env:
           MACOS_CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
@@ -173,12 +183,16 @@ jobs:
           BUILD_DEB: ${{ needs.verify.outputs.deb }}
           BUILD_RPM: ${{ needs.verify.outputs.rpm }}
           BUILD_FLATPAK: ${{ needs.verify.outputs.flatpak }}
-          CSC_LINK: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK || runner.os == 'macOS' && secrets.MACOS_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WINDOWS_CSC_KEY_PASSWORD || runner.os == 'macOS' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (runner.os == 'Windows' && secrets.WINDOWS_CSC_LINK != '') || (runner.os == 'macOS' && secrets.MACOS_CSC_LINK != '') }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_NSIS_SIGNED: ${{ needs.verify.outputs.nsis }}
+          BUILD_NSIS_UNSIGNED: ${{ needs.verify.outputs.nsis_unsigned }}
+          BUILD_DMG_SIGNED: ${{ needs.verify.outputs.dmg }}
+          BUILD_DMG_UNSIGNED: ${{ needs.verify.outputs.dmg_unsigned }}
+          CSC_LINK: ${{ runner.os == 'Windows' && needs.verify.outputs.nsis == 'true' && secrets.WINDOWS_CSC_LINK || runner.os == 'macOS' && needs.verify.outputs.dmg == 'true' && secrets.MACOS_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && needs.verify.outputs.nsis == 'true' && secrets.WINDOWS_CSC_KEY_PASSWORD || runner.os == 'macOS' && needs.verify.outputs.dmg == 'true' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (runner.os == 'Windows' && needs.verify.outputs.nsis == 'true' && secrets.WINDOWS_CSC_LINK != '') || (runner.os == 'macOS' && needs.verify.outputs.dmg == 'true' && secrets.MACOS_CSC_LINK != '') }}
+          APPLE_ID: ${{ needs.verify.outputs.dmg == 'true' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ needs.verify.outputs.dmg == 'true' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ needs.verify.outputs.dmg == 'true' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           pnpm --filter @mibbeacon/desktop build
           case '${{ matrix.platform }}' in
@@ -192,16 +206,30 @@ jobs:
                 --linux "${targets[@]}" --x64 --arm64 --publish never
               ;;
             windows)
-              pnpm --filter @mibbeacon/desktop exec electron-builder \
-                --win nsis --x64 --publish never
+              if [[ "$BUILD_NSIS_SIGNED" == true ]]; then
+                pnpm --filter @mibbeacon/desktop exec electron-builder \
+                  --win nsis --x64 --publish never
+              else
+                CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @mibbeacon/desktop exec electron-builder \
+                  --win nsis --x64 --publish never \
+                  --config.win.signExecutable=false \
+                  --config.artifactName='MIB-Beacon-${version}-${os}-${arch}-unsigned.${ext}'
+              fi
               ;;
             macos)
-              pnpm --filter @mibbeacon/desktop exec electron-builder \
-                --mac dmg --x64 --arm64 --publish never
+              if [[ "$BUILD_DMG_SIGNED" == true ]]; then
+                pnpm --filter @mibbeacon/desktop exec electron-builder \
+                  --mac dmg --x64 --arm64 --publish never
+              else
+                CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @mibbeacon/desktop exec electron-builder \
+                  --mac dmg --x64 --arm64 --publish never \
+                  --config.mac.identity=null \
+                  --config.artifactName='MIB-Beacon-${version}-${os}-${arch}-unsigned.${ext}'
+              fi
               ;;
           esac
       - name: Verify Windows Authenticode signature
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && needs.verify.outputs.nsis == 'true'
         shell: pwsh
         run: |
           $executables = @(Get-ChildItem apps/desktop/release -Filter '*.exe' -File)
@@ -222,9 +250,27 @@ jobs:
             ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           }
 
+      - name: Verify unsigned Windows NSIS package
+        if: runner.os == 'Windows' && needs.verify.outputs.nsis_unsigned == 'true'
+        shell: pwsh
+        run: |
+          $executables = @(Get-ChildItem apps/desktop/release -Filter '*-unsigned.exe' -File)
+          if ($executables.Count -eq 0) { throw 'No unsigned NSIS executable was produced' }
+          @('## Unsigned Windows NSIS verification', '') | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          foreach ($executable in $executables) {
+            $signature = Get-AuthenticodeSignature $executable.FullName
+            if ($signature.Status -ne 'NotSigned') {
+              throw "Expected an unsigned NSIS installer: $($executable.Name) is $($signature.Status)"
+            }
+            "- Artifact: ``$($executable.Name)`` (unsigned as selected)" |
+              Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+
       - name: Install, launch, and uninstall NSIS package
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          BUILD_NSIS_SIGNED: ${{ needs.verify.outputs.nsis }}
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Get-ChildItem apps/desktop/release -Filter '*.exe' -File | Select-Object -First 1
@@ -255,8 +301,12 @@ jobs:
             throw "Unexpected executable company: $($versionInfo.CompanyName)"
           }
           $appSignature = Get-AuthenticodeSignature $app
-          if ($appSignature.Status -ne 'Valid') {
-            throw "Installed executable signature is invalid: $($appSignature.Status)"
+          if ($env:BUILD_NSIS_SIGNED -eq 'true') {
+            if ($appSignature.Status -ne 'Valid') {
+              throw "Installed executable signature is invalid: $($appSignature.Status)"
+            }
+          } elseif ($appSignature.Status -ne 'NotSigned') {
+            throw "Installed executable should be unsigned: $($appSignature.Status)"
           }
 
           foreach ($extension in @('.mib', '.my', '.smi')) {
@@ -300,14 +350,14 @@ jobs:
             '',
             "- Installer: ``$($installer.Name)``",
             '- Installed publisher/version: passed',
-            '- Installed Authenticode signature: valid',
+            "- Installed Authenticode status: $($appSignature.Status)",
             '- File associations: `.mib`, `.my`, `.smi` passed',
             '- Main-window smoke: passed',
             '- Silent uninstall: passed'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
       - name: Verify notarized macOS application
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.verify.outputs.dmg == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -365,6 +415,62 @@ jobs:
             echo "- Bundle identifier/name/version: $bundle_id / $bundle_name / $bundle_version"
             echo '- Gatekeeper assessment: passed'
             echo '- Stapled notarization ticket: valid'
+            echo '- Mounted DMG main-window smoke: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify unsigned macOS application
+        if: runner.os == 'macOS' && needs.verify.outputs.dmg_unsigned == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=$(find apps/desktop/release -maxdepth 1 -type f -name '*-unsigned.dmg' -print -quit)
+          [[ -n "$dmg" ]] || { echo 'No unsigned dmg was produced' >&2; exit 1; }
+          mountpoint=$(mktemp -d)
+          cleanup() {
+            hdiutil detach "$mountpoint" -quiet >/dev/null 2>&1 || true
+            rmdir "$mountpoint" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mountpoint" -quiet
+          app_path=$(find "$mountpoint" -maxdepth 1 -type d -name '*.app' -print -quit)
+          [[ -n "$app_path" ]] || { echo 'No application bundle found in unsigned dmg' >&2; exit 1; }
+          plist="$app_path/Contents/Info.plist"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
+          bundle_name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$plist")
+          bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          [[ "$bundle_id" == 'com.librestatic.mibbeacon' ]]
+          [[ "$bundle_name" == 'MIB Beacon' ]]
+          [[ "$bundle_version" == '${{ needs.verify.outputs.version }}' ]]
+          if codesign --verify --deep --strict "$app_path" >/dev/null 2>&1; then
+            echo 'Expected an unsigned macOS application, but codesign verification succeeded' >&2
+            exit 1
+          fi
+
+          "$app_path/Contents/MacOS/$executable" --smoke-test >macos-package-smoke.log 2>&1 & smoke_pid=$!
+          for _ in $(seq 1 120); do
+            if ! kill -0 "$smoke_pid" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          if kill -0 "$smoke_pid" >/dev/null 2>&1; then
+            kill "$smoke_pid" >/dev/null 2>&1 || true
+            wait "$smoke_pid" >/dev/null 2>&1 || true
+            cat macos-package-smoke.log
+            echo 'Unsigned macOS application smoke timed out' >&2
+            exit 1
+          fi
+          wait "$smoke_pid"
+          cat macos-package-smoke.log
+          grep -q 'ENGINE_READY' macos-package-smoke.log
+          grep -q 'SMOKE_MAIN_WINDOW_READY' macos-package-smoke.log
+
+          {
+            echo '## Unsigned macOS package verification'
+            echo
+            echo "- Artifact: \`$(basename "$dmg")\`"
+            echo "- Application: \`$(basename "$app_path")\`"
+            echo "- Bundle identifier/name/version: $bundle_id / $bundle_name / $bundle_version"
+            echo '- Signature and notarization: intentionally absent'
             echo '- Mounted DMG main-window smoke: passed'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -843,8 +949,10 @@ jobs:
       BUILD_DEB: ${{ needs.verify.outputs.deb }}
       BUILD_RPM: ${{ needs.verify.outputs.rpm }}
       BUILD_FLATPAK: ${{ needs.verify.outputs.flatpak }}
-      BUILD_NSIS: ${{ needs.verify.outputs.nsis }}
-      BUILD_DMG: ${{ needs.verify.outputs.dmg }}
+      BUILD_NSIS_SIGNED: ${{ needs.verify.outputs.nsis }}
+      BUILD_NSIS_UNSIGNED: ${{ needs.verify.outputs.nsis_unsigned }}
+      BUILD_DMG_SIGNED: ${{ needs.verify.outputs.dmg }}
+      BUILD_DMG_UNSIGNED: ${{ needs.verify.outputs.dmg_unsigned }}
       BUILD_APK: ${{ needs.verify.outputs.apk }}
       BUILD_AAB: ${{ needs.verify.outputs.aab }}
       BUILD_IPA: ${{ needs.verify.outputs.ipa }}
@@ -875,8 +983,8 @@ jobs:
           [[ "$BUILD_DEB" == true ]] && required_patterns+=('*.deb')
           [[ "$BUILD_RPM" == true ]] && required_patterns+=('*.rpm')
           [[ "$BUILD_FLATPAK" == true ]] && required_patterns+=('*.flatpak')
-          [[ "$BUILD_NSIS" == true ]] && required_patterns+=('*.exe')
-          [[ "$BUILD_DMG" == true ]] && required_patterns+=('*.dmg')
+          ([[ "$BUILD_NSIS_SIGNED" == true ]] || [[ "$BUILD_NSIS_UNSIGNED" == true ]]) && required_patterns+=('*.exe')
+          ([[ "$BUILD_DMG_SIGNED" == true ]] || [[ "$BUILD_DMG_UNSIGNED" == true ]]) && required_patterns+=('*.dmg')
           [[ "$BUILD_APK" == true ]] && required_patterns+=('*.apk')
           [[ "$BUILD_AAB" == true ]] && required_patterns+=('*.aab')
           [[ "$BUILD_IPA" == true ]] && required_patterns+=('*.ipa')

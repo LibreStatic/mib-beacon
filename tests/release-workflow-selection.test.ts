@@ -1,10 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const workflow = readFileSync(
-  new URL('../.github/workflows/release.yml', import.meta.url),
-  'utf8',
-);
+const workflow = readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
 
 describe('release workflow output selection', () => {
   it('exposes every distributable as a boolean web UI input', () => {
@@ -14,7 +11,9 @@ describe('release workflow output selection', () => {
       'rpm',
       'flatpak',
       'nsis',
+      'nsis_unsigned',
       'dmg',
+      'dmg_unsigned',
       'apk',
       'aab',
       'ipa',
@@ -25,12 +24,43 @@ describe('release workflow output selection', () => {
     }
   });
 
+  it('defaults purchase-gated Windows and macOS packages to off', () => {
+    for (const output of ['nsis', 'dmg']) {
+      expect(workflow).toMatch(
+        new RegExp(
+          `\\n      ${output}:\\n        description: [^\\n]+\\n        type: boolean\\n        default: false`,
+        ),
+      );
+    }
+  });
+
+  it('defaults clearly labeled unsigned Windows and macOS packages to on', () => {
+    for (const output of ['nsis_unsigned', 'dmg_unsigned']) {
+      expect(workflow).toMatch(
+        new RegExp(
+          `\\n      ${output}:\\n        description: Build an unsigned [^\\n]+\\n        type: boolean\\n        default: true`,
+        ),
+      );
+    }
+  });
+
   it('drives the build matrix and published inventory from one validated selection', () => {
     expect(workflow).toContain('node dev/release-selection.mjs');
     expect(workflow).toContain('fromJSON(needs.verify.outputs.desktop_matrix)');
     expect(workflow).toContain('required_patterns=()');
     expect(workflow).toContain("needs.verify.outputs.apk == 'true'");
     expect(workflow).toContain("needs.verify.outputs.ipa == 'true'");
+    expect(workflow).toContain('BUILD_NSIS_UNSIGNED');
+    expect(workflow).toContain('BUILD_DMG_UNSIGNED');
+    expect(workflow).toContain('--config.win.signExecutable=false');
+    expect(workflow).toContain('--config.mac.identity=null');
+  });
+
+  it('validates unsigned desktop artifacts without applying signed-release checks', () => {
+    expect(workflow).toContain('Verify unsigned Windows NSIS package');
+    expect(workflow).toContain("$signature.Status -ne 'NotSigned'");
+    expect(workflow).toContain('Verify unsigned macOS application');
+    expect(workflow).toContain('Expected an unsigned macOS application');
   });
 
   it('configures the unpacked Electron sandbox before hosted Linux smoke testing', () => {
