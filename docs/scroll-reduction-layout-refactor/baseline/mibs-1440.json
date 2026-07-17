@@ -1,0 +1,52 @@
+{
+  "screen": "mibs",
+  "width": 1440,
+  "booted": true,
+  "scrollers": [],
+  "sections": [
+    {
+      "title": "Browse",
+      "y": 12
+    },
+    {
+      "title": "Browse",
+      "y": 82
+    },
+    {
+      "title": "Import",
+      "y": 83
+    },
+    {
+      "title": "Agents",
+      "y": 184
+    },
+    {
+      "title": "Settings",
+      "y": 337
+    },
+    {
+      "title": "SNMPv2-CONF",
+      "y": 476
+    },
+    {
+      "title": "SNMPv2-MIB",
+      "y": 528
+    },
+    {
+      "title": "rev 200210160000Z · IETF SNMPv3 Working Group",
+      "y": 561
+    },
+    {
+      "title": "SNMPv2-SMI",
+      "y": 593
+    },
+    {
+      "title": "SNMPv2-TC",
+      "y": 650
+    },
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 876
+    }
+  ]
+}

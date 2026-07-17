@@ -1,0 +1,197 @@
+{
+  "screen": "traps-receive",
+  "width": 768,
+  "scrollHeight": 1511,
+  "clientHeight": 440,
+  "scrollTop": 0,
+  "ratio": 3.43,
+  "sections": [
+    {
+      "title": "⌬",
+      "y": 66,
+      "kind": "button"
+    },
+    {
+      "title": "Receive",
+      "y": 66,
+      "kind": "button"
+    },
+    {
+      "title": "Send",
+      "y": 66,
+      "kind": "button"
+    },
+    {
+      "title": "⇄",
+      "y": 117,
+      "kind": "button"
+    },
+    {
+      "title": "◎",
+      "y": 168,
+      "kind": "button"
+    },
+    {
+      "title": "Start receiver",
+      "y": 172,
+      "kind": "button"
+    },
+    {
+      "title": "⚑",
+      "y": 219,
+      "kind": "button"
+    },
+    {
+      "title": "dual",
+      "y": 237,
+      "kind": "button"
+    },
+    {
+      "title": "udp4",
+      "y": 237,
+      "kind": "button"
+    },
+    {
+      "title": "udp6",
+      "y": 237,
+      "kind": "button"
+    },
+    {
+      "title": "Lab accept-all",
+      "y": 237,
+      "kind": "button"
+    },
+    {
+      "title": "⌁",
+      "y": 270,
+      "kind": "button"
+    },
+    {
+      "title": "⚙",
+      "y": 321,
+      "kind": "button"
+    },
+    {
+      "title": "Any version",
+      "y": 575,
+      "kind": "button"
+    },
+    {
+      "title": "v1",
+      "y": 575,
+      "kind": "button"
+    },
+    {
+      "title": "v2c",
+      "y": 575,
+      "kind": "button"
+    },
+    {
+      "title": "v3",
+      "y": 575,
+      "kind": "button"
+    },
+    {
+      "title": "Unread only",
+      "y": 627,
+      "kind": "button"
+    },
+    {
+      "title": "Last hour",
+      "y": 627,
+      "kind": "button"
+    },
+    {
+      "title": "Last 24h",
+      "y": 627,
+      "kind": "button"
+    },
+    {
+      "title": "Apply",
+      "y": 679,
+      "kind": "button"
+    },
+    {
+      "title": "Reset",
+      "y": 679,
+      "kind": "button"
+    },
+    {
+      "title": "CSV",
+      "y": 679,
+      "kind": "button"
+    },
+    {
+      "title": "JSON",
+      "y": 679,
+      "kind": "button"
+    },
+    {
+      "title": "Save filter",
+      "y": 739,
+      "kind": "button"
+    },
+    {
+      "title": "⌘",
+      "y": 918,
+      "kind": "button"
+    },
+    {
+      "title": "noAuthNoPriv",
+      "y": 925,
+      "kind": "button"
+    },
+    {
+      "title": "authNoPriv",
+      "y": 925,
+      "kind": "button"
+    },
+    {
+      "title": "authPriv",
+      "y": 925,
+      "kind": "button"
+    },
+    {
+      "title": "?",
+      "y": 968,
+      "kind": "button"
+    },
+    {
+      "title": "Save v3 user",
+      "y": 977,
+      "kind": "button"
+    },
+    {
+      "title": "PACKETS 0",
+      "y": 1005,
+      "kind": "button"
+    },
+    {
+      "title": "info",
+      "y": 1359,
+      "kind": "button"
+    },
+    {
+      "title": "warning",
+      "y": 1359,
+      "kind": "button"
+    },
+    {
+      "title": "critical",
+      "y": 1359,
+      "kind": "button"
+    },
+    {
+      "title": "OS notification",
+      "y": 1411,
+      "kind": "button"
+    },
+    {
+      "title": "Create rule",
+      "y": 1531,
+      "kind": "button"
+    }
+  ],
+  "textMapCount": 72,
+  "clicks": []
+}

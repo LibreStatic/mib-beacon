@@ -1,0 +1,91 @@
+{
+  "screen": "mibs",
+  "width": 390,
+  "booted": true,
+  "scrollers": [
+    {
+      "scrollHeight": 1149,
+      "clientHeight": 688,
+      "ratio": 1.67,
+      "cls": "css-g5y9jx r-150rngu r-eqz5dr r-16y2uox "
+    }
+  ],
+  "sections": [
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 42
+    },
+    {
+      "title": "Import MIB",
+      "y": 121
+    },
+    {
+      "title": "Files, folders, or ZIP archives",
+      "y": 156
+    },
+    {
+      "title": "Review everything locally before it is sent to the engine.",
+      "y": 177
+    },
+    {
+      "title": "Choose files",
+      "y": 211
+    },
+    {
+      "title": "Or drop files and folders here",
+      "y": 247
+    },
+    {
+      "title": "From URL",
+      "y": 280
+    },
+    {
+      "title": "Fetch & import",
+      "y": 363
+    },
+    {
+      "title": "Or paste MIB text",
+      "y": 444
+    },
+    {
+      "title": "Import pasted text",
+      "y": 579
+    },
+    {
+      "title": "Loaded modules",
+      "y": 639
+    },
+    {
+      "title": "Tap a module to isolate its OID graph",
+      "y": 668
+    },
+    {
+      "title": "Browse",
+      "y": 818
+    },
+    {
+      "title": "Results",
+      "y": 818
+    },
+    {
+      "title": "Settings",
+      "y": 818
+    },
+    {
+      "title": "SNMPv2-CONF",
+      "y": 990
+    },
+    {
+      "title": "SNMPv2-MIB",
+      "y": 1048
+    },
+    {
+      "title": "SNMPv2-SMI",
+      "y": 1106
+    },
+    {
+      "title": "SNMPv2-TC",
+      "y": 1164
+    }
+  ]
+}

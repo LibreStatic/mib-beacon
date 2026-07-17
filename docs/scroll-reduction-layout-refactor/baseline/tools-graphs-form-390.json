@@ -1,0 +1,81 @@
+{
+  "screen": "tools-graphs-form",
+  "width": 390,
+  "scrollHeight": 1224,
+  "clientHeight": 627,
+  "ratio": 1.95,
+  "sections": [
+    {
+      "title": "Ports",
+      "y": 116
+    },
+    {
+      "title": "Add an SNMP target",
+      "y": 227
+    },
+    {
+      "title": "NameHost",
+      "y": 333
+    },
+    {
+      "title": "Name",
+      "y": 333
+    },
+    {
+      "title": "Host",
+      "y": 333
+    },
+    {
+      "title": "PortTimeout msRetries",
+      "y": 401
+    },
+    {
+      "title": "Port",
+      "y": 401
+    },
+    {
+      "title": "Authentication protocol",
+      "y": 709
+    },
+    {
+      "title": "Auth password",
+      "y": 781
+    },
+    {
+      "title": "Results",
+      "y": 818
+    },
+    {
+      "title": "Privacy protocol",
+      "y": 849
+    },
+    {
+      "title": "Privacy password",
+      "y": 921
+    },
+    {
+      "title": "Context nameContext engine id",
+      "y": 989
+    },
+    {
+      "title": "Context name",
+      "y": 989
+    },
+    {
+      "title": "Context engine id",
+      "y": 989
+    },
+    {
+      "title": "Save and use targetCancel",
+      "y": 1077
+    },
+    {
+      "title": "Save and use target",
+      "y": 1091
+    },
+    {
+      "title": "2. Configure the series",
+      "y": 1171
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "screen": "tools-compare-form",
+  "width": 1440,
+  "scrollHeight": 1521,
+  "clientHeight": 769,
+  "ratio": 1.98,
+  "sections": [
+    {
+      "title": "Ports",
+      "y": 77
+    },
+    {
+      "title": "Add an SNMP target",
+      "y": 181
+    },
+    {
+      "title": "Host",
+      "y": 284
+    },
+    {
+      "title": "PortTimeout msRetries",
+      "y": 344
+    },
+    {
+      "title": "Port",
+      "y": 344
+    },
+    {
+      "title": "Authentication protocol",
+      "y": 612
+    },
+    {
+      "title": "Auth password",
+      "y": 676
+    },
+    {
+      "title": "Privacy protocol",
+      "y": 736
+    },
+    {
+      "title": "Privacy password",
+      "y": 800
+    },
+    {
+      "title": "Context nameContext engine id",
+      "y": 860
+    },
+    {
+      "title": "Context name",
+      "y": 860
+    },
+    {
+      "title": "Context engine id",
+      "y": 860
+    }
+  ]
+}

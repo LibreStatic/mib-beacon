@@ -1,0 +1,21 @@
+{
+  "screen": "tools-compare",
+  "width": 390,
+  "scrollHeight": 778,
+  "clientHeight": 577,
+  "ratio": 1.35,
+  "sections": [
+    {
+      "title": "Ports",
+      "y": 166
+    },
+    {
+      "title": "Add an SNMP target",
+      "y": 277
+    },
+    {
+      "title": "Results",
+      "y": 818
+    }
+  ]
+}

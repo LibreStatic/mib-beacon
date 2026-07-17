@@ -1,0 +1,9 @@
+{
+  "screen": "tools-graphs",
+  "width": 1440,
+  "page": {
+    "scrollHeight": 900,
+    "clientHeight": 900,
+    "ratio": 1
+  }
+}

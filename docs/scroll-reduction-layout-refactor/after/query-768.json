@@ -1,0 +1,99 @@
+{
+  "screen": "query",
+  "width": 768,
+  "booted": true,
+  "scrollers": [],
+  "sections": [
+    {
+      "title": "SNMP query",
+      "y": 12
+    },
+    {
+      "title": "GET",
+      "y": 23
+    },
+    {
+      "title": "CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS",
+      "y": 34
+    },
+    {
+      "title": "0 varbinds · 0 batches · 0 ms",
+      "y": 69
+    },
+    {
+      "title": "Results",
+      "y": 70
+    },
+    {
+      "title": "Manage profiles",
+      "y": 100
+    },
+    {
+      "title": "Agent",
+      "y": 101
+    },
+    {
+      "title": "No results yet",
+      "y": 121
+    },
+    {
+      "title": "Quick pick · last-used profiles appear first",
+      "y": 137
+    },
+    {
+      "title": "Choose an operation, agent, and OID.",
+      "y": 141
+    },
+    {
+      "title": "Single agent",
+      "y": 172
+    },
+    {
+      "title": "Agent group",
+      "y": 172
+    },
+    {
+      "title": "Host",
+      "y": 261
+    },
+    {
+      "title": "Community",
+      "y": 433
+    },
+    {
+      "title": "Operation",
+      "y": 531
+    },
+    {
+      "title": "Get",
+      "y": 566
+    },
+    {
+      "title": "Get Next",
+      "y": 566
+    },
+    {
+      "title": "Get Bulk",
+      "y": 566
+    },
+    {
+      "title": "Walk",
+      "y": 566
+    },
+    {
+      "title": "Set",
+      "y": 618
+    },
+    {
+      "title": "OID",
+      "y": 655
+    },
+    {
+      "title": "Run Get",
+      "y": 737
+    }
+  ],
+  "resultsHeaderYs": [
+    70
+  ]
+}

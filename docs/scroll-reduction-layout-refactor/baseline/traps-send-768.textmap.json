@@ -1,0 +1,258 @@
+[
+  {
+    "title": "Notification console",
+    "y": 12
+  },
+  {
+    "title": "SENDER",
+    "y": 23
+  },
+  {
+    "title": "CAPTURE · INSPECT · CRAFT · REPLAY SNMP NOTIFICATIONS",
+    "y": 34
+  },
+  {
+    "title": "⌬⇄◎⚑⌁⚙",
+    "y": 66
+  },
+  {
+    "title": "ReceiveSend",
+    "y": 66
+  },
+  {
+    "title": "⌬",
+    "y": 77
+  },
+  {
+    "title": "Receive",
+    "y": 81
+  },
+  {
+    "title": "Send",
+    "y": 81
+  },
+  {
+    "title": "WORKSPACE MODE",
+    "y": 83
+  },
+  {
+    "title": "⇄",
+    "y": 128
+  },
+  {
+    "title": "Notification envelope",
+    "y": 150
+  },
+  {
+    "title": "Destination",
+    "y": 153
+  },
+  {
+    "title": "UDP",
+    "y": 153
+  },
+  {
+    "title": "TrapInform",
+    "y": 170
+  },
+  {
+    "title": "Ad hoc",
+    "y": 175
+  },
+  {
+    "title": "◎",
+    "y": 179
+  },
+  {
+    "title": "Trap",
+    "y": 185
+  },
+  {
+    "title": "Inform",
+    "y": 185
+  },
+  {
+    "title": "Ad hoc",
+    "y": 190
+  },
+  {
+    "title": "Trap OID",
+    "y": 222
+  },
+  {
+    "title": "Host",
+    "y": 227
+  },
+  {
+    "title": "Port",
+    "y": 227
+  },
+  {
+    "title": "⚑",
+    "y": 230
+  },
+  {
+    "title": "⌁",
+    "y": 281
+  },
+  {
+    "title": "Resolved as coldStart",
+    "y": 290
+  },
+  {
+    "title": "v1v2cv3",
+    "y": 295
+  },
+  {
+    "title": "v1",
+    "y": 310
+  },
+  {
+    "title": "v2c",
+    "y": 310
+  },
+  {
+    "title": "v3",
+    "y": 310
+  },
+  {
+    "title": "sysUpTime ticks (optional)",
+    "y": 310
+  },
+  {
+    "title": "⚙",
+    "y": 332
+  },
+  {
+    "title": "User",
+    "y": 347
+  },
+  {
+    "title": "noAuthNoPrivauthNoPrivauthPriv",
+    "y": 415
+  },
+  {
+    "title": "noAuthNoPriv",
+    "y": 430
+  },
+  {
+    "title": "authNoPriv",
+    "y": 430
+  },
+  {
+    "title": "authPriv",
+    "y": 430
+  },
+  {
+    "title": "md5shasha256sha512",
+    "y": 467
+  },
+  {
+    "title": "md5",
+    "y": 482
+  },
+  {
+    "title": "sha",
+    "y": 482
+  },
+  {
+    "title": "sha256",
+    "y": 482
+  },
+  {
+    "title": "sha512",
+    "y": 482
+  },
+  {
+    "title": "Auth key",
+    "y": 519
+  },
+  {
+    "title": "des (n/a)aesaes256baes256r",
+    "y": 587
+  },
+  {
+    "title": "des (n/a)",
+    "y": 602
+  },
+  {
+    "title": "aes",
+    "y": 602
+  },
+  {
+    "title": "aes256b",
+    "y": 602
+  },
+  {
+    "title": "aes256r",
+    "y": 602
+  },
+  {
+    "title": "Privacy key",
+    "y": 639
+  },
+  {
+    "title": "Payload varbinds",
+    "y": 734
+  },
+  {
+    "title": "Add varbind",
+    "y": 739
+  },
+  {
+    "title": "0 custom fields",
+    "y": 746
+  },
+  {
+    "title": "Send trap",
+    "y": 800
+  },
+  {
+    "title": "Saved sender presets",
+    "y": 843
+  },
+  {
+    "title": "Preset name",
+    "y": 863
+  },
+  {
+    "title": "Save preset",
+    "y": 886
+  },
+  {
+    "title": "⌘",
+    "y": 927
+  },
+  {
+    "title": "?",
+    "y": 978
+  },
+  {
+    "title": "Send history",
+    "y": 989
+  },
+  {
+    "title": "session only",
+    "y": 989
+  },
+  {
+    "title": "PACKETS0",
+    "y": 1005
+  },
+  {
+    "title": "PACKETS",
+    "y": 1010
+  },
+  {
+    "title": "0",
+    "y": 1010
+  },
+  {
+    "title": "No notifications sent",
+    "y": 1039
+  },
+  {
+    "title": "Craft a trap or inform above.",
+    "y": 1059
+  }
+]

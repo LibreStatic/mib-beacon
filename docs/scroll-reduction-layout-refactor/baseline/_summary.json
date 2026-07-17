@@ -1,0 +1,116 @@
+{
+  "traps-receive-390": {
+    "scrollHeight": 1589,
+    "clientHeight": 627,
+    "ratio": 2.53,
+    "sections": 36,
+    "clicks": []
+  },
+  "traps-send-390": {
+    "scrollHeight": 1317,
+    "clientHeight": 627,
+    "ratio": 2.1,
+    "sections": 30,
+    "clicks": [
+      {
+        "action": "Send toggle",
+        "clicked": true,
+        "text": "Send"
+      },
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  },
+  "agents-390": {
+    "scrollHeight": 1189,
+    "clientHeight": 630,
+    "ratio": 1.89,
+    "sections": 29,
+    "clicks": [
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  },
+  "traps-receive-768": {
+    "scrollHeight": 1511,
+    "clientHeight": 440,
+    "ratio": 3.43,
+    "sections": 37,
+    "clicks": []
+  },
+  "traps-send-768": {
+    "scrollHeight": 1024,
+    "clientHeight": 885,
+    "ratio": 1.16,
+    "sections": 31,
+    "clicks": [
+      {
+        "action": "Send toggle",
+        "clicked": true,
+        "text": "Send"
+      },
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  },
+  "agents-768": {
+    "scrollHeight": 1189,
+    "clientHeight": 946,
+    "ratio": 1.26,
+    "sections": 30,
+    "clicks": [
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  },
+  "traps-receive-1440": {
+    "scrollHeight": 1224,
+    "clientHeight": 440,
+    "ratio": 2.78,
+    "sections": 37,
+    "clicks": []
+  },
+  "traps-send-1440": {
+    "scrollHeight": 930,
+    "clientHeight": 769,
+    "ratio": 1.21,
+    "sections": 31,
+    "clicks": [
+      {
+        "action": "Send toggle",
+        "clicked": true,
+        "text": "Send"
+      },
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  },
+  "agents-1440": {
+    "scrollHeight": 1071,
+    "clientHeight": 822,
+    "ratio": 1.3,
+    "sections": 30,
+    "clicks": [
+      {
+        "action": "v3 chip",
+        "clicked": true,
+        "text": "v3"
+      }
+    ]
+  }
+}

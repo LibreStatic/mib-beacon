@@ -1,0 +1,173 @@
+{
+  "screen": "traps-send",
+  "width": 390,
+  "scrollHeight": 1317,
+  "clientHeight": 627,
+  "scrollTop": 0,
+  "ratio": 2.1,
+  "sections": [
+    {
+      "title": "⌘",
+      "y": 14,
+      "kind": "button"
+    },
+    {
+      "title": "?",
+      "y": 14,
+      "kind": "button"
+    },
+    {
+      "title": "PACKETS 0",
+      "y": 69,
+      "kind": "button"
+    },
+    {
+      "title": "Receive",
+      "y": 101,
+      "kind": "button"
+    },
+    {
+      "title": "Send",
+      "y": 101,
+      "kind": "button"
+    },
+    {
+      "title": "Ad hoc",
+      "y": 204,
+      "kind": "button"
+    },
+    {
+      "title": "v1",
+      "y": 324,
+      "kind": "button"
+    },
+    {
+      "title": "v2c",
+      "y": 324,
+      "kind": "button"
+    },
+    {
+      "title": "v3",
+      "y": 324,
+      "kind": "button"
+    },
+    {
+      "title": "noAuthNoPriv",
+      "y": 444,
+      "kind": "button"
+    },
+    {
+      "title": "authNoPriv",
+      "y": 444,
+      "kind": "button"
+    },
+    {
+      "title": "authPriv",
+      "y": 444,
+      "kind": "button"
+    },
+    {
+      "title": "md5",
+      "y": 496,
+      "kind": "button"
+    },
+    {
+      "title": "sha",
+      "y": 496,
+      "kind": "button"
+    },
+    {
+      "title": "sha256",
+      "y": 496,
+      "kind": "button"
+    },
+    {
+      "title": "sha512",
+      "y": 496,
+      "kind": "button"
+    },
+    {
+      "title": "des (n/a)",
+      "y": 616,
+      "kind": "button"
+    },
+    {
+      "title": "aes",
+      "y": 616,
+      "kind": "button"
+    },
+    {
+      "title": "aes256b",
+      "y": 616,
+      "kind": "button"
+    },
+    {
+      "title": "aes256r",
+      "y": 616,
+      "kind": "button"
+    },
+    {
+      "title": "Trap",
+      "y": 786,
+      "kind": "button"
+    },
+    {
+      "title": "Inform",
+      "y": 786,
+      "kind": "button"
+    },
+    {
+      "title": "⌬ Browse",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⇄ Results",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⚑ Traps",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⌁ Tools",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⚙ Settings",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "Add varbind",
+      "y": 1043,
+      "kind": "button"
+    },
+    {
+      "title": "Send trap",
+      "y": 1105,
+      "kind": "button"
+    },
+    {
+      "title": "Save preset",
+      "y": 1190,
+      "kind": "button"
+    }
+  ],
+  "textMapCount": 68,
+  "clicks": [
+    {
+      "action": "Send toggle",
+      "clicked": true,
+      "text": "Send"
+    },
+    {
+      "action": "v3 chip",
+      "clicked": true,
+      "text": "v3"
+    }
+  ]
+}

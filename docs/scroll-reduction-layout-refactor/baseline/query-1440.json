@@ -1,0 +1,154 @@
+{
+  "screen": "query",
+  "width": 1440,
+  "booted": true,
+  "scrollers": [
+    {
+      "scrollHeight": 1338,
+      "clientHeight": 822,
+      "ratio": 1.63,
+      "cls": "css-g5y9jx r-150rngu r-eqz5dr r-16y2uox "
+    }
+  ],
+  "sections": [
+    {
+      "title": "SNMP query",
+      "y": 12
+    },
+    {
+      "title": "SET",
+      "y": 23
+    },
+    {
+      "title": "CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS",
+      "y": 34
+    },
+    {
+      "title": "0 varbinds · 0 batches · 0 ms",
+      "y": 69
+    },
+    {
+      "title": "Results",
+      "y": 70
+    },
+    {
+      "title": "Browse",
+      "y": 82
+    },
+    {
+      "title": "Manage profiles",
+      "y": 96
+    },
+    {
+      "title": "Agent",
+      "y": 97
+    },
+    {
+      "title": "No results yet",
+      "y": 121
+    },
+    {
+      "title": "Quick pick · last-used profiles appear first",
+      "y": 129
+    },
+    {
+      "title": "Choose an operation, agent, and OID.",
+      "y": 141
+    },
+    {
+      "title": "Single agent",
+      "y": 160
+    },
+    {
+      "title": "Agent group",
+      "y": 160
+    },
+    {
+      "title": "Agents",
+      "y": 184
+    },
+    {
+      "title": "Host",
+      "y": 237
+    },
+    {
+      "title": "Settings",
+      "y": 337
+    },
+    {
+      "title": "Community",
+      "y": 385
+    },
+    {
+      "title": "Operation",
+      "y": 478
+    },
+    {
+      "title": "Get",
+      "y": 511
+    },
+    {
+      "title": "Get Next",
+      "y": 511
+    },
+    {
+      "title": "Get Bulk",
+      "y": 511
+    },
+    {
+      "title": "Walk",
+      "y": 511
+    },
+    {
+      "title": "Set",
+      "y": 511
+    },
+    {
+      "title": "OID",
+      "y": 544
+    },
+    {
+      "title": "Typed varbind",
+      "y": 637
+    },
+    {
+      "title": "OID",
+      "y": 656
+    },
+    {
+      "title": "OID",
+      "y": 747
+    },
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 876
+    },
+    {
+      "title": "Add varbind to request",
+      "y": 1054
+    },
+    {
+      "title": "Review Set request",
+      "y": 1098
+    }
+  ],
+  "setChipCount": 1,
+  "setReview": [
+    {
+      "kw": "Review Set",
+      "y": 1098
+    },
+    {
+      "kw": "Set request",
+      "y": 1098
+    },
+    {
+      "kw": "varbind",
+      "y": 637
+    },
+    {
+      "kw": "Add varbind",
+      "y": 1054
+    }
+  ]
+}

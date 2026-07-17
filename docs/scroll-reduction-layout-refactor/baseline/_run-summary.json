@@ -1,0 +1,164 @@
+{
+  "mobile": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 844,
+        "ch": 844,
+        "sections": 4
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.31,
+        "sh": 824,
+        "ch": 627,
+        "sections": 10
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1.35,
+        "sh": 778,
+        "ch": 577,
+        "sections": 3
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.98,
+        "sh": 1241,
+        "ch": 627,
+        "sections": 7
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 844,
+        "ch": 844,
+        "sections": 3
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.14,
+        "sh": 713,
+        "ch": 627,
+        "sections": 9
+      }
+    }
+  },
+  "tablet": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 1024,
+        "ch": 1024,
+        "sections": 3
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.38,
+        "sh": 1224,
+        "ch": 885,
+        "sections": 15
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 1024,
+        "ch": 1024,
+        "sections": 2
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.85,
+        "sh": 1641,
+        "ch": 885,
+        "sections": 12
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 1024,
+        "ch": 1024,
+        "sections": 2
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.26,
+        "sh": 1113,
+        "ch": 885,
+        "sections": 14
+      }
+    }
+  },
+  "desktop": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 900,
+        "ch": 900,
+        "sections": 3
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.45,
+        "sh": 1116,
+        "ch": 769,
+        "sections": 15
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 900,
+        "ch": 900,
+        "sections": 2
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.98,
+        "sh": 1521,
+        "ch": 769,
+        "sections": 12
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "ratio": 1,
+        "sh": 900,
+        "ch": 900,
+        "sections": 2
+      },
+      "formBtnClicked": true,
+      "v3Clicked": true,
+      "form": {
+        "ratio": 1.32,
+        "sh": 1013,
+        "ch": 769,
+        "sections": 14
+      }
+    }
+  }
+}

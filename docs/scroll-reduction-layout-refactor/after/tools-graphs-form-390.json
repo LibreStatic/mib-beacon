@@ -1,0 +1,38 @@
+{
+  "screen": "tools-graphs-form",
+  "width": 390,
+  "page": {
+    "scrollHeight": 844,
+    "clientHeight": 844,
+    "ratio": 1
+  },
+  "dialog": {
+    "present": true,
+    "viewport": {
+      "w": 390,
+      "h": 844
+    },
+    "dialogRect": {
+      "top": 0,
+      "bottom": 844,
+      "left": 0,
+      "right": 390,
+      "width": 390,
+      "height": 844
+    },
+    "body": {
+      "scrollHeight": 804,
+      "clientHeight": 647,
+      "scrollable": true,
+      "ratio": 1.24
+    },
+    "submitText": "Save and use target",
+    "submitRect": {
+      "top": 788,
+      "bottom": 832,
+      "left": 211,
+      "right": 377
+    },
+    "footerSubmitVisible": true
+  }
+}

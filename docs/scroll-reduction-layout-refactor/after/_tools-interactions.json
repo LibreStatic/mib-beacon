@@ -1,0 +1,59 @@
+{
+  "r390": {
+    "width": 390,
+    "esc": {
+      "openedBefore": true,
+      "closedAfter": true
+    },
+    "backdrop": {
+      "openedBefore": true,
+      "point": {
+        "x": 195,
+        "y": 18
+      },
+      "closedAfter": true
+    },
+    "stickyFooter": {
+      "bodyScrollable": true,
+      "bodyScrollTop": 157,
+      "submitY": 788,
+      "submitBottom": 832,
+      "submitBelowViewport": true,
+      "submitVisible": true,
+      "vpH": 844
+    },
+    "save": {
+      "nameOk": true,
+      "hostOk": true,
+      "commOk": true,
+      "saveClicked": true,
+      "dialogGone": true,
+      "hasTargetChip": true,
+      "hasConfigureSeries": true
+    }
+  },
+  "r1440": {
+    "width": 1440,
+    "esc": {
+      "openedBefore": true,
+      "closedAfter": true
+    },
+    "backdrop": {
+      "openedBefore": true,
+      "point": {
+        "x": 10,
+        "y": 10
+      },
+      "closedAfter": true
+    },
+    "save": {
+      "nameOk": true,
+      "hostOk": true,
+      "commOk": true,
+      "saveClicked": true,
+      "dialogGone": true,
+      "hasTargetChip": true,
+      "hasConfigureSeries": true
+    }
+  }
+}

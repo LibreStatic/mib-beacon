@@ -1,0 +1,132 @@
+{
+  "screen": "query-set",
+  "width": 768,
+  "booted": true,
+  "setClicked": true,
+  "scrollers": [
+    {
+      "scrollHeight": 1532,
+      "clientHeight": 946,
+      "ratio": 1.62,
+      "cls": "css-g5y9jx r-150rngu r-eqz5dr r-16y2uox "
+    }
+  ],
+  "sections": [
+    {
+      "title": "SNMP query",
+      "y": 12
+    },
+    {
+      "title": "SET",
+      "y": 23
+    },
+    {
+      "title": "CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS",
+      "y": 34
+    },
+    {
+      "title": "0 varbinds · 0 batches · 0 ms",
+      "y": 69
+    },
+    {
+      "title": "Results",
+      "y": 70
+    },
+    {
+      "title": "Manage profiles",
+      "y": 100
+    },
+    {
+      "title": "Agent",
+      "y": 101
+    },
+    {
+      "title": "No results yet",
+      "y": 121
+    },
+    {
+      "title": "Quick pick · last-used profiles appear first",
+      "y": 137
+    },
+    {
+      "title": "Choose an operation, agent, and OID.",
+      "y": 141
+    },
+    {
+      "title": "Single agent",
+      "y": 172
+    },
+    {
+      "title": "Agent group",
+      "y": 172
+    },
+    {
+      "title": "Host",
+      "y": 261
+    },
+    {
+      "title": "Community",
+      "y": 433
+    },
+    {
+      "title": "Operation",
+      "y": 534
+    },
+    {
+      "title": "Get",
+      "y": 571
+    },
+    {
+      "title": "Get Next",
+      "y": 571
+    },
+    {
+      "title": "Get Bulk",
+      "y": 571
+    },
+    {
+      "title": "Walk",
+      "y": 571
+    },
+    {
+      "title": "Set",
+      "y": 623
+    },
+    {
+      "title": "OID",
+      "y": 660
+    },
+    {
+      "title": "Typed varbind",
+      "y": 761
+    },
+    {
+      "title": "OID",
+      "y": 780
+    },
+    {
+      "title": "OID",
+      "y": 883
+    },
+    {
+      "title": "Add varbind to request",
+      "y": 1222
+    },
+    {
+      "title": "Review Set request",
+      "y": 1273
+    }
+  ],
+  "resultsHeaderYs": [
+    70
+  ],
+  "reviewInfo": {
+    "hasReviewText": true,
+    "btnInfo": {
+      "y": 1259,
+      "tag": "BUTTON",
+      "disabled": false
+    },
+    "hasStaged": false
+  }
+}

@@ -45,6 +45,7 @@ export default tseslint.config(
       '**/metro.config.*',
       '**/babel.config.*',
       '**/*.generated.ts',
+      'docs/**/scripts/**',
     ],
   },
   js.configs.recommended,

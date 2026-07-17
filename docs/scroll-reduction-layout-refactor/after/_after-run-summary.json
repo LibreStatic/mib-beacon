@@ -1,0 +1,209 @@
+{
+  "390": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 844,
+        "clientHeight": 844,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 804,
+          "clientHeight": 647,
+          "scrollable": true,
+          "ratio": 1.24
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 778,
+        "clientHeight": 577,
+        "ratio": 1.35
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1.35,
+        "body": {
+          "scrollHeight": 804,
+          "clientHeight": 647,
+          "scrollable": true,
+          "ratio": 1.24
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 844,
+        "clientHeight": 844,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 804,
+          "clientHeight": 647,
+          "scrollable": true,
+          "ratio": 1.24
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    }
+  },
+  "768": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 1024,
+        "clientHeight": 1024,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 740,
+          "clientHeight": 740,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 1024,
+        "clientHeight": 1024,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 740,
+          "clientHeight": 740,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 1024,
+        "clientHeight": 1024,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 740,
+          "clientHeight": 740,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    }
+  },
+  "1440": {
+    "ready": true,
+    "Graphs": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 900,
+        "clientHeight": 900,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 652,
+          "clientHeight": 652,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Compare": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 900,
+        "clientHeight": 900,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 652,
+          "clientHeight": 652,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    },
+    "Ports": {
+      "chipClicked": true,
+      "base": {
+        "scrollHeight": 900,
+        "clientHeight": 900,
+        "ratio": 1
+      },
+      "dialogOpened": true,
+      "v3Clicked": true,
+      "authPrivClicked": true,
+      "form": {
+        "pageRatio": 1,
+        "body": {
+          "scrollHeight": 652,
+          "clientHeight": 652,
+          "scrollable": false,
+          "ratio": 1
+        },
+        "footerSubmitVisible": true,
+        "present": true
+      }
+    }
+  }
+}

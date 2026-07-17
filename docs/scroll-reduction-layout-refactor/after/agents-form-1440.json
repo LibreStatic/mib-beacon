@@ -1,0 +1,37 @@
+{
+  "screen": "agents-form",
+  "width": 1440,
+  "page": {
+    "scrollHeight": 900,
+    "clientHeight": 900,
+    "ratio": 1
+  },
+  "dialog": {
+    "open": true,
+    "vw": 1440,
+    "vh": 900,
+    "card": {
+      "top": 66,
+      "bottom": 834,
+      "left": 360,
+      "right": 1080,
+      "width": 720,
+      "height": 768
+    },
+    "footer": {
+      "top": 783,
+      "bottom": 821,
+      "height": 38
+    },
+    "footerFullyVisible": true,
+    "primaryFullyVisible": true,
+    "scroller": {
+      "overflow": false,
+      "scrollHeight": 0,
+      "clientHeight": 0,
+      "ratio": 1
+    },
+    "bottomAnchored": false,
+    "fullWidth": false
+  }
+}

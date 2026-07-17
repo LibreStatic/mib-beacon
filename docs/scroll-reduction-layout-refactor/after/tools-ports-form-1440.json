@@ -1,0 +1,38 @@
+{
+  "screen": "tools-ports-form",
+  "width": 1440,
+  "page": {
+    "scrollHeight": 900,
+    "clientHeight": 900,
+    "ratio": 1
+  },
+  "dialog": {
+    "present": true,
+    "viewport": {
+      "w": 1440,
+      "h": 900
+    },
+    "dialogRect": {
+      "top": 0,
+      "bottom": 900,
+      "left": 0,
+      "right": 1440,
+      "width": 1440,
+      "height": 900
+    },
+    "body": {
+      "scrollHeight": 652,
+      "clientHeight": 652,
+      "scrollable": false,
+      "ratio": 1
+    },
+    "submitText": "Save and use target",
+    "submitRect": {
+      "top": 783,
+      "bottom": 821,
+      "left": 901,
+      "right": 1067
+    },
+    "footerSubmitVisible": true
+  }
+}

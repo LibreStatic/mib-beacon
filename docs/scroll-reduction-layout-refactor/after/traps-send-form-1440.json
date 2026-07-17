@@ -1,0 +1,38 @@
+{
+  "screen": "traps-send-form",
+  "width": 1440,
+  "page": {
+    "scrollHeight": 900,
+    "clientHeight": 900,
+    "ratio": 1
+  },
+  "dialog": {
+    "open": true,
+    "vw": 1440,
+    "vh": 900,
+    "card": {
+      "top": 36,
+      "bottom": 864,
+      "left": 360,
+      "right": 1080,
+      "width": 720,
+      "height": 828
+    },
+    "footer": {
+      "top": 0,
+      "bottom": 900,
+      "height": 900
+    },
+    "footerFullyVisible": true,
+    "primaryFullyVisible": true,
+    "scroller": {
+      "overflow": true,
+      "scrollHeight": 787,
+      "clientHeight": 712,
+      "ratio": 1.11
+    },
+    "bottomAnchored": false,
+    "fullWidth": false
+  },
+  "authPrivClicked": true
+}

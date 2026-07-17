@@ -1,0 +1,350 @@
+[
+  {
+    "title": "Notification console",
+    "y": 12
+  },
+  {
+    "title": "MIB Beacon",
+    "y": 19
+  },
+  {
+    "title": "RECEIVER",
+    "y": 23
+  },
+  {
+    "title": "CAPTURE · INSPECT · CRAFT · REPLAY SNMP NOTIFICATIONS",
+    "y": 34
+  },
+  {
+    "title": "Network workbench",
+    "y": 38
+  },
+  {
+    "title": "⌬Browse⇄Query◎Agents⚑Traps⌁Tools⚙Settings",
+    "y": 66
+  },
+  {
+    "title": "ReceiveSend",
+    "y": 66
+  },
+  {
+    "title": "⌬",
+    "y": 77
+  },
+  {
+    "title": "Receive",
+    "y": 77
+  },
+  {
+    "title": "Send",
+    "y": 77
+  },
+  {
+    "title": "WORKSPACE MODE",
+    "y": 79
+  },
+  {
+    "title": "Browse",
+    "y": 82
+  },
+  {
+    "title": "⇄",
+    "y": 128
+  },
+  {
+    "title": "Query",
+    "y": 133
+  },
+  {
+    "title": "Trap receiver",
+    "y": 139
+  },
+  {
+    "title": "OFFLINE",
+    "y": 139
+  },
+  {
+    "title": "Listen port",
+    "y": 161
+  },
+  {
+    "title": "Start receiver",
+    "y": 168
+  },
+  {
+    "title": "◎",
+    "y": 179
+  },
+  {
+    "title": "Start receiver",
+    "y": 179
+  },
+  {
+    "title": "Agents",
+    "y": 184
+  },
+  {
+    "title": "dualudp4udp6Lab accept-all",
+    "y": 221
+  },
+  {
+    "title": "⚑",
+    "y": 230
+  },
+  {
+    "title": "dual",
+    "y": 232
+  },
+  {
+    "title": "udp4",
+    "y": 232
+  },
+  {
+    "title": "udp6",
+    "y": 232
+  },
+  {
+    "title": "Lab accept-all",
+    "y": 232
+  },
+  {
+    "title": "Traps",
+    "y": 235
+  },
+  {
+    "title": "⌁",
+    "y": 281
+  },
+  {
+    "title": "Tools",
+    "y": 286
+  },
+  {
+    "title": "Persisted filters & export",
+    "y": 315
+  },
+  {
+    "title": "⚙",
+    "y": 332
+  },
+  {
+    "title": "Source IP/prefix",
+    "y": 335
+  },
+  {
+    "title": "Trap OID/name",
+    "y": 335
+  },
+  {
+    "title": "Settings",
+    "y": 337
+  },
+  {
+    "title": "Varbind contains",
+    "y": 395
+  },
+  {
+    "title": "⚑",
+    "y": 435
+  },
+  {
+    "title": "Any versionv1v2cv3Unread onlyLast hourLast 24h",
+    "y": 455
+  },
+  {
+    "title": "Any version",
+    "y": 466
+  },
+  {
+    "title": "v1",
+    "y": 466
+  },
+  {
+    "title": "v2c",
+    "y": 466
+  },
+  {
+    "title": "v3",
+    "y": 466
+  },
+  {
+    "title": "Unread only",
+    "y": 466
+  },
+  {
+    "title": "Last hour",
+    "y": 466
+  },
+  {
+    "title": "Select a notification",
+    "y": 493
+  },
+  {
+    "title": "Last 24h",
+    "y": 510
+  },
+  {
+    "title": "ApplyResetCSVJSON",
+    "y": 543
+  },
+  {
+    "title": "Apply",
+    "y": 554
+  },
+  {
+    "title": "Reset",
+    "y": 554
+  },
+  {
+    "title": "CSV",
+    "y": 554
+  },
+  {
+    "title": "JSON",
+    "y": 554
+  },
+  {
+    "title": "Captured notifications",
+    "y": 560
+  },
+  {
+    "title": "0 in this session",
+    "y": 572
+  },
+  {
+    "title": "Saved filter name",
+    "y": 587
+  },
+  {
+    "title": "Save filter",
+    "y": 606
+  },
+  {
+    "title": "No traps received",
+    "y": 625
+  },
+  {
+    "title": "SNMPv3 trap users",
+    "y": 685
+  },
+  {
+    "title": "User name",
+    "y": 705
+  },
+  {
+    "title": "TX",
+    "y": 728
+  },
+  {
+    "title": "RX",
+    "y": 728
+  },
+  {
+    "title": "ERR",
+    "y": 728
+  },
+  {
+    "title": "⌘",
+    "y": 761
+  },
+  {
+    "title": "noAuthNoPrivauthNoPrivauthPriv",
+    "y": 765
+  },
+  {
+    "title": "Commands",
+    "y": 766
+  },
+  {
+    "title": "noAuthNoPriv",
+    "y": 776
+  },
+  {
+    "title": "authNoPriv",
+    "y": 776
+  },
+  {
+    "title": "authPriv",
+    "y": 776
+  },
+  {
+    "title": "?",
+    "y": 812
+  },
+  {
+    "title": "Shortcuts",
+    "y": 816
+  },
+  {
+    "title": "Save v3 user",
+    "y": 820
+  },
+  {
+    "title": "Engine ready",
+    "y": 864
+  },
+  {
+    "title": "node · net-snmp 3.26.3",
+    "y": 876
+  },
+  {
+    "title": "PACKETS0",
+    "y": 881
+  },
+  {
+    "title": "PACKETS",
+    "y": 886
+  },
+  {
+    "title": "0",
+    "y": 886
+  },
+  {
+    "title": "Severity & notification rules",
+    "y": 891
+  },
+  {
+    "title": "Rule name",
+    "y": 911
+  },
+  {
+    "title": "Trap OID glob",
+    "y": 971
+  },
+  {
+    "title": "Source prefixes (comma-separated)",
+    "y": 1031
+  },
+  {
+    "title": "Varbind substring",
+    "y": 1091
+  },
+  {
+    "title": "infowarningcriticalOS notification",
+    "y": 1151
+  },
+  {
+    "title": "info",
+    "y": 1162
+  },
+  {
+    "title": "warning",
+    "y": 1162
+  },
+  {
+    "title": "critical",
+    "y": 1162
+  },
+  {
+    "title": "OS notification",
+    "y": 1162
+  },
+  {
+    "title": "Color",
+    "y": 1195
+  },
+  {
+    "title": "Create rule",
+    "y": 1266
+  }
+]

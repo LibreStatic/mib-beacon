@@ -1,0 +1,70 @@
+{
+  "screen": "mibs",
+  "width": 390,
+  "booted": true,
+  "scrollers": [
+    {
+      "scrollHeight": 748,
+      "clientHeight": 688,
+      "ratio": 1.09,
+      "cls": "css-g5y9jx r-150rngu r-eqz5dr r-16y2uox "
+    }
+  ],
+  "sections": [
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 42
+    },
+    {
+      "title": "Import MIB",
+      "y": 121
+    },
+    {
+      "title": "Import MIBs",
+      "y": 178
+    },
+    {
+      "title": "Loaded modules",
+      "y": 238
+    },
+    {
+      "title": "Tap a module to isolate its OID graph",
+      "y": 267
+    },
+    {
+      "title": "SNMPv2-CONF",
+      "y": 589
+    },
+    {
+      "title": "SNMPv2-MIB",
+      "y": 647
+    },
+    {
+      "title": "SNMPv2-SMI",
+      "y": 705
+    },
+    {
+      "title": "SNMPv2-TC",
+      "y": 763
+    },
+    {
+      "title": "Browse",
+      "y": 818
+    },
+    {
+      "title": "Results",
+      "y": 818
+    },
+    {
+      "title": "Settings",
+      "y": 818
+    }
+  ],
+  "inlineImport": {
+    "hasDropZone": false,
+    "hasFromUrl": false,
+    "hasPaste": false,
+    "hasImportBtn": true
+  },
+  "loadedModulesY": 238
+}

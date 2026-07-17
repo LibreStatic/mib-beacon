@@ -1,0 +1,163 @@
+{
+  "screen": "agents",
+  "width": 390,
+  "scrollHeight": 1189,
+  "clientHeight": 630,
+  "scrollTop": 0,
+  "ratio": 1.89,
+  "sections": [
+    {
+      "title": "⌘",
+      "y": 14,
+      "kind": "button"
+    },
+    {
+      "title": "?",
+      "y": 14,
+      "kind": "button"
+    },
+    {
+      "title": "PACKETS 0",
+      "y": 69,
+      "kind": "button"
+    },
+    {
+      "title": "New profile",
+      "y": 178,
+      "kind": "button"
+    },
+    {
+      "title": "udp4",
+      "y": 441,
+      "kind": "button"
+    },
+    {
+      "title": "udp6",
+      "y": 441,
+      "kind": "button"
+    },
+    {
+      "title": "v1",
+      "y": 441,
+      "kind": "button"
+    },
+    {
+      "title": "v2c",
+      "y": 441,
+      "kind": "button"
+    },
+    {
+      "title": "v3",
+      "y": 441,
+      "kind": "button"
+    },
+    {
+      "title": "noAuthNoPriv",
+      "y": 629,
+      "kind": "button"
+    },
+    {
+      "title": "authNoPriv",
+      "y": 629,
+      "kind": "button"
+    },
+    {
+      "title": "authPriv",
+      "y": 629,
+      "kind": "button"
+    },
+    {
+      "title": "md5",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "sha",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "sha224",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "sha256",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "sha384",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "sha512",
+      "y": 701,
+      "kind": "button"
+    },
+    {
+      "title": "⌬ Browse",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⇄ Results",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⚑ Traps",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⌁ Tools",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "⚙ Settings",
+      "y": 788,
+      "kind": "button"
+    },
+    {
+      "title": "des (unavailable)",
+      "y": 841,
+      "kind": "button"
+    },
+    {
+      "title": "aes",
+      "y": 841,
+      "kind": "button"
+    },
+    {
+      "title": "aes256b",
+      "y": 841,
+      "kind": "button"
+    },
+    {
+      "title": "aes256r",
+      "y": 841,
+      "kind": "button"
+    },
+    {
+      "title": "Create profile",
+      "y": 1049,
+      "kind": "button"
+    },
+    {
+      "title": "Create group",
+      "y": 1229,
+      "kind": "button"
+    }
+  ],
+  "textMapCount": 66,
+  "clicks": [
+    {
+      "action": "v3 chip",
+      "clicked": true,
+      "text": "v3"
+    }
+  ]
+}

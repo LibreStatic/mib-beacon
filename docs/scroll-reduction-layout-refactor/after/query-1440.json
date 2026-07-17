@@ -1,0 +1,115 @@
+{
+  "screen": "query",
+  "width": 1440,
+  "booted": true,
+  "scrollers": [],
+  "sections": [
+    {
+      "title": "SNMP query",
+      "y": 12
+    },
+    {
+      "title": "GET",
+      "y": 23
+    },
+    {
+      "title": "CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS",
+      "y": 34
+    },
+    {
+      "title": "0 varbinds · 0 batches · 0 ms",
+      "y": 69
+    },
+    {
+      "title": "Results",
+      "y": 70
+    },
+    {
+      "title": "Browse",
+      "y": 82
+    },
+    {
+      "title": "Manage profiles",
+      "y": 96
+    },
+    {
+      "title": "Agent",
+      "y": 97
+    },
+    {
+      "title": "No results yet",
+      "y": 121
+    },
+    {
+      "title": "Quick pick · last-used profiles appear first",
+      "y": 129
+    },
+    {
+      "title": "Choose an operation, agent, and OID.",
+      "y": 141
+    },
+    {
+      "title": "Single agent",
+      "y": 160
+    },
+    {
+      "title": "Agent group",
+      "y": 160
+    },
+    {
+      "title": "Agents",
+      "y": 184
+    },
+    {
+      "title": "Host",
+      "y": 237
+    },
+    {
+      "title": "Settings",
+      "y": 337
+    },
+    {
+      "title": "Community",
+      "y": 385
+    },
+    {
+      "title": "Operation",
+      "y": 475
+    },
+    {
+      "title": "Get",
+      "y": 506
+    },
+    {
+      "title": "Get Next",
+      "y": 506
+    },
+    {
+      "title": "Get Bulk",
+      "y": 506
+    },
+    {
+      "title": "Walk",
+      "y": 506
+    },
+    {
+      "title": "Set",
+      "y": 506
+    },
+    {
+      "title": "OID",
+      "y": 539
+    },
+    {
+      "title": "Run Get",
+      "y": 610
+    },
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 876
+    }
+  ],
+  "resultsHeaderYs": [
+    70
+  ]
+}

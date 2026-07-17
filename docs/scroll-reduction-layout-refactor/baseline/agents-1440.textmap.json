@@ -1,0 +1,302 @@
+[
+  {
+    "title": "Agent profiles",
+    "y": 12
+  },
+  {
+    "title": "MIB Beacon",
+    "y": 19
+  },
+  {
+    "title": "0 SAVED",
+    "y": 23
+  },
+  {
+    "title": "ENCRYPTED CREDENTIALS · CONNECTION TESTS · REUSABLE GROUPS",
+    "y": 34
+  },
+  {
+    "title": "Network workbench",
+    "y": 38
+  },
+  {
+    "title": "⌬Browse⇄Query◎Agents⚑Traps⌁Tools⚙Settings",
+    "y": 66
+  },
+  {
+    "title": "⌬",
+    "y": 77
+  },
+  {
+    "title": "Browse",
+    "y": 82
+  },
+  {
+    "title": "New profile",
+    "y": 96
+  },
+  {
+    "title": "Saved agents",
+    "y": 97
+  },
+  {
+    "title": "⇄",
+    "y": 128
+  },
+  {
+    "title": "No saved profiles yet.",
+    "y": 129
+  },
+  {
+    "title": "Query",
+    "y": 133
+  },
+  {
+    "title": "◎",
+    "y": 179
+  },
+  {
+    "title": "Agents",
+    "y": 184
+  },
+  {
+    "title": "Add profile",
+    "y": 184
+  },
+  {
+    "title": "Name",
+    "y": 204
+  },
+  {
+    "title": "Host",
+    "y": 204
+  },
+  {
+    "title": "⚑",
+    "y": 230
+  },
+  {
+    "title": "Traps",
+    "y": 235
+  },
+  {
+    "title": "Port",
+    "y": 264
+  },
+  {
+    "title": "Timeout ms",
+    "y": 264
+  },
+  {
+    "title": "Retries",
+    "y": 264
+  },
+  {
+    "title": "⌁",
+    "y": 281
+  },
+  {
+    "title": "Tools",
+    "y": 286
+  },
+  {
+    "title": "udp4udp6v1v2cv3",
+    "y": 324
+  },
+  {
+    "title": "⚙",
+    "y": 332
+  },
+  {
+    "title": "udp4",
+    "y": 335
+  },
+  {
+    "title": "udp6",
+    "y": 335
+  },
+  {
+    "title": "v1",
+    "y": 335
+  },
+  {
+    "title": "v2c",
+    "y": 335
+  },
+  {
+    "title": "v3",
+    "y": 335
+  },
+  {
+    "title": "Settings",
+    "y": 337
+  },
+  {
+    "title": "GetBulk non-repeaters",
+    "y": 368
+  },
+  {
+    "title": "GetBulk max repetitions",
+    "y": 368
+  },
+  {
+    "title": "User",
+    "y": 428
+  },
+  {
+    "title": "noAuthNoPrivauthNoPrivauthPriv",
+    "y": 488
+  },
+  {
+    "title": "noAuthNoPriv",
+    "y": 499
+  },
+  {
+    "title": "authNoPriv",
+    "y": 499
+  },
+  {
+    "title": "authPriv",
+    "y": 499
+  },
+  {
+    "title": "Authentication protocol",
+    "y": 532
+  },
+  {
+    "title": "md5shasha224sha256sha384sha512",
+    "y": 552
+  },
+  {
+    "title": "md5",
+    "y": 563
+  },
+  {
+    "title": "sha",
+    "y": 563
+  },
+  {
+    "title": "sha224",
+    "y": 563
+  },
+  {
+    "title": "sha256",
+    "y": 563
+  },
+  {
+    "title": "sha384",
+    "y": 563
+  },
+  {
+    "title": "sha512",
+    "y": 563
+  },
+  {
+    "title": "Auth password",
+    "y": 596
+  },
+  {
+    "title": "Privacy protocol",
+    "y": 656
+  },
+  {
+    "title": "des (unavailable)aesaes256baes256r",
+    "y": 676
+  },
+  {
+    "title": "des (unavailable)",
+    "y": 687
+  },
+  {
+    "title": "aes",
+    "y": 687
+  },
+  {
+    "title": "aes256b",
+    "y": 687
+  },
+  {
+    "title": "aes256r",
+    "y": 687
+  },
+  {
+    "title": "Privacy password",
+    "y": 720
+  },
+  {
+    "title": "TX",
+    "y": 728
+  },
+  {
+    "title": "RX",
+    "y": 728
+  },
+  {
+    "title": "ERR",
+    "y": 728
+  },
+  {
+    "title": "⌘",
+    "y": 761
+  },
+  {
+    "title": "Commands",
+    "y": 766
+  },
+  {
+    "title": "Context name",
+    "y": 780
+  },
+  {
+    "title": "Context engine id",
+    "y": 780
+  },
+  {
+    "title": "?",
+    "y": 812
+  },
+  {
+    "title": "Shortcuts",
+    "y": 816
+  },
+  {
+    "title": "Create profile",
+    "y": 860
+  },
+  {
+    "title": "Engine ready",
+    "y": 864
+  },
+  {
+    "title": "Create profile",
+    "y": 871
+  },
+  {
+    "title": "node · net-snmp 3.26.3",
+    "y": 876
+  },
+  {
+    "title": "PACKETS0",
+    "y": 881
+  },
+  {
+    "title": "PACKETS",
+    "y": 886
+  },
+  {
+    "title": "0",
+    "y": 886
+  },
+  {
+    "title": "Agent groups",
+    "y": 938
+  },
+  {
+    "title": "Group name",
+    "y": 958
+  },
+  {
+    "title": "Create group",
+    "y": 1037
+  }
+]

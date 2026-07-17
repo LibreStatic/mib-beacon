@@ -1,0 +1,142 @@
+{
+  "screen": "query",
+  "width": 390,
+  "booted": true,
+  "scrollers": [
+    {
+      "scrollHeight": 1618,
+      "clientHeight": 688,
+      "ratio": 2.35,
+      "cls": "css-g5y9jx r-150rngu r-eqz5dr r-16y2uox "
+    }
+  ],
+  "sections": [
+    {
+      "title": "node · net-snmp 3.26.3",
+      "y": 42
+    },
+    {
+      "title": "Manage profiles",
+      "y": 133
+    },
+    {
+      "title": "Agent",
+      "y": 134
+    },
+    {
+      "title": "Quick pick · last-used profiles appear first",
+      "y": 170
+    },
+    {
+      "title": "Single agent",
+      "y": 205
+    },
+    {
+      "title": "Agent group",
+      "y": 205
+    },
+    {
+      "title": "Host",
+      "y": 294
+    },
+    {
+      "title": "Community",
+      "y": 466
+    },
+    {
+      "title": "Operation",
+      "y": 567
+    },
+    {
+      "title": "Get",
+      "y": 604
+    },
+    {
+      "title": "Get Next",
+      "y": 604
+    },
+    {
+      "title": "Get Bulk",
+      "y": 604
+    },
+    {
+      "title": "Walk",
+      "y": 604
+    },
+    {
+      "title": "Set",
+      "y": 604
+    },
+    {
+      "title": "OID",
+      "y": 641
+    },
+    {
+      "title": "Typed varbind",
+      "y": 742
+    },
+    {
+      "title": "OID",
+      "y": 761
+    },
+    {
+      "title": "Browse",
+      "y": 818
+    },
+    {
+      "title": "Results",
+      "y": 818
+    },
+    {
+      "title": "Settings",
+      "y": 818
+    },
+    {
+      "title": "OID",
+      "y": 864
+    },
+    {
+      "title": "Add varbind to request",
+      "y": 1203
+    },
+    {
+      "title": "Review Set request",
+      "y": 1254
+    },
+    {
+      "title": "Results",
+      "y": 1543
+    },
+    {
+      "title": "0 varbinds · 0 batches · 0 ms",
+      "y": 1561
+    },
+    {
+      "title": "No results yet",
+      "y": 1613
+    },
+    {
+      "title": "Choose an operation, agent, and OID.",
+      "y": 1633
+    }
+  ],
+  "setChipCount": 1,
+  "setReview": [
+    {
+      "kw": "Review Set",
+      "y": 1254
+    },
+    {
+      "kw": "Set request",
+      "y": 1254
+    },
+    {
+      "kw": "varbind",
+      "y": 742
+    },
+    {
+      "kw": "Add varbind",
+      "y": 1203
+    }
+  ]
+}

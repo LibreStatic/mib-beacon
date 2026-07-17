@@ -1,0 +1,318 @@
+[
+  {
+    "title": "Notification console",
+    "y": 12
+  },
+  {
+    "title": "MIB Beacon",
+    "y": 19
+  },
+  {
+    "title": "SENDER",
+    "y": 23
+  },
+  {
+    "title": "CAPTURE · INSPECT · CRAFT · REPLAY SNMP NOTIFICATIONS",
+    "y": 34
+  },
+  {
+    "title": "Network workbench",
+    "y": 38
+  },
+  {
+    "title": "⌬Browse⇄Query◎Agents⚑Traps⌁Tools⚙Settings",
+    "y": 66
+  },
+  {
+    "title": "ReceiveSend",
+    "y": 66
+  },
+  {
+    "title": "⌬",
+    "y": 77
+  },
+  {
+    "title": "Receive",
+    "y": 77
+  },
+  {
+    "title": "Send",
+    "y": 77
+  },
+  {
+    "title": "WORKSPACE MODE",
+    "y": 79
+  },
+  {
+    "title": "Browse",
+    "y": 82
+  },
+  {
+    "title": "⇄",
+    "y": 128
+  },
+  {
+    "title": "Query",
+    "y": 133
+  },
+  {
+    "title": "Notification envelope",
+    "y": 142
+  },
+  {
+    "title": "Destination",
+    "y": 145
+  },
+  {
+    "title": "UDP",
+    "y": 145
+  },
+  {
+    "title": "TrapInform",
+    "y": 162
+  },
+  {
+    "title": "Ad hoc",
+    "y": 167
+  },
+  {
+    "title": "Trap",
+    "y": 173
+  },
+  {
+    "title": "Inform",
+    "y": 173
+  },
+  {
+    "title": "Ad hoc",
+    "y": 178
+  },
+  {
+    "title": "◎",
+    "y": 179
+  },
+  {
+    "title": "Agents",
+    "y": 184
+  },
+  {
+    "title": "Trap OID",
+    "y": 206
+  },
+  {
+    "title": "Host",
+    "y": 211
+  },
+  {
+    "title": "Port",
+    "y": 211
+  },
+  {
+    "title": "⚑",
+    "y": 230
+  },
+  {
+    "title": "Traps",
+    "y": 235
+  },
+  {
+    "title": "Resolved as coldStart",
+    "y": 266
+  },
+  {
+    "title": "v1v2cv3",
+    "y": 271
+  },
+  {
+    "title": "⌁",
+    "y": 281
+  },
+  {
+    "title": "v1",
+    "y": 282
+  },
+  {
+    "title": "v2c",
+    "y": 282
+  },
+  {
+    "title": "v3",
+    "y": 282
+  },
+  {
+    "title": "Tools",
+    "y": 286
+  },
+  {
+    "title": "sysUpTime ticks (optional)",
+    "y": 286
+  },
+  {
+    "title": "User",
+    "y": 315
+  },
+  {
+    "title": "⚙",
+    "y": 332
+  },
+  {
+    "title": "Settings",
+    "y": 337
+  },
+  {
+    "title": "noAuthNoPrivauthNoPrivauthPriv",
+    "y": 375
+  },
+  {
+    "title": "noAuthNoPriv",
+    "y": 386
+  },
+  {
+    "title": "authNoPriv",
+    "y": 386
+  },
+  {
+    "title": "authPriv",
+    "y": 386
+  },
+  {
+    "title": "md5shasha256sha512",
+    "y": 419
+  },
+  {
+    "title": "md5",
+    "y": 430
+  },
+  {
+    "title": "sha",
+    "y": 430
+  },
+  {
+    "title": "sha256",
+    "y": 430
+  },
+  {
+    "title": "sha512",
+    "y": 430
+  },
+  {
+    "title": "Auth key",
+    "y": 463
+  },
+  {
+    "title": "des (n/a)aesaes256baes256r",
+    "y": 523
+  },
+  {
+    "title": "des (n/a)",
+    "y": 534
+  },
+  {
+    "title": "aes",
+    "y": 534
+  },
+  {
+    "title": "aes256b",
+    "y": 534
+  },
+  {
+    "title": "aes256r",
+    "y": 534
+  },
+  {
+    "title": "Privacy key",
+    "y": 567
+  },
+  {
+    "title": "Payload varbinds",
+    "y": 650
+  },
+  {
+    "title": "Add varbind",
+    "y": 655
+  },
+  {
+    "title": "0 custom fields",
+    "y": 662
+  },
+  {
+    "title": "Send trap",
+    "y": 709
+  },
+  {
+    "title": "TX",
+    "y": 728
+  },
+  {
+    "title": "RX",
+    "y": 728
+  },
+  {
+    "title": "ERR",
+    "y": 728
+  },
+  {
+    "title": "Saved sender presets",
+    "y": 749
+  },
+  {
+    "title": "⌘",
+    "y": 761
+  },
+  {
+    "title": "Commands",
+    "y": 766
+  },
+  {
+    "title": "Preset name",
+    "y": 769
+  },
+  {
+    "title": "Save preset",
+    "y": 788
+  },
+  {
+    "title": "?",
+    "y": 812
+  },
+  {
+    "title": "Shortcuts",
+    "y": 816
+  },
+  {
+    "title": "Engine ready",
+    "y": 864
+  },
+  {
+    "title": "node · net-snmp 3.26.3",
+    "y": 876
+  },
+  {
+    "title": "PACKETS0",
+    "y": 881
+  },
+  {
+    "title": "PACKETS",
+    "y": 886
+  },
+  {
+    "title": "0",
+    "y": 886
+  },
+  {
+    "title": "Send history",
+    "y": 887
+  },
+  {
+    "title": "session only",
+    "y": 887
+  },
+  {
+    "title": "No notifications sent",
+    "y": 937
+  },
+  {
+    "title": "Craft a trap or inform above.",
+    "y": 957
+  }
+]

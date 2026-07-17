@@ -1,0 +1,32 @@
+{
+  "screen": "mibs",
+  "width": 768,
+  "booted": true,
+  "scrollers": [],
+  "sections": [
+    {
+      "title": "Browse",
+      "y": 12
+    },
+    {
+      "title": "Import",
+      "y": 77
+    },
+    {
+      "title": "SNMPv2-CONF",
+      "y": 78
+    },
+    {
+      "title": "SNMPv2-MIB",
+      "y": 78
+    },
+    {
+      "title": "SNMPv2-SMI",
+      "y": 78
+    },
+    {
+      "title": "SNMPv2-TC",
+      "y": 78
+    }
+  ]
+}

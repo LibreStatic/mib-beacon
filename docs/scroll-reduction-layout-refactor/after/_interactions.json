@@ -1,0 +1,86 @@
+{
+  "mobileMibs": {
+    "openDialog": true,
+    "esc": {
+      "closed": true,
+      "dialogGone": true
+    },
+    "backdrop": {
+      "dialogGone": true
+    },
+    "paste": {
+      "textareaFilled": true,
+      "importClicked": true,
+      "dialogAfter": {
+        "dialogStillOpen": true,
+        "mentionsAfterscan": true,
+        "progressWords": true
+      },
+      "afterClose": {
+        "afterscanInList": true,
+        "summaryText": "IMPORT MIB handled by engine Add files, fetch a URL, or paste SMI text in the import dialog. Import MIBs Last import: done LOADED "
+      }
+    },
+    "dialogInfo": {
+      "top": 0,
+      "bottom": 844,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "vh": 844,
+      "vw": 390,
+      "anchoredBottom": true
+    },
+    "bottomSheetAnchored": true,
+    "dialogBackdropPresent": false,
+    "dialogHasImportFlow": {
+      "dropZone": true,
+      "fromUrl": true,
+      "paste": true,
+      "progress": false
+    },
+    "reopened": true
+  },
+  "desktopMibs": {
+    "beforeClick": {
+      "dropZone": false,
+      "fromUrl": false,
+      "paste": false,
+      "importMibsBtn": false
+    },
+    "afterClickImport": {
+      "dropZone": true,
+      "fromUrl": true,
+      "paste": true,
+      "importMibsBtn": false,
+      "hasDialog": true
+    }
+  },
+  "querySet": {
+    "setClicked": true,
+    "reviewBtn": {
+      "disabled": false,
+      "opacity": "1"
+    },
+    "dialogOpened": true,
+    "dialogInfo": {
+      "top": 0,
+      "bottom": 844,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "vh": 844,
+      "vw": 390,
+      "anchoredBottom": true
+    },
+    "confirmContent": {
+      "title": true,
+      "writePill": true,
+      "sendSet": true,
+      "cancel": true
+    },
+    "footerSendVisible": true,
+    "escClosed": true,
+    "backdropClosed": true
+  }
+}

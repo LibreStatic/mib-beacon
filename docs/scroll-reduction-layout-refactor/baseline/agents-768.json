@@ -1,0 +1,168 @@
+{
+  "screen": "agents",
+  "width": 768,
+  "scrollHeight": 1189,
+  "clientHeight": 946,
+  "scrollTop": 0,
+  "ratio": 1.26,
+  "sections": [
+    {
+      "title": "⌬",
+      "y": 66,
+      "kind": "button"
+    },
+    {
+      "title": "New profile",
+      "y": 85,
+      "kind": "button"
+    },
+    {
+      "title": "⇄",
+      "y": 117,
+      "kind": "button"
+    },
+    {
+      "title": "◎",
+      "y": 168,
+      "kind": "button"
+    },
+    {
+      "title": "⚑",
+      "y": 219,
+      "kind": "button"
+    },
+    {
+      "title": "⌁",
+      "y": 270,
+      "kind": "button"
+    },
+    {
+      "title": "⚙",
+      "y": 321,
+      "kind": "button"
+    },
+    {
+      "title": "udp4",
+      "y": 348,
+      "kind": "button"
+    },
+    {
+      "title": "udp6",
+      "y": 348,
+      "kind": "button"
+    },
+    {
+      "title": "v1",
+      "y": 348,
+      "kind": "button"
+    },
+    {
+      "title": "v2c",
+      "y": 348,
+      "kind": "button"
+    },
+    {
+      "title": "v3",
+      "y": 348,
+      "kind": "button"
+    },
+    {
+      "title": "noAuthNoPriv",
+      "y": 536,
+      "kind": "button"
+    },
+    {
+      "title": "authNoPriv",
+      "y": 536,
+      "kind": "button"
+    },
+    {
+      "title": "authPriv",
+      "y": 536,
+      "kind": "button"
+    },
+    {
+      "title": "md5",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "sha",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "sha224",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "sha256",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "sha384",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "sha512",
+      "y": 608,
+      "kind": "button"
+    },
+    {
+      "title": "des (unavailable)",
+      "y": 748,
+      "kind": "button"
+    },
+    {
+      "title": "aes",
+      "y": 748,
+      "kind": "button"
+    },
+    {
+      "title": "aes256b",
+      "y": 748,
+      "kind": "button"
+    },
+    {
+      "title": "aes256r",
+      "y": 748,
+      "kind": "button"
+    },
+    {
+      "title": "⌘",
+      "y": 918,
+      "kind": "button"
+    },
+    {
+      "title": "Create profile",
+      "y": 956,
+      "kind": "button"
+    },
+    {
+      "title": "?",
+      "y": 968,
+      "kind": "button"
+    },
+    {
+      "title": "PACKETS 0",
+      "y": 1005,
+      "kind": "button"
+    },
+    {
+      "title": "Create group",
+      "y": 1136,
+      "kind": "button"
+    }
+  ],
+  "textMapCount": 60,
+  "clicks": [
+    {
+      "action": "v3 chip",
+      "clicked": true,
+      "text": "v3"
+    }
+  ]
+}

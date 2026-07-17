@@ -1,0 +1,9 @@
+{
+  "screen": "traps-send",
+  "width": 768,
+  "page": {
+    "scrollHeight": 1024,
+    "clientHeight": 1024,
+    "ratio": 1
+  }
+}

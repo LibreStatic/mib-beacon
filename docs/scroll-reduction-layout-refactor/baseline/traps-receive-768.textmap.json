@@ -1,0 +1,290 @@
+[
+  {
+    "title": "Notification console",
+    "y": 12
+  },
+  {
+    "title": "RECEIVER",
+    "y": 23
+  },
+  {
+    "title": "CAPTURE · INSPECT · CRAFT · REPLAY SNMP NOTIFICATIONS",
+    "y": 34
+  },
+  {
+    "title": "⌬⇄◎⚑⌁⚙",
+    "y": 66
+  },
+  {
+    "title": "ReceiveSend",
+    "y": 66
+  },
+  {
+    "title": "⌬",
+    "y": 77
+  },
+  {
+    "title": "Receive",
+    "y": 81
+  },
+  {
+    "title": "Send",
+    "y": 81
+  },
+  {
+    "title": "WORKSPACE MODE",
+    "y": 83
+  },
+  {
+    "title": "⇄",
+    "y": 128
+  },
+  {
+    "title": "Trap receiver",
+    "y": 147
+  },
+  {
+    "title": "OFFLINE",
+    "y": 147
+  },
+  {
+    "title": "Listen port",
+    "y": 169
+  },
+  {
+    "title": "Start receiver",
+    "y": 172
+  },
+  {
+    "title": "◎",
+    "y": 179
+  },
+  {
+    "title": "Start receiver",
+    "y": 183
+  },
+  {
+    "title": "⚑",
+    "y": 230
+  },
+  {
+    "title": "dualudp4udp6Lab accept-all",
+    "y": 237
+  },
+  {
+    "title": "dual",
+    "y": 252
+  },
+  {
+    "title": "udp4",
+    "y": 252
+  },
+  {
+    "title": "udp6",
+    "y": 252
+  },
+  {
+    "title": "Lab accept-all",
+    "y": 252
+  },
+  {
+    "title": "⌁",
+    "y": 281
+  },
+  {
+    "title": "⚙",
+    "y": 332
+  },
+  {
+    "title": "Persisted filters & export",
+    "y": 351
+  },
+  {
+    "title": "Source IP/prefix",
+    "y": 371
+  },
+  {
+    "title": "Trap OID/name",
+    "y": 439
+  },
+  {
+    "title": "⚑",
+    "y": 501
+  },
+  {
+    "title": "Varbind contains",
+    "y": 507
+  },
+  {
+    "title": "Select a notification",
+    "y": 559
+  },
+  {
+    "title": "Captured notifications",
+    "y": 568
+  },
+  {
+    "title": "Any versionv1v2cv3Unread onlyLast hourLast 24h",
+    "y": 575
+  },
+  {
+    "title": "0 in this session",
+    "y": 580
+  },
+  {
+    "title": "Any version",
+    "y": 590
+  },
+  {
+    "title": "v1",
+    "y": 590
+  },
+  {
+    "title": "v2c",
+    "y": 590
+  },
+  {
+    "title": "v3",
+    "y": 590
+  },
+  {
+    "title": "No traps received",
+    "y": 633
+  },
+  {
+    "title": "Unread only",
+    "y": 642
+  },
+  {
+    "title": "Last hour",
+    "y": 642
+  },
+  {
+    "title": "Last 24h",
+    "y": 642
+  },
+  {
+    "title": "ApplyResetCSVJSON",
+    "y": 679
+  },
+  {
+    "title": "Apply",
+    "y": 694
+  },
+  {
+    "title": "Reset",
+    "y": 694
+  },
+  {
+    "title": "CSV",
+    "y": 694
+  },
+  {
+    "title": "JSON",
+    "y": 694
+  },
+  {
+    "title": "Saved filter name",
+    "y": 731
+  },
+  {
+    "title": "Save filter",
+    "y": 754
+  },
+  {
+    "title": "SNMPv3 trap users",
+    "y": 837
+  },
+  {
+    "title": "User name",
+    "y": 857
+  },
+  {
+    "title": "noAuthNoPrivauthNoPrivauthPriv",
+    "y": 925
+  },
+  {
+    "title": "⌘",
+    "y": 927
+  },
+  {
+    "title": "noAuthNoPriv",
+    "y": 940
+  },
+  {
+    "title": "authNoPriv",
+    "y": 940
+  },
+  {
+    "title": "authPriv",
+    "y": 940
+  },
+  {
+    "title": "?",
+    "y": 978
+  },
+  {
+    "title": "Save v3 user",
+    "y": 992
+  },
+  {
+    "title": "PACKETS0",
+    "y": 1005
+  },
+  {
+    "title": "PACKETS",
+    "y": 1010
+  },
+  {
+    "title": "0",
+    "y": 1010
+  },
+  {
+    "title": "Severity & notification rules",
+    "y": 1067
+  },
+  {
+    "title": "Rule name",
+    "y": 1087
+  },
+  {
+    "title": "Trap OID glob",
+    "y": 1155
+  },
+  {
+    "title": "Source prefixes (comma-separated)",
+    "y": 1223
+  },
+  {
+    "title": "Varbind substring",
+    "y": 1291
+  },
+  {
+    "title": "infowarningcriticalOS notification",
+    "y": 1359
+  },
+  {
+    "title": "info",
+    "y": 1374
+  },
+  {
+    "title": "warning",
+    "y": 1374
+  },
+  {
+    "title": "critical",
+    "y": 1374
+  },
+  {
+    "title": "OS notification",
+    "y": 1426
+  },
+  {
+    "title": "Color",
+    "y": 1463
+  },
+  {
+    "title": "Create rule",
+    "y": 1546
+  }
+]

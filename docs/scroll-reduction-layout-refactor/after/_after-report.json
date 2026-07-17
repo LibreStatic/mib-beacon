@@ -1,0 +1,369 @@
+{
+  "capture": {
+    "traps-send-390": {
+      "pageRatio": 1,
+      "sh": 844,
+      "ch": 844
+    },
+    "traps-send-form-390": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 390,
+        "vh": 844,
+        "card": {
+          "top": 68,
+          "bottom": 844,
+          "left": 0,
+          "right": 390,
+          "width": 390,
+          "height": 776
+        },
+        "footer": {
+          "top": 0,
+          "bottom": 844,
+          "height": 844
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": true,
+          "scrollHeight": 903,
+          "clientHeight": 647,
+          "ratio": 1.4
+        },
+        "bottomAnchored": true,
+        "fullWidth": true
+      },
+      "authPriv": true
+    },
+    "agents-390": {
+      "pageRatio": 1,
+      "sh": 844,
+      "ch": 844
+    },
+    "agents-form-390": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 390,
+        "vh": 844,
+        "card": {
+          "top": 68,
+          "bottom": 844,
+          "left": 0,
+          "right": 390,
+          "width": 390,
+          "height": 776
+        },
+        "footer": {
+          "top": 788,
+          "bottom": 832,
+          "height": 44
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": true,
+          "scrollHeight": 804,
+          "clientHeight": 647,
+          "ratio": 1.24
+        },
+        "bottomAnchored": true,
+        "fullWidth": true
+      }
+    },
+    "traps-send-768": {
+      "pageRatio": 1,
+      "sh": 1024,
+      "ch": 1024
+    },
+    "traps-send-form-768": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 768,
+        "vh": 1024,
+        "card": {
+          "top": 41,
+          "bottom": 983,
+          "left": 24,
+          "right": 744,
+          "width": 720,
+          "height": 942
+        },
+        "footer": {
+          "top": 0,
+          "bottom": 1024,
+          "height": 1024
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": true,
+          "scrollHeight": 891,
+          "clientHeight": 812,
+          "ratio": 1.1
+        },
+        "bottomAnchored": false,
+        "fullWidth": false
+      },
+      "authPriv": true
+    },
+    "agents-768": {
+      "pageRatio": 1,
+      "sh": 1024,
+      "ch": 1024
+    },
+    "agents-form-768": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 768,
+        "vh": 1024,
+        "card": {
+          "top": 77,
+          "bottom": 947,
+          "left": 24,
+          "right": 744,
+          "width": 720,
+          "height": 870
+        },
+        "footer": {
+          "top": 890,
+          "bottom": 934,
+          "height": 44
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": false,
+          "scrollHeight": 0,
+          "clientHeight": 0,
+          "ratio": 1
+        },
+        "bottomAnchored": false,
+        "fullWidth": false
+      }
+    },
+    "traps-send-1440": {
+      "pageRatio": 1,
+      "sh": 900,
+      "ch": 900
+    },
+    "traps-send-form-1440": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 1440,
+        "vh": 900,
+        "card": {
+          "top": 36,
+          "bottom": 864,
+          "left": 360,
+          "right": 1080,
+          "width": 720,
+          "height": 828
+        },
+        "footer": {
+          "top": 0,
+          "bottom": 900,
+          "height": 900
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": true,
+          "scrollHeight": 787,
+          "clientHeight": 712,
+          "ratio": 1.11
+        },
+        "bottomAnchored": false,
+        "fullWidth": false
+      },
+      "authPriv": true
+    },
+    "agents-1440": {
+      "pageRatio": 1,
+      "sh": 900,
+      "ch": 900
+    },
+    "agents-form-1440": {
+      "pageRatio": 1,
+      "dialog": {
+        "open": true,
+        "vw": 1440,
+        "vh": 900,
+        "card": {
+          "top": 66,
+          "bottom": 834,
+          "left": 360,
+          "right": 1080,
+          "width": 720,
+          "height": 768
+        },
+        "footer": {
+          "top": 783,
+          "bottom": 821,
+          "height": 38
+        },
+        "footerFullyVisible": true,
+        "primaryFullyVisible": true,
+        "scroller": {
+          "overflow": false,
+          "scrollHeight": 0,
+          "clientHeight": 0,
+          "ratio": 1
+        },
+        "bottomAnchored": false,
+        "fullWidth": false
+      }
+    }
+  },
+  "interactions": {
+    "w390": {
+      "width": 390,
+      "trapsDialog": {
+        "open": true,
+        "closedEsc": true,
+        "reopened": true,
+        "closedBackdrop": true,
+        "backdropPoint": {
+          "bx": 195,
+          "by": 52
+        }
+      },
+      "trapsSend": {
+        "setHost": {
+          "ok": true,
+          "value": "127.0.0.1"
+        },
+        "setPort": {
+          "ok": true,
+          "value": "30162"
+        },
+        "setComm": {
+          "ok": true,
+          "value": "public"
+        },
+        "histBefore": "empty",
+        "dialogClosedAfterSend": true,
+        "histAfter": {
+          "empty": false,
+          "hasHost": true,
+          "snippet": "SEND HISTORY | session only | trap | 1.3.6.1.6.3.1.1.5.1 | sent · 127.0.0.1:30162 | Send again | PACKETS | 5 | ⌬ | Browse | ⇄ | Results | ⚑ | Traps | ⌁ | Tools | ⚙ | Settings"
+        }
+      },
+      "agentsCreate": {
+        "openAdd": true,
+        "setName": {
+          "ok": true,
+          "value": "AfterScan Agent"
+        },
+        "setAHost": {
+          "ok": true,
+          "value": "127.0.0.1"
+        },
+        "setAComm": {
+          "ok": true,
+          "value": "public"
+        },
+        "createClosed": true,
+        "rowInfo": {
+          "hasRow": true,
+          "noProfiles": false
+        }
+      },
+      "agentsTest": {
+        "resultText": "Connection succeeded · 2 ms",
+        "resultY": 376,
+        "agentRow": {
+          "top": 238,
+          "bottom": 500
+        },
+        "insideRow": true,
+        "bodySnippet": "AfterScan Agent | 127.0.0.1:161 · udp4 · v2c | Last used 7/16/2026, 2:31:10 AM | Test | Edit | Delete | Connection succeeded · 2 ms | sysDescr.0 = Linux cachyos-x8664-hp16la 6.19.11-1-cachyos #1 SMP PREEMPT_DY"
+      },
+      "agentsEdit": {
+        "open": true,
+        "hasEditTitle": true,
+        "hasSaveChanges": true,
+        "prefillHasName": true,
+        "prefillHasHost": true,
+        "cancelClosed": true
+      }
+    },
+    "w1440": {
+      "width": 1440,
+      "trapsDialog": {
+        "open": true,
+        "closedEsc": true,
+        "reopened": true,
+        "closedBackdrop": true,
+        "backdropPoint": {
+          "bx": 720,
+          "by": 63
+        }
+      },
+      "trapsSend": {
+        "setHost": {
+          "ok": true,
+          "value": "127.0.0.1"
+        },
+        "setPort": {
+          "ok": true,
+          "value": "30162"
+        },
+        "setComm": {
+          "ok": true,
+          "value": "public"
+        },
+        "histBefore": "empty",
+        "dialogClosedAfterSend": true,
+        "histAfter": {
+          "empty": false,
+          "hasHost": true,
+          "snippet": "SEND HISTORY | session only | trap | 1.3.6.1.6.3.1.1.5.1 | sent · 127.0.0.1:30162 | Send again | PACKETS | 8"
+        }
+      },
+      "agentsCreate": {
+        "openAdd": true,
+        "setName": {
+          "ok": true,
+          "value": "AfterScan Agent"
+        },
+        "setAHost": {
+          "ok": true,
+          "value": "127.0.0.1"
+        },
+        "setAComm": {
+          "ok": true,
+          "value": "public"
+        },
+        "createClosed": true,
+        "rowInfo": {
+          "hasRow": true,
+          "noProfiles": false
+        }
+      },
+      "agentsTest": {
+        "resultText": "Connection succeeded · 2 ms",
+        "resultY": 267,
+        "agentRow": {
+          "top": 137,
+          "bottom": 361
+        },
+        "insideRow": true,
+        "bodySnippet": "AfterScan Agent | 127.0.0.1:161 · udp4 · v2c | Last used 7/16/2026, 2:31:26 AM | Test | Edit | Delete | Connection succeeded · 2 ms | sysDescr.0 = Linux cachyos-x8664-hp16la 6.19.11-1-cachyos #1 SMP PREEMPT_DY"
+      },
+      "agentsEdit": {
+        "open": true,
+        "hasEditTitle": true,
+        "hasSaveChanges": true,
+        "prefillHasName": true,
+        "prefillHasHost": true,
+        "cancelClosed": true
+      }
+    }
+  }
+}

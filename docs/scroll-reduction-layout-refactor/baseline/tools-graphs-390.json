@@ -1,0 +1,25 @@
+{
+  "screen": "tools-graphs",
+  "width": 390,
+  "scrollHeight": 844,
+  "clientHeight": 844,
+  "ratio": 1,
+  "sections": [
+    {
+      "title": "Ports",
+      "y": 166
+    },
+    {
+      "title": "Add an SNMP target",
+      "y": 277
+    },
+    {
+      "title": "2. Configure the series",
+      "y": 343
+    },
+    {
+      "title": "Results",
+      "y": 818
+    }
+  ]
+}

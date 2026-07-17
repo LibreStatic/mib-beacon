@@ -1,0 +1,23 @@
+{
+  "screen": "mibs-form",
+  "width": 390,
+  "dialogInfo": {
+    "top": 0,
+    "bottom": 844,
+    "left": 0,
+    "width": 390,
+    "height": 844,
+    "vh": 844,
+    "vw": 390,
+    "anchoredBottom": true
+  },
+  "bottomSheetAnchored": true,
+  "backdropPresent": false,
+  "importFlow": {
+    "dropZone": true,
+    "fromUrl": true,
+    "paste": true,
+    "progress": false
+  },
+  "pageRatio": 1.09
+}
