@@ -245,12 +245,14 @@ export interface AppState {
   removeTrap: (id: string) => void;
   clearTraps: () => void;
   trapMode: TrapMode;
+  trapComposerOpen: boolean;
   notification: NotificationForm;
   notificationAgentId: string | null;
   sendBusy: boolean;
   sendError: string | null;
   sendHistory: NotificationHistoryItem[];
   setTrapMode: (mode: TrapMode) => void;
+  setTrapComposerOpen: (open: boolean) => void;
   updateNotification: (patch: Partial<NotificationForm>) => void;
   setNotificationAgentId: (id: string | null) => void;
   setNotificationVarbinds: (varbinds: SnmpVarbindInput[]) => void;
@@ -646,12 +648,14 @@ export const useAppStore = create<AppState>((set) => ({
     }),
   clearTraps: () => set({ records: [], unreadTrapCount: 0 }),
   trapMode: 'receive',
+  trapComposerOpen: false,
   notification: defaultNotification,
   notificationAgentId: null,
   sendBusy: false,
   sendError: null,
   sendHistory: [],
   setTrapMode: (trapMode) => set({ trapMode }),
+  setTrapComposerOpen: (trapComposerOpen) => set({ trapComposerOpen }),
   updateNotification: (patch) => set((s) => ({ notification: { ...s.notification, ...patch } })),
   setNotificationAgentId: (notificationAgentId) => set({ notificationAgentId }),
   setNotificationVarbinds: (varbinds) =>

@@ -1,15 +1,12 @@
-export type ResponsiveMode = 'compact' | 'medium' | 'expanded';
+export {
+  COMPACT_MAX_WIDTH,
+  EXPANDED_MIN_WIDTH,
+  getResponsiveMode,
+  type ResponsiveMode,
+} from '@mibbeacon/ui/breakpoints';
+
 export type WorkspaceKey =
   'browse' | 'mibModules' | 'operationConsole' | 'query' | 'traps' | 'mibs' | 'settings';
-
-export const COMPACT_MAX_WIDTH = 639;
-export const EXPANDED_MIN_WIDTH = 1024;
-
-export function getResponsiveMode(width: number): ResponsiveMode {
-  if (width <= COMPACT_MAX_WIDTH) return 'compact';
-  if (width < EXPANDED_MIN_WIDTH) return 'medium';
-  return 'expanded';
-}
 
 export function shouldUseEmbeddedQuerySplit(
   embedded: boolean,

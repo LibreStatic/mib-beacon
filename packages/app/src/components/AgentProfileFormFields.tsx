@@ -1,13 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import {
-  Button,
-  Card,
-  Chip,
-  Field,
-  Label,
-  Row,
-  SectionTitle,
-} from '@mibbeacon/ui';
+import { Chip, Field, Label, Row } from '@mibbeacon/ui';
 import type {
   AuthProtocol,
   EngineInfo,
@@ -22,40 +14,25 @@ const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
 const AUTHS: AuthProtocol[] = ['md5', 'sha', 'sha224', 'sha256', 'sha384', 'sha512'];
 const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
 
-interface InlineAgentProfileSetupProps {
+export interface AgentProfileFormFieldsProps {
   editor: AgentEditorState;
-  error?: string | null;
   editing?: boolean;
   info: EngineInfo | null;
-  busy?: boolean;
-  onCancel?: () => void;
   onEditorChange: (next: AgentEditorState) => void;
-  onSubmit: () => void;
-  submitTitle?: string;
-  subtitle?: string;
-  title?: string;
 }
 
-export function InlineAgentProfileSetup({
+/** The SNMP agent profile form fields, without container, title, or submit row. */
+export function AgentProfileFormFields({
   editor,
-  error = null,
   editing = false,
   info,
-  busy = false,
-  onCancel,
   onEditorChange,
-  onSubmit,
-  submitTitle = editing ? 'Save changes' : 'Create profile',
-  subtitle,
-  title = editing ? 'Edit profile' : 'Add profile',
-}: InlineAgentProfileSetupProps) {
+}: AgentProfileFormFieldsProps) {
   const update = <K extends keyof AgentEditorState>(key: K, value: AgentEditorState[K]) =>
     onEditorChange({ ...editor, [key]: value });
 
   return (
-    <Card style={styles.card}>
-      <SectionTitle>{title}</SectionTitle>
-      {subtitle ? <Label tone="dim" size={11}>{subtitle}</Label> : null}
+    <View style={styles.fields}>
       <Row>
         <Field label="Name" value={editor.name} onChangeText={(value) => update('name', value)} />
         <Field label="Host" value={editor.host} onChangeText={(value) => update('host', value)} />
@@ -132,17 +109,12 @@ export function InlineAgentProfileSetup({
         </View>
       )}
       <Label tone="dim" size={11}>Passwords are write-only and stored through the platform encrypted secret store.</Label>
-      {error ? <Label tone="error">{error}</Label> : null}
-      <Row>
-        <Button title={submitTitle} disabled={busy} onPress={onSubmit} />
-        {onCancel ? <Button title="Cancel" variant="ghost" onPress={onCancel} /> : null}
-      </Row>
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 14 },
+  fields: { gap: 8 },
   stack: { gap: 8 },
   wrap: { flexWrap: 'wrap' },
 });

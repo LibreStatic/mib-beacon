@@ -3,6 +3,7 @@ import { View, Text, FlatList, Pressable, ScrollView, Share, StyleSheet } from '
 import {
   Card,
   SectionTitle,
+  Dialog,
   Field,
   Button,
   Chip,
@@ -269,36 +270,40 @@ export function QueryScreen({
           onPress={() => void openTableView(engine, selectedNode)}
         />
       ) : null}
-      {operation === 'set' && review ? (
-        <View style={[styles.review, { borderColor: t.warn, backgroundColor: t.surfaceAlt }]}>
-          <Label tone="warn" size={11}>
-            WRITE CONFIRMATION
-          </Label>
-          {(setStaging.length > 0 ? setStaging : [setDraft]).map((varbind, index) => (
-            <View key={`${index}-${varbind.oid}`} style={styles.stack}>
-              <Mono size={12}>{varbind.oid}</Mono>
-              <Text style={{ color: t.text, fontSize: 13 }}>
-                {setPreviousValues[index]
-                  ? `${setPreviousValues[index]!.formattedValue ?? setPreviousValues[index]!.value} → `
-                  : 'Current value unavailable → '}
-                {varbind.value || '∅'} ({varbind.type})
-              </Text>
-            </View>
-          ))}
-          <Label tone="dim" size={11}>
-            This changes state on the remote agent and cannot be undone automatically.
-          </Label>
-          <Row>
-            <Button title="Send Set" small onPress={() => void runSet(engine)} />
+      <Dialog
+        visible={operation === 'set' && review}
+        onRequestClose={() => useAppStore.getState().setSetReview(false)}
+        title="Confirm Set request"
+        subtitle="Review the staged writes before sending."
+        headerAccessory={<Pill text="WRITE" color={t.warn} />}
+        maxWidth={560}
+        footer={
+          <>
             <Button
               title="Cancel"
               small
               variant="ghost"
               onPress={() => useAppStore.getState().setSetReview(false)}
             />
-          </Row>
-        </View>
-      ) : null}
+            <Button title="Send Set" small onPress={() => void runSet(engine)} />
+          </>
+        }
+      >
+        {(setStaging.length > 0 ? setStaging : [setDraft]).map((varbind, index) => (
+          <View key={`${index}-${varbind.oid}`} style={styles.stack}>
+            <Mono size={12}>{varbind.oid}</Mono>
+            <Text style={{ color: t.text, fontSize: 13 }}>
+              {setPreviousValues[index]
+                ? `${setPreviousValues[index]!.formattedValue ?? setPreviousValues[index]!.value} → `
+                : 'Current value unavailable → '}
+              {varbind.value || '∅'} ({varbind.type})
+            </Text>
+          </View>
+        ))}
+        <Label tone="dim" size={11}>
+          This changes state on the remote agent and cannot be undone automatically.
+        </Label>
+      </Dialog>
     </Card>
   );
 
@@ -1379,7 +1384,6 @@ const styles = StyleSheet.create({
   wrap: { flexWrap: 'wrap' },
   stack: { gap: 8 },
   targetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  review: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 7 },
   resultsHead: {
     flexDirection: 'row',
     flexWrap: 'wrap',

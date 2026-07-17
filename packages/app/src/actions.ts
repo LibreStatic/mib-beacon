@@ -1321,5 +1321,6 @@ export async function trapFromNode(engine: EngineAPI, detail: MibNodeDetail): Pr
   const s = useAppStore.getState();
   s.updateNotification({ trapOid: detail.oid, varbinds });
   s.setTrapMode('send');
+  s.setTrapComposerOpen(true);
   s.setTab('traps');
 }

@@ -19,7 +19,6 @@ import type {
   EngineInfo,
   PrivProtocol,
   SecurityLevel,
-  SnmpVersion,
   TrapRecord,
   TrapQuery,
   TrapSavedFilter,
@@ -27,26 +26,23 @@ import type {
   TrapRule,
   TrapSendPreset,
 } from '@mibbeacon/core/client';
-import { validateVarbindInput } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
-import { useAppStore, type AgentForm, type NotificationHistoryItem } from '../store';
+import { useAppStore, type NotificationHistoryItem } from '../store';
 import {
   markTrapRead,
   deleteTrap,
   refreshTrapRecords,
   repeatNotification,
-  sendNotification,
   toggleReceiver,
 } from '../actions';
-import { VarbindEditor } from '../components/VarbindEditor';
 import { OidLookupPanel } from '../components/OidLookupPanel';
+import { TrapComposerDialog } from '../components/TrapComposerDialog';
 import { SplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
 import { serializeTraps, trapToNotificationPayload } from '../trap-export';
 import { SwipeActionRow } from '../components/SwipeActionRow';
 
-const VERSIONS: SnmpVersion[] = ['v1', 'v2c', 'v3'];
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
 const AUTHS: AuthProtocol[] = ['md5', 'sha', 'sha256', 'sha512'];
 const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
@@ -88,7 +84,8 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
           />
         </Row>
       </View>
-      {mode === 'receive' ? <ReceiveWorkspace /> : <SendWorkspace info={info} />}
+      {mode === 'receive' ? <ReceiveWorkspace /> : <SendWorkspace />}
+      <TrapComposerDialog info={info} />
     </View>
   );
 }
@@ -752,6 +749,7 @@ function TrapDetail({ rec }: { rec: TrapRecord }) {
       varbinds: payload.varbinds,
     });
     state.setTrapMode('send');
+    state.setTrapComposerOpen(true);
   };
   return (
     <View style={[styles.trapDetail, { backgroundColor: t.bg }]}>
@@ -861,7 +859,7 @@ function TrapDetail({ rec }: { rec: TrapRecord }) {
   );
 }
 
-function SendWorkspace({ info }: { info: EngineInfo | null }) {
+function SendWorkspace() {
   const engine = useEngine();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
@@ -871,70 +869,20 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
   const history = useAppStore((s) => s.sendHistory);
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const notificationAgentId = useAppStore((s) => s.notificationAgentId);
-  const [trapName, setTrapName] = useState<string | null>(null);
   const [presets, setPresets] = useState<TrapSendPreset[]>([]);
   const [presetName, setPresetName] = useState('');
-  const update = useAppStore.getState().updateNotification;
-  const setVarbinds = useAppStore.getState().setNotificationVarbinds;
-  const setTarget = (patch: Partial<AgentForm>) => update({ target: { ...form.target, ...patch } });
-  const setV3 = (patch: Partial<AgentForm['v3']>) =>
-    setTarget({ v3: { ...form.target.v3, ...patch } });
-  const trapOidError = /^\d+(?:\.\d+)+$/.test(form.trapOid.trim())
-    ? null
-    : 'Trap OID must be a complete numeric OID.';
-  const uptimeError =
-    form.upTime.trim() &&
-    (!/^\d+$/.test(form.upTime.trim()) || BigInt(form.upTime.trim()) > 4_294_967_295n)
-      ? 'sysUpTime must be an unsigned 32-bit integer.'
-      : null;
-  const agentAddressError =
-    form.target.version === 'v1' && form.agentAddress.trim()
-      ? (() => {
-          const parts = form.agentAddress.trim().split('.');
-          return parts.length !== 4 ||
-            parts.some((part) => !/^\d+$/.test(part) || Number(part) > 255)
-            ? 'v1 agent address must be a valid IPv4 address.'
-            : null;
-        })()
-      : null;
-  const v1EnvelopeError =
-    form.target.version === 'v1' &&
-    (!/^\d+(?:\.\d+)+$/.test(form.v1Enterprise.trim()) ||
-      !/^\d$/.test(form.v1Generic) ||
-      Number(form.v1Generic) > 6 ||
-      !/^\d+$/.test(form.v1Specific))
-      ? 'v1 enterprise must be an OID; generic must be 0–6; specific must be non-negative.'
-      : null;
-  const payloadError = form.varbinds.map(validateVarbindInput).find(Boolean) ?? null;
-  const formValidationError =
-    trapOidError ?? uptimeError ?? agentAddressError ?? v1EnvelopeError ?? payloadError;
-  const desOff = info != null && !info.ciphers.des;
+  const openComposer = () => useAppStore.getState().setTrapComposerOpen(true);
+  const destinationAgent = agentProfiles.find((profile) => profile.id === notificationAgentId);
+  const destinationSummary = destinationAgent
+    ? `Saved agent · ${destinationAgent.name}`
+    : form.target.host.trim()
+      ? `${form.target.host}:${form.target.port || '162'} · ${form.target.version}`
+      : 'No destination yet';
 
   const refreshPresets = useCallback(() => engine.traps.presets.list().then(setPresets), [engine]);
   useEffect(() => {
     void refreshPresets();
   }, [refreshPresets]);
-
-  useEffect(() => {
-    let active = true;
-    if (trapOidError) {
-      setTrapName(null);
-      return () => {
-        active = false;
-      };
-    }
-    void engine.mibs
-      .resolve(form.trapOid.trim())
-      .then((resolved) => {
-        if (active) setTrapName(resolved?.name ?? null);
-      })
-      .catch(() => {
-        if (active) setTrapName(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [engine, form.trapOid, trapOidError]);
 
   return (
     <FlatList
@@ -945,242 +893,26 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <>
-          <View style={supportsSplitView ? styles.sendTopGrid : undefined}>
-            <Card style={[styles.card, supportsSplitView ? styles.sendGridCard : undefined]}>
-              <View style={styles.cardTitle}>
-                <SectionTitle>Destination</SectionTitle>
-                <Pill text="UDP" color={t.accent} />
-              </View>
-              <Row style={styles.wrap}>
-                <Chip
-                  label="Ad hoc"
-                  active={!notificationAgentId}
-                  onPress={() => useAppStore.getState().setNotificationAgentId(null)}
-                />
-                {agentProfiles.map((profile) => (
-                  <Chip
-                    key={profile.id}
-                    label={profile.name}
-                    active={notificationAgentId === profile.id}
-                    onPress={() => useAppStore.getState().setNotificationAgentId(profile.id)}
-                  />
-                ))}
-              </Row>
-              {notificationAgentId ? (
-                <Label tone="ok">
-                  Credentials are resolved inside the engine from the saved agent profile.
-                </Label>
-              ) : (
-                <Row>
-                  <Field
-                    label="Host"
-                    value={form.target.host}
-                    placeholder="192.0.2.10"
-                    onChangeText={(host) => setTarget({ host })}
-                  />
-                  <View style={{ width: 88 }}>
-                    <Field
-                      label="Port"
-                      value={form.target.port}
-                      keyboardType="number-pad"
-                      onChangeText={(port) => setTarget({ port })}
-                    />
-                  </View>
-                </Row>
-              )}
-              {!notificationAgentId ? (
-                <>
-                  <Row>
-                    {VERSIONS.map((version) => (
-                      <Chip
-                        key={version}
-                        label={version}
-                        active={form.target.version === version}
-                        onPress={() => {
-                          setTarget({ version });
-                          if (version === 'v1' && form.kind === 'inform') update({ kind: 'trap' });
-                        }}
-                      />
-                    ))}
-                  </Row>
-                  {form.target.version !== 'v3' ? (
-                    <Field
-                      label="Community"
-                      value={form.target.community}
-                      onChangeText={(community) => setTarget({ community })}
-                    />
-                  ) : (
-                    <>
-                      <Field
-                        label="User"
-                        value={form.target.v3.user}
-                        onChangeText={(user) => setV3({ user })}
-                      />
-                      <Row style={styles.wrap}>
-                        {LEVELS.map((level) => (
-                          <Chip
-                            key={level}
-                            label={level}
-                            active={form.target.v3.level === level}
-                            onPress={() => setV3({ level })}
-                          />
-                        ))}
-                      </Row>
-                      {form.target.v3.level !== 'noAuthNoPriv' ? (
-                        <>
-                          <Row style={styles.wrap}>
-                            {AUTHS.map((authProtocol) => (
-                              <Chip
-                                key={authProtocol}
-                                label={authProtocol}
-                                active={form.target.v3.authProtocol === authProtocol}
-                                onPress={() => setV3({ authProtocol })}
-                              />
-                            ))}
-                          </Row>
-                          <Field
-                            label="Auth key"
-                            secureTextEntry
-                            value={form.target.v3.authKey}
-                            onChangeText={(authKey) => setV3({ authKey })}
-                          />
-                        </>
-                      ) : null}
-                      {form.target.v3.level === 'authPriv' ? (
-                        <>
-                          <Row style={styles.wrap}>
-                            {PRIVS.map((privProtocol) => {
-                              const disabled = privProtocol === 'des' && desOff;
-                              return (
-                                <Chip
-                                  key={privProtocol}
-                                  label={disabled ? 'des (n/a)' : privProtocol}
-                                  active={form.target.v3.privProtocol === privProtocol}
-                                  onPress={disabled ? undefined : () => setV3({ privProtocol })}
-                                />
-                              );
-                            })}
-                          </Row>
-                          <Field
-                            label="Privacy key"
-                            secureTextEntry
-                            value={form.target.v3.privKey}
-                            onChangeText={(privKey) => setV3({ privKey })}
-                          />
-                        </>
-                      ) : null}
-                    </>
-                  )}
-                </>
-              ) : null}
-            </Card>
-
-            <Card style={[styles.card, supportsSplitView ? styles.sendGridCard : undefined]}>
-              <SectionTitle>Notification envelope</SectionTitle>
-              <Row>
-                <Chip
-                  label="Trap"
-                  active={form.kind === 'trap'}
-                  onPress={() => update({ kind: 'trap' })}
-                />
-                <Chip
-                  label={form.target.version === 'v1' ? 'Inform · v2+' : 'Inform'}
-                  active={form.kind === 'inform'}
-                  onPress={
-                    form.target.version === 'v1' ? undefined : () => update({ kind: 'inform' })
-                  }
-                />
-              </Row>
-              <Field
-                label="Trap OID"
-                value={form.trapOid}
-                onChangeText={(trapOid) => update({ trapOid })}
-                placeholder="1.3.6.1.6.3.1.1.5.3"
-              />
-              {trapName ? (
-                <Label tone="ok" size={11}>
-                  Resolved as {trapName}
-                </Label>
-              ) : null}
-              <Row>
-                <Field
-                  label="sysUpTime ticks (optional)"
-                  value={form.upTime}
-                  keyboardType="number-pad"
-                  onChangeText={(upTime) => update({ upTime })}
-                />
-                {form.target.version === 'v1' ? (
-                  <>
-                    <Field
-                      label="v1 agent address"
-                      value={form.agentAddress}
-                      onChangeText={(agentAddress) => update({ agentAddress })}
-                    />
-                    <Field
-                      label="v1 enterprise OID"
-                      value={form.v1Enterprise}
-                      onChangeText={(v1Enterprise) => update({ v1Enterprise })}
-                    />
-                    <Field
-                      label="v1 generic (0–6)"
-                      value={form.v1Generic}
-                      keyboardType="number-pad"
-                      onChangeText={(v1Generic) => update({ v1Generic })}
-                    />
-                    <Field
-                      label="v1 specific"
-                      value={form.v1Specific}
-                      keyboardType="number-pad"
-                      onChangeText={(v1Specific) => update({ v1Specific })}
-                    />
-                  </>
-                ) : null}
-              </Row>
-              <Label tone="dim" size={11}>
-                Tip: open a NOTIFICATION-TYPE node in Browse and choose “Send this trap” to prefill
-                its OID and OBJECTS payload.
-              </Label>
-            </Card>
-          </View>
-
-          <View style={styles.payloadHead}>
-            <View>
-              <SectionTitle>Payload varbinds</SectionTitle>
-              <Text style={{ color: t.textDim, fontSize: 11 }}>
-                {form.varbinds.length} custom fields
-              </Text>
+          <Card style={styles.card}>
+            <View style={styles.cardTitle}>
+              <SectionTitle>Craft a notification</SectionTitle>
+              <Pill text={form.kind.toUpperCase()} color={t.accent} />
             </View>
-            <Button
-              title="Add varbind"
-              small
-              variant="ghost"
-              onPress={() =>
-                setVarbinds([...form.varbinds, { oid: '', type: 'OctetString', value: '' }])
-              }
-            />
-          </View>
-          <View style={styles.payloadList}>
-            {form.varbinds.map((varbind, index) => (
-              <VarbindEditor
-                key={index}
-                compact
-                value={varbind}
-                onChange={(patch) =>
-                  setVarbinds(
-                    form.varbinds.map((item, i) => (i === index ? { ...item, ...patch } : item)),
-                  )
-                }
-                onRemove={() => setVarbinds(form.varbinds.filter((_item, i) => i !== index))}
+            <Label tone="dim" size={11}>
+              {destinationSummary}
+            </Label>
+            <Mono dim size={11}>
+              {form.trapOid || 'No trap OID yet'} · {form.varbinds.length} varbinds
+            </Mono>
+            <Row>
+              <Button
+                title={busy ? 'Transmitting…' : 'Compose trap'}
+                disabled={busy}
+                onPress={openComposer}
               />
-            ))}
-          </View>
-          {error ? <Label tone="error">{error}</Label> : null}
-          {formValidationError ? <Label tone="error">{formValidationError}</Label> : null}
-          <Button
-            title={busy ? 'Transmitting…' : `Send ${form.kind}`}
-            disabled={busy || !!formValidationError}
-            onPress={() => void sendNotification(engine)}
-          />
+            </Row>
+            {error ? <Label tone="error">{error}</Label> : null}
+          </Card>
           <Card style={styles.card}>
             <SectionTitle>Saved sender presets</SectionTitle>
             <Row style={styles.wrap}>
@@ -1237,6 +969,7 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
                       v1Generic: String(preset.payload.v1Generic ?? 6),
                       v1Specific: String(preset.payload.v1Specific ?? 0),
                     });
+                    useAppStore.getState().setTrapComposerOpen(true);
                   }}
                 />
                 <Button
@@ -1255,7 +988,10 @@ function SendWorkspace({ info }: { info: EngineInfo | null }) {
             </Label>
           </View>
           {!history.length ? (
-            <EmptyState title="No notifications sent" hint="Craft a trap or inform above." />
+            <EmptyState
+              title="No notifications sent"
+              hint="Use “Compose trap” to craft a trap or inform."
+            />
           ) : null}
         </>
       }
@@ -1355,6 +1091,7 @@ function TrapRow({ rec }: { rec: TrapRecord }) {
                     varbinds: payload.varbinds,
                   });
                   state.setTrapMode('send');
+                  state.setTrapComposerOpen(true);
                 }}
               />
               <Button

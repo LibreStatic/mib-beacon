@@ -27,7 +27,7 @@ import {
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { refreshAgentProfiles } from '../actions';
-import { InlineAgentProfileSetup } from '../components/InlineAgentProfileSetup';
+import { AgentProfileDialog } from '../components/AgentProfileDialog';
 import { ToolLineChart, ToolSparkline } from '../components/ToolLineChart';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
@@ -305,20 +305,6 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               selected={[seriesAgent]}
               title="1. Choose where to poll"
             />
-            {targetSetupSection === 'graphs' ? (
-              <InlineAgentProfileSetup
-                editor={targetEditor}
-                error={targetError}
-                info={info}
-                busy={targetBusy}
-                onCancel={cancelTargetSetup}
-                onEditorChange={setTargetEditor}
-                onSubmit={() => void createTarget()}
-                submitTitle="Save and use target"
-                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
-                title="Add an SNMP target"
-              />
-            ) : null}
             <Card>
               <SectionTitle>2. Configure the series</SectionTitle>
               {seriesAgent ? (
@@ -737,20 +723,6 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               selected={[compareA, compareB].filter(Boolean)}
               title="1. Choose two poll targets"
             />
-            {targetSetupSection === 'compare' ? (
-              <InlineAgentProfileSetup
-                editor={targetEditor}
-                error={targetError}
-                info={info}
-                busy={targetBusy}
-                onCancel={cancelTargetSetup}
-                onEditorChange={setTargetEditor}
-                onSubmit={() => void createTarget()}
-                submitTitle="Save and add target"
-                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
-                title="Add an SNMP target"
-              />
-            ) : null}
             <Card>
               <SectionTitle>2. Configure live comparison</SectionTitle>
               {compareA && compareB ? (
@@ -846,20 +818,6 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               selected={[portAgent]}
               title="1. Choose a port target"
             />
-            {targetSetupSection === 'ports' ? (
-              <InlineAgentProfileSetup
-                editor={targetEditor}
-                error={targetError}
-                info={info}
-                busy={targetBusy}
-                onCancel={cancelTargetSetup}
-                onEditorChange={setTargetEditor}
-                onSubmit={() => void createTarget()}
-                submitTitle="Save and use target"
-                subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
-                title="Add an SNMP target"
-              />
-            ) : null}
             <Card>
               <SectionTitle>2. Load interface data</SectionTitle>
               {portAgent ? (
@@ -1084,6 +1042,19 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
           </Card>
         ) : null}
       </ScrollView>
+      <AgentProfileDialog
+        visible={targetSetupSection !== null}
+        editor={targetEditor}
+        error={targetError}
+        info={info}
+        busy={targetBusy}
+        title="Add an SNMP target"
+        subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
+        submitTitle={targetSetupSection === 'compare' ? 'Save and add target' : 'Save and use target'}
+        onEditorChange={setTargetEditor}
+        onSubmit={() => void createTarget()}
+        onClose={cancelTargetSetup}
+      />
     </View>
   );
 }

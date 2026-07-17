@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./theme-values": "./src/theme-values.ts"
+    "./theme-values": "./src/theme-values.ts",
+    "./breakpoints": "./src/breakpoints.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

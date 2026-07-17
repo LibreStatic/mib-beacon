@@ -1,13 +1,12 @@
 import { useState } from 'react';
-import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   Button,
-  Card,
+  Dialog,
   EmptyState,
   Field,
   Label,
   Mono,
-  Pill,
   SectionTitle,
   useTheme,
 } from '@mibbeacon/ui';
@@ -15,7 +14,6 @@ import type { ModuleInfo } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import {
-  cancelImport,
   clearModuleFocus,
   importPastedText,
   importUrl,
@@ -23,6 +21,7 @@ import {
   unloadModule,
 } from '../actions';
 import { FileImportFlow } from './FileImportFlow';
+import { ImportProgressPanel } from './ImportProgressPanel';
 import { moduleCatalogSummary } from '../node-metadata';
 
 export function MibCatalogPane() {
@@ -203,76 +202,42 @@ function ModuleFilterButton({
 
 export function MibImportModal() {
   const engine = useEngine();
-  const t = useTheme();
   const open = useAppStore((state) => state.browserImportOpen);
   const busy = useAppStore((state) => state.importBusy);
-  const status = useAppStore((state) => state.importStatus);
   const [url, setUrl] = useState('');
   const [paste, setPaste] = useState('');
   const close = () => useAppStore.getState().setBrowserImportOpen(false);
   return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
-      <View style={styles.modalBackdrop}>
-        <Card style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <View>
-              <SectionTitle>Import MIB</SectionTitle>
-              <Label tone="dim" size={11}>
-                Add files, fetch a URL, or paste SMI text.
-              </Label>
-            </View>
-            <Button title="Close" small variant="ghost" onPress={close} />
-          </View>
-          <ScrollView contentContainerStyle={styles.modalContent}>
-            <FileImportFlow busy={busy} />
-            <Field
-              label="From URL"
-              placeholder="https://…/IF-MIB.txt"
-              value={url}
-              onChangeText={setUrl}
-            />
-            <Button
-              title={busy ? 'Working…' : 'Fetch & import'}
-              small
-              disabled={busy || !url.trim()}
-              onPress={() => void importUrl(engine, url)}
-            />
-            <Field label="Or paste MIB text" value={paste} onChangeText={setPaste} multiline />
-            <Button
-              title={busy ? 'Working…' : 'Import pasted text'}
-              small
-              variant="ghost"
-              disabled={busy || !paste.trim()}
-              onPress={() => void importPastedText(engine, 'pasted.mib', paste)}
-            />
-            {status ? (
-              <View
-                style={[styles.status, { borderColor: t.border, backgroundColor: t.surfaceAlt }]}
-              >
-                <Pill text={status.state} color={status.state === 'error' ? t.error : t.accent} />
-                {status.loadedModules.length ? (
-                  <Label tone="ok">Loaded: {status.loadedModules.join(', ')}</Label>
-                ) : null}
-                {status.failures.map((failure, index) => (
-                  <Label key={`${failure.module}-${index}`} tone="error">
-                    {failure.module ? `${failure.module}: ` : ''}
-                    {failure.message}
-                  </Label>
-                ))}
-                {busy ? (
-                  <Button
-                    title="Cancel"
-                    small
-                    variant="danger"
-                    onPress={() => void cancelImport(engine)}
-                  />
-                ) : null}
-              </View>
-            ) : null}
-          </ScrollView>
-        </Card>
-      </View>
-    </Modal>
+    <Dialog
+      visible={open}
+      onRequestClose={close}
+      title="Import MIB"
+      subtitle="Add files, fetch a URL, or paste SMI text."
+      maxWidth={680}
+    >
+      <FileImportFlow busy={busy} />
+      <Field
+        label="From URL"
+        placeholder="https://…/IF-MIB.txt"
+        value={url}
+        onChangeText={setUrl}
+      />
+      <Button
+        title={busy ? 'Working…' : 'Fetch & import'}
+        small
+        disabled={busy || !url.trim()}
+        onPress={() => void importUrl(engine, url)}
+      />
+      <Field label="Or paste MIB text" value={paste} onChangeText={setPaste} multiline />
+      <Button
+        title={busy ? 'Working…' : 'Import pasted text'}
+        small
+        variant="ghost"
+        disabled={busy || !paste.trim()}
+        onPress={() => void importPastedText(engine, 'pasted.mib', paste)}
+      />
+      <ImportProgressPanel />
+    </Dialog>
   );
 }
 
@@ -323,20 +288,4 @@ const styles = StyleSheet.create({
   },
   stripContent: { alignItems: 'center', gap: 6, paddingVertical: 7 },
   moduleFilterButton: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(5, 9, 16, 0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 18,
-  },
-  modalCard: { width: '100%', maxWidth: 680, maxHeight: '90%' },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  modalContent: { gap: 10, paddingTop: 12, paddingBottom: 6 },
-  status: { borderWidth: 1, borderRadius: 9, padding: 10, gap: 7 },
 });

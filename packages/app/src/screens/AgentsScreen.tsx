@@ -22,7 +22,7 @@ import { useEngine } from '../engine-context';
 import { refreshAgentProfiles } from '../actions';
 import { useAppStore } from '../store';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
-import { InlineAgentProfileSetup } from '../components/InlineAgentProfileSetup';
+import { AgentProfileDialog } from '../components/AgentProfileDialog';
 import {
   agentDraftFromEditor,
   editAgentProfile,
@@ -36,9 +36,14 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
   const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editor, setEditor] = useState(EMPTY_AGENT_EDITOR);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
+  const [testState, setTestState] = useState<{
+    profileId: string;
+    result: AgentTestResult | null;
+    error: string | null;
+  } | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
 
@@ -56,7 +61,14 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
     setEditingId(null);
     setEditor(EMPTY_AGENT_EDITOR);
     setError(null);
-    setTestResult(null);
+  };
+  const openCreate = () => {
+    reset();
+    setEditorOpen(true);
+  };
+  const closeEditor = () => {
+    setEditorOpen(false);
+    reset();
   };
 
   const save = async () => {
@@ -67,7 +79,7 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
       if (editingId) await engine.agents.update(editingId, draft);
       else await engine.agents.create(draft);
       await refreshAgentProfiles(engine);
-      reset();
+      closeEditor();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -77,14 +89,18 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
 
   const runTest = async (id: string) => {
     setBusy(true);
-    setError(null);
-    setTestResult(null);
+    setTestState(null);
     try {
-      setTestResult(await engine.agents.test(id));
+      const result = await engine.agents.test(id);
+      setTestState({ profileId: id, result, error: null });
       await refreshAgentProfiles(engine);
     } catch (caught) {
       const detail = caught as { message?: string; hint?: string };
-      setError(`${detail.message ?? String(caught)}${detail.hint ? ` — ${detail.hint}` : ''}`);
+      setTestState({
+        profileId: id,
+        result: null,
+        error: `${detail.message ?? String(caught)}${detail.hint ? ` — ${detail.hint}` : ''}`,
+      });
     } finally {
       setBusy(false);
     }
@@ -99,7 +115,7 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         onPress: () =>
           void engine.agents.delete(profile.id).then(async () => {
             await Promise.all([refreshAgentProfiles(engine), refreshGroups()]);
-            if (editingId === profile.id) reset();
+            if (editingId === profile.id) closeEditor();
           }),
       },
     ]);
@@ -115,10 +131,15 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         <Card style={styles.card}>
           <View style={styles.heading}>
             <SectionTitle>Saved agents</SectionTitle>
-            <Button title="New profile" small variant="ghost" onPress={reset} />
+            <Button title="New profile" small variant="ghost" onPress={openCreate} />
           </View>
           {profiles.length === 0 ? (
-            <Label tone="dim">No saved profiles yet.</Label>
+            <View style={styles.stack}>
+              <Label tone="dim">No saved profiles yet.</Label>
+              <Row>
+                <Button title="Add profile" small onPress={openCreate} />
+              </Row>
+            </View>
           ) : (
             profiles.map((profile) => (
               <View key={profile.id} style={[styles.profileRow, { borderColor: t.border }]}>
@@ -141,36 +162,31 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
                       setEditingId(profile.id);
                       setEditor(editAgentProfile(profile));
                       setError(null);
-                      setTestResult(null);
+                      setEditorOpen(true);
                     }}
                   />
                   <Button title="Delete" small variant="danger" onPress={() => remove(profile)} />
                 </Row>
+                {testState?.profileId === profile.id ? (
+                  testState.error ? (
+                    <View style={[styles.result, { borderColor: t.error }]}>
+                      <Label tone="error">{testState.error}</Label>
+                    </View>
+                  ) : testState.result ? (
+                    <View style={[styles.result, { borderColor: t.ok }]}>
+                      <Label tone="ok">Connection succeeded · {testState.result.latencyMs} ms</Label>
+                      {testState.result.varbinds.map((varbind) => (
+                        <Mono key={varbind.oid} size={11}>
+                          {varbind.name ?? varbind.oid} = {String(varbind.value)}
+                        </Mono>
+                      ))}
+                    </View>
+                  ) : null
+                ) : null}
               </View>
             ))
           )}
-          {testResult ? (
-            <View style={[styles.result, { borderColor: t.ok }]}>
-              <Label tone="ok">Connection succeeded · {testResult.latencyMs} ms</Label>
-              {testResult.varbinds.map((varbind) => (
-                <Mono key={varbind.oid} size={11}>
-                  {varbind.name ?? varbind.oid} = {String(varbind.value)}
-                </Mono>
-              ))}
-            </View>
-          ) : null}
         </Card>
-
-        <InlineAgentProfileSetup
-          editor={editor}
-          error={error}
-          editing={Boolean(editingId)}
-          info={info}
-          busy={busy}
-          onCancel={editingId ? reset : undefined}
-          onEditorChange={setEditor}
-          onSubmit={() => void save()}
-        />
 
         <Card style={styles.card}>
           <SectionTitle>Agent groups</SectionTitle>
@@ -216,6 +232,17 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
           ))}
         </Card>
       </ScrollView>
+      <AgentProfileDialog
+        visible={editorOpen}
+        editing={Boolean(editingId)}
+        editor={editor}
+        error={error}
+        info={info}
+        busy={busy}
+        onEditorChange={setEditor}
+        onSubmit={() => void save()}
+        onClose={closeEditor}
+      />
     </View>
   );
 }

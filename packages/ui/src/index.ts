@@ -21,3 +21,10 @@ export {
   Row,
 } from './primitives';
 export { KindGlyph, KIND_LABELS, type NodeKind } from './kind-glyph';
+export {
+  COMPACT_MAX_WIDTH,
+  EXPANDED_MIN_WIDTH,
+  getResponsiveMode,
+  type ResponsiveMode,
+} from './breakpoints';
+export { Dialog, type DialogProps } from './dialog';

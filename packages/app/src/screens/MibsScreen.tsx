@@ -14,8 +14,10 @@ import {
 import type { ModuleInfo } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
-import { cancelImport, focusModule, importPastedText, importUrl, unloadModule } from '../actions';
+import { focusModule, importPastedText, importUrl, unloadModule } from '../actions';
 import { FileImportFlow } from '../components/FileImportFlow';
+import { ImportProgressPanel } from '../components/ImportProgressPanel';
+import { MibImportModal } from '../components/MibCatalogControls';
 import { SplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
@@ -28,9 +30,6 @@ export function MibsScreen() {
   const busy = useAppStore((s) => s.importBusy);
   const lastImport = useAppStore((s) => s.lastImport);
   const importStatus = useAppStore((s) => s.importStatus);
-  const progress = useAppStore((s) => s.importProgress);
-  const completed = useAppStore((s) => s.importCompleted);
-  const total = useAppStore((s) => s.importTotal);
   const [url, setUrl] = useState('');
   const [paste, setPaste] = useState('');
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
@@ -81,63 +80,7 @@ export function MibsScreen() {
           void importPastedText(engine, 'pasted.mib', paste);
         }}
       />
-      {busy || importStatus ? (
-        <View
-          style={[styles.progressPanel, { borderColor: t.border, backgroundColor: t.surfaceAlt }]}
-        >
-          <View style={styles.eyebrowRow}>
-            <Label tone={importStatus?.state === 'error' ? 'error' : 'dim'} size={11}>
-              {busy
-                ? (importStatus?.state ?? 'starting resolver')
-                : (importStatus?.state ?? 'finished')}
-            </Label>
-            {total > 0 ? <Pill text={`${completed}/${total}`} color={t.accent} /> : null}
-          </View>
-          {progress.slice(-6).map((item) => (
-            <View key={item.id} style={styles.progressRow}>
-              <Pill text={item.kind.replaceAll('-', ' ')} />
-              <Mono dim size={10} numberOfLines={1}>
-                {[item.module, item.sourceId, item.location ?? item.message]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Mono>
-            </View>
-          ))}
-          {importStatus?.loadedModules.length ? (
-            <Label tone="ok" size={11}>
-              Resolved: {importStatus.loadedModules.join(', ')}
-            </Label>
-          ) : null}
-          {importStatus?.failures.map((failure, index) => (
-            <Label key={`${failure.module}-${index}`} tone="error" size={11}>
-              {failure.module ? `${failure.module}: ` : ''}
-              {failure.message}
-            </Label>
-          ))}
-          {busy ? (
-            <Button
-              title="Cancel resolution"
-              small
-              variant="danger"
-              onPress={() => void cancelImport(engine)}
-            />
-          ) : null}
-        </View>
-      ) : null}
-      {lastImport ? (
-        <View style={styles.importResult}>
-          {lastImport.loaded.length ? (
-            <Label tone="ok" size={12}>
-              Loaded: {lastImport.loaded.join(', ')}
-            </Label>
-          ) : null}
-          {lastImport.errors.map((e, i) => (
-            <Label key={i} tone="error" size={12}>
-              {e.name}: {e.message}
-            </Label>
-          ))}
-        </View>
-      ) : null}
+      <ImportProgressPanel />
     </Card>
   );
 
@@ -223,33 +166,61 @@ export function MibsScreen() {
     );
   }
 
+  const compactStatus = busy
+    ? `Import ${importStatus?.state ?? 'running'}…`
+    : importStatus
+      ? `Last import: ${importStatus.state}`
+      : lastImport
+        ? `Last import: ${lastImport.loaded.length} loaded${lastImport.errors.length ? ` · ${lastImport.errors.length} failed` : ''}`
+        : null;
   return (
-    <FlatList
-      style={styles.list}
-      contentContainerStyle={styles.content}
-      data={modules}
-      keyboardShouldPersistTaps="handled"
-      keyExtractor={(m) => m.name}
-      ListEmptyComponent={<EmptyState title="No modules" />}
-      ListHeaderComponent={
-        <>
-          {importCard}
-          <View style={styles.listHead}>
-            <View>
-              <SectionTitle>Loaded modules</SectionTitle>
-              <Text style={{ color: t.textDim, fontSize: 12 }}>
-                {modules.length} total · {userCount} user
-              </Text>
+    <View style={styles.list}>
+      <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.content}
+        data={modules}
+        keyboardShouldPersistTaps="handled"
+        keyExtractor={(m) => m.name}
+        ListEmptyComponent={<EmptyState title="No modules" />}
+        ListHeaderComponent={
+          <>
+            <Card style={styles.card}>
+              <View style={styles.eyebrowRow}>
+                <SectionTitle>Import MIB</SectionTitle>
+                <Pill text="handled by engine" color={t.ok} />
+              </View>
+              <Label tone="dim" size={11}>
+                Add files, fetch a URL, or paste SMI text in the import dialog.
+              </Label>
+              <Button
+                title={busy ? 'View import progress…' : 'Import MIBs'}
+                small
+                onPress={() => useAppStore.getState().setBrowserImportOpen(true)}
+              />
+              {compactStatus ? (
+                <Label tone={importStatus?.state === 'error' ? 'error' : 'dim'} size={11}>
+                  {compactStatus}
+                </Label>
+              ) : null}
+            </Card>
+            <View style={styles.listHead}>
+              <View>
+                <SectionTitle>Loaded modules</SectionTitle>
+                <Text style={{ color: t.textDim, fontSize: 12 }}>
+                  {modules.length} total · {userCount} user
+                </Text>
+              </View>
+              <Label tone="dim" size={11}>
+                Tap a module to isolate its OID graph
+              </Label>
             </View>
-            <Label tone="dim" size={11}>
-              Tap a module to isolate its OID graph
-            </Label>
-          </View>
-        </>
-      }
-      renderItem={({ item }) => <ModuleRow mod={item} />}
-      ListFooterComponent={<View style={{ height: 20 }} />}
-    />
+          </>
+        }
+        renderItem={({ item }) => <ModuleRow mod={item} />}
+        ListFooterComponent={<View style={{ height: 20 }} />}
+      />
+      <MibImportModal />
+    </View>
   );
 }
 

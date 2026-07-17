@@ -29,6 +29,7 @@
       "@mibbeacon/core/client": ["packages/core/src/client.ts"],
       "@mibbeacon/core/bridge": ["packages/core/src/bridge.ts"],
       "@mibbeacon/ui": ["packages/ui/src/index.ts"],
+      "@mibbeacon/ui/breakpoints": ["packages/ui/src/breakpoints.ts"],
       "@mibbeacon/app": ["packages/app/src/index.ts"]
     }
   }
