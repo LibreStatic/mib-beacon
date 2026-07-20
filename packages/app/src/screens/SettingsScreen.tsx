@@ -407,7 +407,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
           </View>
           <View style={styles.sectionGroup} onLayout={captureSection('privacy')}>
             <View style={styles.hero}>
-              <View>
+              <View style={styles.heroCopy}>
                 <Text style={[styles.heroTitle, { color: t.text }]}>Resolver control room</Text>
                 <Text style={{ color: t.textDim, fontSize: 12 }}>
                   Privacy, source order, cache, and external evidence
@@ -1616,6 +1616,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 5,
   },
+  heroCopy: { flex: 1, minWidth: 0 },
   heroTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
   sectionGroup: { gap: 12 },
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },

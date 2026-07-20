@@ -27,3 +27,31 @@ Target: local LAN web UI at `http://127.0.0.1:8899/`
 - **Status:** Fixed and revalidated at 390 × 844, 768 × 1024, 800 × 700, and
   1440 × 900. At every viewport, `#app-root`, `document.body.clientWidth`, and
   `document.body.scrollWidth` matched the viewport width.
+
+## Finding: Settings status pill clips on narrow phones
+
+- **Viewport:** 320 × 844 CSS pixels.
+- **Observed:** The “Resolver control room” copy kept its intrinsic width and
+  pushed the `DISABLED` status pill beyond the right edge.
+- **Evidence:** [clipped Settings header](broken-rules-settings-mobile.png).
+- **Fix:** Made the hero copy a shrinkable flex item with `flex: 1` and
+  `minWidth: 0`.
+- **Fixed evidence:** [Settings header after the fix](broken-rules-settings-mobile-fixed.png).
+
+## Finding: trap receiver action clips in narrow panes
+
+- **Viewports:** 320 × 844 phone and the narrow Receive pane at 768 × 1024.
+- **Observed:** The listen-port field retained most of the row width, reducing
+  “Start receiver” to a clipped sliver.
+- **Evidence:** [clipped trap receiver action](broken-rules-traps-mobile.png).
+- **Fix:** Allowed the receiver row to wrap according to its actual pane width
+  and gave the action a 120px wrapping basis and minimum.
+- **Fixed evidence:** [trap receiver after the fix](broken-rules-traps-mobile-fixed.png).
+
+## Cross-screen follow-up
+
+The Browser, Live MIBs, Results, Agents, Traps, Tools, MIBs, and Settings routes
+were rechecked at 320 × 844, 390 × 844, 768 × 1024, and 1440 × 900. Every route
+kept `#app-root`, `document.body.clientWidth`, and `document.body.scrollWidth`
+equal to the viewport width. Traps Send and all six Tools modes were also
+checked at 320px without additional right-edge clipping.

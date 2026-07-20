@@ -480,7 +480,7 @@ function ReceiveWorkspace() {
           color={receiver.running ? t.ok : t.textDim}
         />
       </View>
-      <Row>
+      <Row style={styles.receiverControls}>
         <Field
           label="Listen port"
           value={port}
@@ -488,7 +488,7 @@ function ReceiveWorkspace() {
           keyboardType="number-pad"
           editable={!receiver.running}
         />
-        <View style={{ justifyContent: 'flex-end', flex: 1 }}>
+        <View style={styles.receiverAction}>
           <Button
             title={receiver.running ? `Stop (:${receiver.port})` : 'Start receiver'}
             variant={receiver.running ? 'danger' : 'primary'}
@@ -1143,6 +1143,14 @@ const styles = StyleSheet.create({
   sendGridCard: { flex: 1, minWidth: 0 },
   card: { marginBottom: 12 },
   cardTitle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  receiverControls: { flexWrap: 'wrap' },
+  receiverAction: {
+    justifyContent: 'flex-end',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 120,
+    minWidth: 120,
+  },
   wrap: { flexWrap: 'wrap' },
   listHead: { justifyContent: 'space-between', paddingHorizontal: 4, paddingBottom: 6 },
   payloadHead: {
