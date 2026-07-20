@@ -38,7 +38,7 @@ import { persistMibCatalog } from './db/mib-catalog-store';
 const DEFAULT_CONSENT_TTL_MS = 5 * 60 * 1_000;
 const URL_MAX_BYTES = 5 * 1024 * 1024;
 const DEFAULT_SETTINGS: ResolverSettings = {
-  enabled: false,
+  enabled: true,
   autoResolveImports: false,
   externalConsentRemembered: false,
 };

@@ -157,9 +157,9 @@ authoritative suite runs must allow local TCP/UDP sockets.
 
 ## Immediate correctness and privacy defects
 
-- [x] **Resolver fresh-install defaults:** disable both the resolver and automatic missing-import
-      resolution until the user opts in. Regression coverage added in
-      `packages/core/src/resolver-engine.test.ts`.
+- [x] **Resolver fresh-install defaults:** enable the resolver master switch while keeping automatic
+      missing-import resolution and remembered external consent disabled. Regression coverage added
+      in `packages/core/src/resolver-engine.test.ts`.
 - [x] Make the resolver master switch gate every external source test, preview, explicit module
       resolution, and network OID lookup; a regression test proves source test, preview, and network
       OID lookup terminate with `RESOLVER_DISABLED` and make zero HTTP requests before opt-in.

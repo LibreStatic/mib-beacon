@@ -82,7 +82,7 @@ For a numeric OID with no loaded MIB match (from results table, trap console, or
 
 ### Settings & privacy
 
-- Master switch `resolver.enabled` default **off**. First time a missing-import or unknown-OID affordance is tapped, show a one-time explainer ("this contacts these servers with the module names you're resolving — nothing else") with enable/cancel. Per-source enable toggles + reorder live in plan 07's sources manager.
+- Master switch `resolver.enabled` defaults **on** for fresh installs. External requests still require the one-time explainer and explicit consent ("this contacts these servers with the module names you're resolving — nothing else"); automatic missing-import resolution remains off by default. Per-source enable toggles + reorder live in plan 07's sources manager.
 - Everything fetched is cached (content-addressed file + `mib_cache` row with source, url, etag, fetched-at); resolution retries hit cache first → repeat resolutions work fully offline.
 - "Clear online cache" + cache size display in settings.
 

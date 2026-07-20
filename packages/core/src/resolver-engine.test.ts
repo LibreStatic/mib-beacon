@@ -239,11 +239,11 @@ END`;
     expect(maxActiveRawRequests).toBeLessThanOrEqual(2);
   });
 
-  it('keeps all resolver network automation disabled on a fresh install', async () => {
+  it('enables the resolver on a fresh install without enabling automatic imports or consent', async () => {
     const engine = createEngine(transportWith(fixtureHttp()), { dbPath: ':memory:' });
 
     await expect(engine.resolver.settings.get()).resolves.toEqual({
-      enabled: false,
+      enabled: true,
       autoResolveImports: false,
       externalConsentRemembered: false,
     });
@@ -252,6 +252,7 @@ END`;
   it('blocks every explicit external resolver operation until the master switch is enabled', async () => {
     const http = fixtureHttp();
     const engine = createEngine(transportWith(http), { dbPath: ':memory:' });
+    await engine.resolver.settings.update({ enabled: false });
     const source = await engine.resolver.sources.create(sourceDraft());
 
     const sourceTest = await engine.resolver.sources.test(source.id, 'LEAF-MIB');
