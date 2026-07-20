@@ -8,6 +8,11 @@ export {
 export type WorkspaceKey =
   'browse' | 'mibModules' | 'operationConsole' | 'query' | 'traps' | 'mibs' | 'settings';
 
+export const BROWSE_CATALOG_SPLIT_MINIMUMS = {
+  minPrimary: 160,
+  minSecondary: 600,
+} as const;
+
 export function shouldUseEmbeddedQuerySplit(
   embedded: boolean,
   supportsSplitView: boolean,
@@ -50,8 +55,8 @@ export function adjustSplitRatio({
 }
 
 const DEFAULT_RATIOS: Record<WorkspaceKey, number> = {
-  browse: 0.38,
-  mibModules: 0.24,
+  browse: 0.5,
+  mibModules: 0.2,
   operationConsole: 0.42,
   query: 0.36,
   traps: 0.42,

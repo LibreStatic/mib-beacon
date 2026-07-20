@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as responsiveLayout from './responsive-layout';
 import {
   adjustSplitRatio,
   clampSplitRatio,
@@ -67,8 +68,38 @@ describe('split workspace sizing', () => {
 });
 
 describe('workspace defaults', () => {
-  it('uses screen-specific proportions', () => {
-    expect(getWorkspaceDefaultRatio('browse')).toBe(0.38);
+  it('preserves the expanded Browse default at the narrow desktop breakpoint', () => {
+    const minimums = (
+      responsiveLayout as typeof responsiveLayout & {
+        BROWSE_CATALOG_SPLIT_MINIMUMS?: { minPrimary: number; minSecondary: number };
+      }
+    ).BROWSE_CATALOG_SPLIT_MINIMUMS;
+
+    expect(minimums).toEqual({ minPrimary: 160, minSecondary: 600 });
+    expect(
+      clampSplitRatio({
+        containerSize: 804,
+        ratio: getWorkspaceDefaultRatio('mibModules'),
+        ...minimums!,
+      }),
+    ).toBeCloseTo(0.2);
+  });
+
+  it('uses a 20/40/40 default for the expanded Browse workspace', () => {
+    const catalogRatio = getWorkspaceDefaultRatio('mibModules');
+    const navigatorRatio = (1 - catalogRatio) * getWorkspaceDefaultRatio('browse');
+    const inspectorRatio = 1 - catalogRatio - navigatorRatio;
+
+    expect(catalogRatio).toBeCloseTo(0.2);
+    expect(navigatorRatio).toBeCloseTo(0.4);
+    expect(inspectorRatio).toBeCloseTo(0.4);
+  });
+
+  it('splits the tablet Browse navigator and inspector evenly', () => {
+    expect(getWorkspaceDefaultRatio('browse')).toBe(0.5);
+  });
+
+  it('uses screen-specific proportions for the other workspaces', () => {
     expect(getWorkspaceDefaultRatio('query')).toBe(0.36);
     expect(getWorkspaceDefaultRatio('traps')).toBe(0.42);
     expect(getWorkspaceDefaultRatio('mibs')).toBe(0.36);

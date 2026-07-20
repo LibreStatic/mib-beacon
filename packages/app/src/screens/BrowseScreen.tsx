@@ -34,6 +34,7 @@ import { OidLookupPanel } from '../components/OidLookupPanel';
 import { SplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import { BROWSE_CATALOG_SPLIT_MINIMUMS } from '../responsive-layout';
 import { MibCatalogPane, MibImportModal, MibModuleStrip } from '../components/MibCatalogControls';
 import { VerticalDockWorkspace } from '../components/VerticalDockWorkspace';
 import { QueryScreen } from './QueryScreen';
@@ -557,8 +558,7 @@ export function BrowseScreen({
     unified && mode === 'expanded' ? (
       <SplitWorkspace
         workspace="mibModules"
-        minPrimary={230}
-        minSecondary={680}
+        {...BROWSE_CATALOG_SPLIT_MINIMUMS}
         primary={<MibCatalogPane />}
         secondary={browserSplit}
       />
