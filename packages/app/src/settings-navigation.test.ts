@@ -4,19 +4,20 @@ import { getActiveSettingsSection } from './settings-navigation';
 describe('getActiveSettingsSection', () => {
   const offsets = {
     appearance: 0,
-    updates: 220,
-    privacy: 440,
-    cache: 720,
-    sources: 870,
-    transfer: 1200,
-    activity: 1480,
-    about: 1700,
+    liveMibs: 220,
+    updates: 440,
+    privacy: 660,
+    cache: 940,
+    sources: 1090,
+    transfer: 1420,
+    activity: 1700,
+    about: 1920,
   } as const;
 
   it('tracks the last section above the viewport threshold', () => {
     expect(getActiveSettingsSection(offsets, 0)).toBe('appearance');
-    expect(getActiveSettingsSection(offsets, 250)).toBe('updates');
-    expect(getActiveSettingsSection(offsets, 1160)).toBe('transfer');
+    expect(getActiveSettingsSection(offsets, 250)).toBe('liveMibs');
+    expect(getActiveSettingsSection(offsets, 1380)).toBe('transfer');
     expect(getActiveSettingsSection(offsets, 2000)).toBe('about');
   });
 

@@ -6,7 +6,7 @@ import { MibBeaconError } from './errors';
 import { SnmpSession } from './snmp/session';
 import { TrapReceiver, type TrapRecord } from './snmp/receiver';
 import { runMigrations } from './db/migrate';
-import type { AgentSpec, DecodedVarbind } from './snmp/types';
+import type { AgentSpec, DecodedVarbind, SnmpVarbindInput } from './snmp/types';
 import type { EngineAPI, EngineInfo, OperationStartRequest } from './api/engine-api';
 import { ResolverService } from './resolver-service';
 import { validateMibFileBatch } from './mib-file-limits';
@@ -23,6 +23,7 @@ import { ToolService } from './tools/service';
 import { ENGINE_VERSION } from './generated/version';
 import { LogService } from './logs';
 import { PacketTraceService, type PacketTraceEvent } from './packet-trace';
+import { LiveMibService } from './live-mibs/service';
 
 export interface EngineOptions {
   /** SQLite file path; defaults to <dataDir>/mibbeacon.db. Pass ':memory:' for tests. */
@@ -36,6 +37,11 @@ export interface EngineOptions {
   tools?: { now?: () => number };
   /** Deterministic test seam; production uses SnmpSession.get. */
   agentTester?: (agent: AgentSpec, oids: string[]) => Promise<DecodedVarbind[]>;
+  /** Deterministic test seam; production uses SnmpSession.set. */
+  agentSetter?: (
+    agent: AgentSpec,
+    varbinds: SnmpVarbindInput[],
+  ) => Promise<DecodedVarbind[]>;
 }
 
 const MIB_URL_MAX_BYTES = 5 * 1024 * 1024;
@@ -147,6 +153,39 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     opts.tools?.now,
     tracePacket,
   );
+  const liveMibService = new LiveMibService(db, transport.files, transport.udp, mibStore, bus, {
+    resolveAgent: async (target) => (await operationAgent(target)).agent,
+    get: async (agent, oids) => {
+      if (opts.agentTester) return opts.agentTester(agent, oids);
+      const session = new SnmpSession(agent, tracePacket);
+      try {
+        return await session.get(oids);
+      } finally {
+        session.close();
+      }
+    },
+    walk: async (agent, oid, onBatch, signal) => {
+      const session = new SnmpSession(agent, tracePacket);
+      const close = () => session.close();
+      signal.addEventListener('abort', close, { once: true });
+      try {
+        if (!signal.aborted) await session.walk(oid, onBatch);
+      } finally {
+        signal.removeEventListener('abort', close);
+        session.close();
+      }
+    },
+    set: async (agent, varbinds) => {
+      if (opts.agentSetter) return opts.agentSetter(agent, varbinds);
+      const session = new SnmpSession(agent, tracePacket);
+      try {
+        return await session.set(varbinds);
+      } finally {
+        session.close();
+      }
+    },
+    decorate: named,
+  });
 
   function decorateAndStoreTrap(record: TrapRecord): TrapRecord {
     named(record.varbinds);
@@ -595,6 +634,8 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         return mibStore.index.translate(oidOrName);
       },
     },
+
+    liveMibs: liveMibService.api,
 
     ops: {
       async get(req) {

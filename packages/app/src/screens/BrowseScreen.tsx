@@ -37,6 +37,7 @@ import {
   setFromNode,
   trapFromNode,
   prepareNodeOperation,
+  openLiveMibScope,
   refreshModules,
 } from '../actions';
 import { OidLookupPanel } from '../components/OidLookupPanel';
@@ -50,6 +51,7 @@ import { nodeMetadataRows } from '../node-metadata';
 import { highlightSegments } from '../search-highlights';
 import { canUseBrowserEventTarget, isSearchFocusShortcut } from '../browser-shortcuts';
 import { BROWSE_TITLE } from '../navigation';
+import { replaceRouteForTab } from '../routes';
 import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } from './browse-tree';
 
 export function BrowseScreen({
@@ -420,9 +422,41 @@ export function BrowseScreen({
     </View>
   );
 
+  const browseHeader = (
+    <WorkspaceHeader
+      title={BROWSE_TITLE}
+      subtitle={
+        unified
+          ? 'SELECT A MIB · EXPLORE ITS OID TREE · RUN OPERATIONS IN PLACE'
+          : 'EXPLORE THE OID TREE · INSPECT DEFINITIONS · LAUNCH OPERATIONS'
+      }
+      actions={
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {mode === 'compact' ? (
+            <Button
+              title="Live data"
+              small
+              variant="ghost"
+              onPress={() =>
+                selected
+                  ? openLiveMibScope(selected.oid)
+                  : (() => {
+                      useAppStore.getState().setTab('liveMibs');
+                      replaceRouteForTab('liveMibs');
+                    })()
+              }
+            />
+          ) : null}
+          {selected?.module ? <Pill text={selected.module} color={t.kind.module} /> : null}
+        </View>
+      }
+    />
+  );
+
   if (!supportsSplitView) {
     return (
       <View style={styles.container}>
+        {browseHeader}
         {selected ? <DetailPanel embedded unified={unified} /> : navigator}
         {selected ? (
           <Pressable
@@ -564,17 +598,7 @@ export function BrowseScreen({
 
   return (
     <View style={styles.container}>
-      <WorkspaceHeader
-        title={BROWSE_TITLE}
-        subtitle={
-          unified
-            ? 'SELECT A MIB · EXPLORE ITS OID TREE · RUN OPERATIONS IN PLACE'
-            : 'EXPLORE THE OID TREE · INSPECT DEFINITIONS · LAUNCH OPERATIONS'
-        }
-        actions={
-          selected?.module ? <Pill text={selected.module} color={t.kind.module} /> : undefined
-        }
-      />
+      {browseHeader}
       <VerticalDockWorkspace storageId="mib-navigation" main={browserMain} dock={console} />
       {unified ? <MibImportModal /> : null}
     </View>

@@ -43,6 +43,30 @@ export const ENGINE_METHODS: Record<string, Handler> = {
     e.mibs.moduleSearch(moduleName as string, query as string, limit as number | undefined),
   'mibs.resolve': (e, oid) => e.mibs.resolve(oid as string),
   'mibs.translate': (e, oidOrName) => e.mibs.translate(oidOrName as string),
+  'liveMibs.settings.get': (e) => e.liveMibs.settings.get(),
+  'liveMibs.settings.update': (e, patch) => e.liveMibs.settings.update(patch as never),
+  'liveMibs.agentOverrides.get': (e, agentId) =>
+    e.liveMibs.agentOverrides.get(agentId as string),
+  'liveMibs.agentOverrides.update': (e, agentId, patch) =>
+    e.liveMibs.agentOverrides.update(agentId as string, patch as never),
+  'liveMibs.agentOverrides.reset': (e, agentId) =>
+    e.liveMibs.agentOverrides.reset(agentId as string),
+  'liveMibs.scan.start': (e, request) => e.liveMibs.scan.start(request as never),
+  'liveMibs.scan.status': (e, handleId) => e.liveMibs.scan.status(handleId as string),
+  'liveMibs.scan.cancel': (e, handleId) => e.liveMibs.scan.cancel(handleId as string),
+  'liveMibs.writeCell': (e, request) => e.liveMibs.writeCell(request as never),
+  'liveMibs.uploads.create': (e, input) => e.liveMibs.uploads.create(input as never),
+  'liveMibs.uploads.append': (e, id, offset, base64) =>
+    e.liveMibs.uploads.append(id as string, offset as number, base64 as string),
+  'liveMibs.uploads.complete': (e, id) => e.liveMibs.uploads.complete(id as string),
+  'liveMibs.uploads.status': (e, id) => e.liveMibs.uploads.status(id as string),
+  'liveMibs.uploads.dispose': (e, id) => e.liveMibs.uploads.dispose(id as string),
+  'liveMibs.workflows.detect': (e, input) => e.liveMibs.workflows.detect(input as never),
+  'liveMibs.workflows.start': (e, request) => e.liveMibs.workflows.start(request as never),
+  'liveMibs.workflows.status': (e, handleId) =>
+    e.liveMibs.workflows.status(handleId as string),
+  'liveMibs.workflows.cancel': (e, handleId) =>
+    e.liveMibs.workflows.cancel(handleId as string),
   'resolver.respondConsent': (e, handleId, response) =>
     e.resolver.respondConsent(handleId as string, response as never),
   'resolver.cancel': (e, handleId) => e.resolver.cancel(handleId as string),

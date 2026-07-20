@@ -1,6 +1,6 @@
 /// <reference path="./net-snmp.d.ts" />
 import type { MibModuleEntry } from 'net-snmp';
-import { enumValues, formatSyntax } from './format-syntax';
+import { enumValues, extractSyntaxConstraints, formatSyntax } from './format-syntax';
 import type {
   MibNodeDetail,
   MibNodeKind,
@@ -227,6 +227,7 @@ export class OidIndex {
     const e = (moduleName ? node.entries.get(moduleName) : undefined) ?? node.entry;
     const rawIndexes = e?.INDEX?.map(String) ?? [];
     const syntaxMetadata = this.resolveSyntaxMetadata(formatSyntax(e?.SYNTAX));
+    const syntaxConstraints = extractSyntaxConstraints(e?.SYNTAX);
     const definitions = [...node.entries.entries()].map(([module, entry]) => ({
       module,
       name: entry.ObjectName ?? node.label ?? node.oid,
@@ -251,6 +252,7 @@ export class OidIndex {
       textualConventionChain: syntaxMetadata.chain,
       displayHint: syntaxMetadata.displayHint,
       enumValues: enumValues(e?.SYNTAX),
+      ...syntaxConstraints,
       definitions: definitions.length > 1 ? definitions : undefined,
       warnings:
         definitions.length > 1

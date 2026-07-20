@@ -37,6 +37,7 @@ import { MibsScreen } from './screens/MibsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
+import { LiveMibsScreen } from './screens/LiveMibsScreen';
 import { ResponsiveLayoutProvider, useResponsiveLayout } from './responsive-context';
 import { getNavigationTabs, type NavigationTab } from './navigation';
 import { routeForTab, tabFromUrl } from './routes';
@@ -470,6 +471,7 @@ function ResponsiveAppRoot({
           {activeTab === 'browse' ? (
             <BrowseScreen info={info} unified focusSearchRequest={browseSearchFocusRequest} />
           ) : null}
+          {activeTab === 'liveMibs' ? <LiveMibsScreen /> : null}
           {activeTab === 'query' ? <QueryScreen info={info} /> : null}
           {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}

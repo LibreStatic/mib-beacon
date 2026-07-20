@@ -3,6 +3,8 @@ import type { EngineAPI, MibNodeDetail } from '@omc/core/client';
 import { BROWSE_TITLE, getNavigationTabs } from './navigation';
 import {
   getNodeOperationPlan,
+  openLiveMibScope,
+  openTableView,
   prepareNodeOperation,
   selectModuleInPlace,
   unloadModule,
@@ -61,10 +63,11 @@ describe('responsive application navigation', () => {
     );
   });
 
-  it('uses Browse for the combined MIB workspace on larger layouts', () => {
+  it('adds Live MIBs as a dedicated larger-layout workspace', () => {
     const tabs = getNavigationTabs('medium');
     expect(tabs.map((item) => item.key)).toEqual([
       'browse',
+      'liveMibs',
       'query',
       'agents',
       'traps',
@@ -81,6 +84,32 @@ describe('responsive application navigation', () => {
 });
 
 describe('selection-driven operation targets', () => {
+  it('opens a selected object in the dedicated Live MIBs workspace', () => {
+    openLiveMibScope(scalar.oid);
+    expect(useAppStore.getState()).toMatchObject({
+      tab: 'liveMibs',
+      liveMibScopeOid: scalar.oid,
+    });
+  });
+
+  it('routes legacy table opens into Live MIBs', async () => {
+    const table = { ...scalar, kind: 'table', name: 'ifTable' } as MibNodeDetail;
+    const entry = { ...scalar, kind: 'entry', name: 'ifEntry', oid: `${table.oid}.1` } as MibNodeDetail;
+    const engine = {
+      mibs: {
+        tree: vi.fn().mockResolvedValue([
+          { oid: entry.oid, name: entry.name, kind: 'entry', hasChildren: true, childCount: 1 },
+        ]),
+        node: vi.fn().mockResolvedValue(entry),
+      },
+    } as unknown as EngineAPI;
+    await openTableView(engine, table);
+    expect(useAppStore.getState()).toMatchObject({
+      tab: 'liveMibs',
+      liveMibScopeOid: entry.oid,
+    });
+  });
+
   it('normalizes scalar instances without requiring user input', () => {
     expect(getNodeOperationPlan(scalar, 'get')).toMatchObject({
       allowed: true,

@@ -1,6 +1,13 @@
 export { MibStore } from './mib-store';
 export { OidIndex } from './oid-index';
-export { formatSyntax, enumLabel, enumValues } from './format-syntax';
+export {
+  formatSyntax,
+  enumLabel,
+  enumValues,
+  extractSyntaxConstraints,
+  type SyntaxConstraints,
+  type SyntaxRange,
+} from './format-syntax';
 export { formatIntegerDisplayHint, formatOctetStringDisplayHint } from './display-hint';
 export { decodeTableIndex } from './table-info';
 export type { DecodedTableIndex, DecodedTableIndexValue, TableIndexDescriptor } from './table-info';

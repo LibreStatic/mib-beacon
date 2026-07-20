@@ -4,6 +4,8 @@ import { routeForTab, tabFromUrl } from './routes';
 describe('main-screen routes', () => {
   it('creates stable web routes and restores their tabs', () => {
     expect(routeForTab('query')).toBe('#/results');
+    expect(routeForTab('liveMibs')).toBe('#/live-mibs');
+    expect(tabFromUrl('https://localhost/#/live-mibs')).toBe('liveMibs');
     expect(tabFromUrl('https://localhost/#/tools')).toBe('tools');
     expect(tabFromUrl('https://localhost/#/results?snapshot=1')).toBe('query');
   });

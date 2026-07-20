@@ -27,7 +27,12 @@ import {
   SectionTitle,
   useTheme,
 } from '@mibbeacon/ui';
-import type { ResolverSourceDraft, SourceConfig, SourceKind } from '@mibbeacon/core/client';
+import type {
+  LiveMibSettings,
+  ResolverSourceDraft,
+  SourceConfig,
+  SourceKind,
+} from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import {
@@ -57,6 +62,11 @@ import {
   type SettingsSectionId,
   type SettingsSectionOffsets,
 } from '../settings-navigation';
+import {
+  DEFAULT_LIVE_MIB_SETTINGS,
+  normalizeLiveMibSettings,
+  resolveLiveMibSettings,
+} from '../live-mibs-model';
 
 const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'http-template', label: 'HTTP template' },
@@ -78,6 +88,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const densityMode = useAppStore((s) => s.densityMode);
   const patternTraceColor = useAppStore((s) => s.patternTraceColor);
   const packetStatus = useAppStore((s) => s.packetStatus);
+  const agentProfiles = useAppStore((s) => s.agentProfiles);
   const [editing, setEditing] = useState<SourceConfig | 'new' | null>(null);
   const [testModule, setTestModule] = useState('IF-MIB');
   const [configTransfer, setConfigTransfer] = useState('');
@@ -89,6 +100,11 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const [packetRetention, setPacketRetention] = useState('32');
   const [packetMessage, setPacketMessage] = useState<string | null>(null);
   const [patternTraceColorDraft, setPatternTraceColorDraft] = useState(patternTraceColor);
+  const [liveSettings, setLiveSettings] = useState<LiveMibSettings>(DEFAULT_LIVE_MIB_SETTINGS);
+  const [liveAgentId, setLiveAgentId] = useState<string | null>(null);
+  const [liveOverrides, setLiveOverrides] = useState<Partial<LiveMibSettings> | null>(null);
+  const [liveMessage, setLiveMessage] = useState<string | null>(null);
+  const [liveBusy, setLiveBusy] = useState(false);
   const settingsScroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
@@ -113,6 +129,48 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
     if (packetStatus) setPacketRetention(String(packetStatus.retentionMiB));
   }, [packetStatus]);
   useEffect(() => setPatternTraceColorDraft(patternTraceColor), [patternTraceColor]);
+  useEffect(() => {
+    let active = true;
+    void engine.liveMibs.settings.get().then((value) => {
+      if (active) setLiveSettings(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, [engine]);
+  useEffect(() => {
+    if (!liveAgentId) {
+      setLiveOverrides(null);
+      return;
+    }
+    let active = true;
+    void engine.liveMibs.agentOverrides.get(liveAgentId).then((value) => {
+      if (active) setLiveOverrides(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, [engine, liveAgentId]);
+  const effectiveLiveSettings = resolveLiveMibSettings(liveSettings, liveOverrides);
+  const updateLiveSetting = async (patch: Partial<LiveMibSettings>) => {
+    setLiveBusy(true);
+    setLiveMessage(null);
+    try {
+      if (liveAgentId) {
+        const next = await engine.liveMibs.agentOverrides.update(liveAgentId, patch);
+        setLiveOverrides(next);
+        setLiveMessage('Agent override saved.');
+      } else {
+        const next = await engine.liveMibs.settings.update(patch);
+        setLiveSettings(next);
+        setLiveMessage('Live MIB defaults saved.');
+      }
+    } catch (cause) {
+      setLiveMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLiveBusy(false);
+    }
+  };
   const savePacketRetention = async () => {
     const value = Number(packetRetention);
     if (!Number.isInteger(value) || value < 0 || value > 256) {
@@ -319,6 +377,209 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
                 Semantic status, diff, severity, focus, and text tokens are WCAG AA checked in both
                 themes. Text controls support scaling through 130%.
               </Label>
+            </Card>
+          </View>
+          <View style={styles.sectionGroup} onLayout={captureSection('liveMibs')}>
+            <Card>
+              <View style={styles.sectionHead}>
+                <View style={styles.sectionHeadCopy}>
+                  <SectionTitle>Live MIBs</SectionTitle>
+                  <Label tone="dim" size={11}>
+                    Safe global defaults with optional overrides for each saved agent.
+                  </Label>
+                </View>
+                <Pill
+                  text={liveAgentId ? 'AGENT OVERRIDE' : 'GLOBAL DEFAULT'}
+                  color={liveAgentId ? t.accent : t.textDim}
+                />
+              </View>
+
+              <Label size={11}>Configuration scope</Label>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <Row>
+                  <Chip
+                    label="Global defaults"
+                    active={!liveAgentId}
+                    onPress={() => setLiveAgentId(null)}
+                  />
+                  {agentProfiles.map((profile) => (
+                    <Chip
+                      key={profile.id}
+                      label={profile.name}
+                      active={liveAgentId === profile.id}
+                      onPress={() => setLiveAgentId(profile.id)}
+                    />
+                  ))}
+                </Row>
+              </ScrollView>
+              {liveAgentId ? (
+                <Button
+                  title="Reset agent overrides"
+                  small
+                  variant="ghost"
+                  disabled={liveBusy || !liveOverrides}
+                  onPress={() =>
+                    void engine.liveMibs.agentOverrides.reset(liveAgentId).then(() => {
+                      setLiveOverrides(null);
+                      setLiveMessage('Agent now inherits global defaults.');
+                    })
+                  }
+                />
+              ) : null}
+
+              <Label size={11}>Refresh strategy</Label>
+              <Row style={styles.wrap}>
+                {(['adaptive', 'fixed', 'manual'] as const).map((value) => (
+                  <Chip
+                    key={value}
+                    label={value}
+                    active={effectiveLiveSettings.refreshMode === value}
+                    onPress={() => void updateLiveSetting({ refreshMode: value })}
+                  />
+                ))}
+              </Row>
+              <Row style={styles.wrap}>
+                <Field
+                  label="Refresh interval (ms)"
+                  value={String(effectiveLiveSettings.refreshIntervalMs)}
+                  keyboardType="numeric"
+                  onChangeText={(value) => {
+                    const parsed = Number(value);
+                    if (Number.isFinite(parsed))
+                      void updateLiveSetting({ refreshIntervalMs: parsed });
+                  }}
+                />
+                <Field
+                  label="Stale after (ms)"
+                  value={String(effectiveLiveSettings.staleAfterMs)}
+                  keyboardType="numeric"
+                  onChangeText={(value) => {
+                    const parsed = Number(value);
+                    if (Number.isFinite(parsed)) void updateLiveSetting({ staleAfterMs: parsed });
+                  }}
+                />
+              </Row>
+              <SettingToggle
+                label="Pause adaptive polling while hidden"
+                hint="Avoid background device load when the Live MIBs workspace is not visible."
+                value={effectiveLiveSettings.pauseWhenHidden}
+                disabled={liveBusy}
+                onChange={(pauseWhenHidden) => void updateLiveSetting({ pauseWhenHidden })}
+              />
+
+              <Label size={11}>Scan workers</Label>
+              <Row style={styles.wrap}>
+                {[1, 2, 4, 8].map((scanConcurrency) => (
+                  <Chip
+                    key={scanConcurrency}
+                    label={
+                      scanConcurrency === 1 ? '1 · sequential' : `${scanConcurrency} · concurrent`
+                    }
+                    active={effectiveLiveSettings.scanConcurrency === scanConcurrency}
+                    onPress={() => void updateLiveSetting({ scanConcurrency })}
+                  />
+                ))}
+              </Row>
+              {effectiveLiveSettings.scanConcurrency > 1 ? (
+                <Label tone="warn" size={10}>
+                  Concurrent scans open multiple SNMP sessions to this agent. Reduce the setting if
+                  the device drops requests or becomes CPU constrained.
+                </Label>
+              ) : null}
+              <SettingToggle
+                label="Show read-only objects"
+                hint="Off keeps the grid focused on values that can be edited. Locked values remain available when enabled."
+                value={effectiveLiveSettings.showReadOnly}
+                disabled={liveBusy}
+                onChange={(showReadOnly) => void updateLiveSetting({ showReadOnly })}
+              />
+
+              <Label size={11}>Write trigger</Label>
+              <Row style={styles.wrap}>
+                {(['confirm', 'blur', 'change'] as const).map((writeMode) => (
+                  <Chip
+                    key={writeMode}
+                    label={
+                      writeMode === 'confirm'
+                        ? 'Confirm every Set'
+                        : writeMode === 'blur'
+                          ? 'Send on blur'
+                          : 'Send on change'
+                    }
+                    active={effectiveLiveSettings.writeMode === writeMode}
+                    onPress={() => void updateLiveSetting({ writeMode })}
+                  />
+                ))}
+              </Row>
+              {effectiveLiveSettings.writeMode === 'change' ? (
+                <Field
+                  label="Change debounce (0–2000 ms)"
+                  value={String(effectiveLiveSettings.writeDebounceMs)}
+                  keyboardType="numeric"
+                  onChangeText={(value) => {
+                    const parsed = Number(value);
+                    if (Number.isFinite(parsed))
+                      void updateLiveSetting({ writeDebounceMs: parsed });
+                  }}
+                />
+              ) : null}
+              <SettingToggle
+                label="Verify successful Sets"
+                hint="Read the value back from the device before showing the edit as confirmed."
+                value={effectiveLiveSettings.verifyWrites}
+                disabled={liveBusy}
+                onChange={(verifyWrites) => void updateLiveSetting({ verifyWrites })}
+              />
+
+              <Label size={11}>Two-state values</Label>
+              <Row style={styles.wrap}>
+                {(['auto', 'switch', 'select'] as const).map((booleanEditor) => (
+                  <Chip
+                    key={booleanEditor}
+                    label={booleanEditor}
+                    active={effectiveLiveSettings.booleanEditor === booleanEditor}
+                    onPress={() => void updateLiveSetting({ booleanEditor })}
+                  />
+                ))}
+              </Row>
+              <SettingToggle
+                label="Prefer formatted values"
+                hint="Use enum labels and DISPLAY-HINT output while preserving raw values underneath."
+                value={effectiveLiveSettings.preferFormattedValues}
+                disabled={liveBusy}
+                onChange={(preferFormattedValues) =>
+                  void updateLiveSetting({ preferFormattedValues })
+                }
+              />
+
+              <SettingToggle
+                label="Enable managed file-transfer workflows"
+                hint="Required for vendor adapters that stage a file outside the SNMP message. Off by default."
+                value={effectiveLiveSettings.managedTransfersEnabled}
+                disabled={liveBusy}
+                onChange={(managedTransfersEnabled) =>
+                  void updateLiveSetting({ managedTransfersEnabled })
+                }
+              />
+              <Field
+                label="Maximum staged upload bytes"
+                value={String(effectiveLiveSettings.maximumUploadBytes)}
+                keyboardType="numeric"
+                onChangeText={(value) => {
+                  const parsed = Number(value);
+                  if (Number.isFinite(parsed))
+                    void updateLiveSetting({
+                      maximumUploadBytes: normalizeLiveMibSettings({
+                        maximumUploadBytes: parsed,
+                      }).maximumUploadBytes,
+                    });
+                }}
+              />
+              {liveMessage ? (
+                <Label tone={/saved|inherits/i.test(liveMessage) ? 'ok' : 'error'} size={11}>
+                  {liveMessage}
+                </Label>
+              ) : null}
             </Card>
           </View>
           <View style={styles.sectionGroup} onLayout={captureSection('updates')}>

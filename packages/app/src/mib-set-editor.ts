@@ -1,12 +1,31 @@
 import type { MibNodeDetail } from '@mibbeacon/core/client';
 
 export function mibRangeError(node: MibNodeDetail | null | undefined, value: string): string | null {
+  if (node?.numericRanges?.length && /^-?\d+$/.test(value.trim())) {
+    const numeric = Number(value);
+    if (node.numericRanges.some(({ min, max }) => numeric >= min && numeric <= max)) return null;
+    return `Value must satisfy the MIB range ${node.numericRanges
+      .map(({ min, max }) => `${min}..${max}`)
+      .join(' or ')}.`;
+  }
   const range = node?.syntax?.match(/\(\s*(-?\d+)\s*\.\.\s*(-?\d+)\s*\)/);
   if (!range || !/^-?\d+$/.test(value.trim())) return null;
   const numeric = Number(value);
   const min = Number(range[1]);
   const max = Number(range[2]);
   return numeric < min || numeric > max ? `Value must satisfy the MIB range ${min}..${max}.` : null;
+}
+
+export function mibSizeError(
+  node: MibNodeDetail | null | undefined,
+  value: string,
+): string | null {
+  if (!node?.sizeRanges?.length) return null;
+  const bytes = new TextEncoder().encode(value).length;
+  if (node.sizeRanges.some(({ min, max }) => bytes >= min && bytes <= max)) return null;
+  return `Value must satisfy the MIB size ${node.sizeRanges
+    .map(({ min, max }) => `${min}..${max} bytes`)
+    .join(' or ')}.`;
 }
 
 export function toggleBitHex(currentHex: string, position: number): string {

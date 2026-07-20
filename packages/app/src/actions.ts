@@ -21,6 +21,7 @@ import type {
   SnmpVarbindInput,
 } from '@mibbeacon/core/client';
 import { useAppStore, type AgentForm, type QueryOperation } from './store';
+import { replaceRouteForTab } from './routes';
 
 let notificationSeq = 0;
 
@@ -254,36 +255,7 @@ export async function openTableView(engine: EngineAPI, node: MibNodeDetail): Pro
     entry = await engine.mibs.node(node.oid.split('.').slice(0, -1).join('.'), node.module);
   }
   if (!entry || entry.kind !== 'entry') throw new Error(`${node.name} is not a table or entry`);
-  const columnSummaries = (await engine.mibs.tree(entry.oid)).filter(
-    (item) => item.kind === 'column',
-  );
-  const columnDetails = await Promise.all(
-    columnSummaries.map((column) => engine.mibs.node(column.oid, column.module)),
-  );
-  const indexDetails = await Promise.all(
-    (entry.indexes ?? []).map((name) => engine.mibs.node(name, entry!.module)),
-  );
-  const columns = columnSummaries.map((column, index) => ({
-    oid: column.oid,
-    name: column.name,
-    ...(columnDetails[index]?.access ? { access: columnDetails[index]!.access } : {}),
-    ...(columnDetails[index]?.syntax ? { syntax: columnDetails[index]!.syntax } : {}),
-  }));
-  useAppStore.getState().setTableView({
-    entryOid: entry.oid,
-    name: entry.name,
-    columns,
-    indexes: (entry.indexes ?? []).map((name, index) => ({
-      name,
-      syntax: indexDetails[index]?.syntax ?? 'INTEGER',
-      implied: entry!.impliedIndexes?.includes(name),
-      displayHint: indexDetails[index]?.displayHint,
-    })),
-    selectedColumnOids: columns.map(({ oid }) => oid),
-    rotate: false,
-    pollMs: 0,
-  });
-  await runTableView(engine);
+  openLiveMibScope(entry.oid);
 }
 
 export async function runTableView(engine: EngineAPI): Promise<void> {
@@ -1260,6 +1232,14 @@ export async function openGlobalCatalogObject(
   state.setSearchError(null);
   state.setSelected(detail);
   return detail;
+}
+
+/** Open a tree object in the dedicated live, editable data workspace. */
+export function openLiveMibScope(oid: string): void {
+  const state = useAppStore.getState();
+  state.setLiveMibScopeOid(oid);
+  state.setTab('liveMibs');
+  replaceRouteForTab('liveMibs');
 }
 
 export interface NodeOperationPlan {

@@ -71,6 +71,36 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
       resolve: (oid) => call('mibs.resolve', oid),
       translate: (oidOrName) => call('mibs.translate', oidOrName),
     },
+    liveMibs: {
+      settings: {
+        get: () => call('liveMibs.settings.get'),
+        update: (patch) => call('liveMibs.settings.update', patch),
+      },
+      agentOverrides: {
+        get: (agentId) => call('liveMibs.agentOverrides.get', agentId),
+        update: (agentId, patch) => call('liveMibs.agentOverrides.update', agentId, patch),
+        reset: (agentId) => call('liveMibs.agentOverrides.reset', agentId),
+      },
+      scan: {
+        start: (request) => call('liveMibs.scan.start', request),
+        status: (handleId) => call('liveMibs.scan.status', handleId),
+        cancel: (handleId) => call('liveMibs.scan.cancel', handleId),
+      },
+      writeCell: (request) => call('liveMibs.writeCell', request),
+      uploads: {
+        create: (input) => call('liveMibs.uploads.create', input),
+        append: (id, offset, base64) => call('liveMibs.uploads.append', id, offset, base64),
+        complete: (id) => call('liveMibs.uploads.complete', id),
+        status: (id) => call('liveMibs.uploads.status', id),
+        dispose: (id) => call('liveMibs.uploads.dispose', id),
+      },
+      workflows: {
+        detect: (input) => call('liveMibs.workflows.detect', input),
+        start: (request) => call('liveMibs.workflows.start', request),
+        status: (handleId) => call('liveMibs.workflows.status', handleId),
+        cancel: (handleId) => call('liveMibs.workflows.cancel', handleId),
+      },
+    },
     ops: {
       get: (req) => call('ops.get', req),
       getNext: (req) => call('ops.getNext', req),

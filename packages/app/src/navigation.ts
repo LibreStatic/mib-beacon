@@ -19,6 +19,7 @@ const COMPACT_TABS: NavigationTab[] = [
 
 const WORKBENCH_TABS: NavigationTab[] = [
   { key: 'browse', glyph: '⌬', label: BROWSE_TITLE },
+  { key: 'liveMibs', glyph: '▦', label: 'Live MIBs' },
   { key: 'query', glyph: '⇄', label: 'Query' },
   { key: 'agents', glyph: '◎', label: 'Agents' },
   { key: 'traps', glyph: '⚑', label: 'Traps' },

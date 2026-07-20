@@ -39,6 +39,10 @@ export interface MibNodeDetail extends MibNodeSummary {
   displayHint?: string;
   /** Enumeration labels retained from INTEGER/BITS syntax. */
   enumValues?: Record<string, number>;
+  /** Machine-readable numeric ranges retained from the resolved SYNTAX. */
+  numericRanges?: { min: number; max: number }[];
+  /** Machine-readable SIZE ranges retained from the resolved SYNTAX. */
+  sizeRanges?: { min: number; max: number }[];
   /** Every module definition retained when vendors assign the same numeric OID. */
   definitions?: { module: string; name: string }[];
   /** Non-fatal metadata conflicts relevant to display/decoding. */

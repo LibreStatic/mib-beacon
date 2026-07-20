@@ -1,6 +1,46 @@
 /// <reference path="./net-snmp.d.ts" />
 import type { MibModuleEntry } from 'net-snmp';
 
+export interface SyntaxRange {
+  min: number;
+  max: number;
+}
+
+export interface SyntaxConstraints {
+  numericRanges?: SyntaxRange[];
+  sizeRanges?: SyntaxRange[];
+}
+
+function ranges(value: unknown): SyntaxRange[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const normalized = value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const { min, max } = candidate as { min?: unknown; max?: unknown };
+    return typeof min === 'number' && typeof max === 'number' ? [{ min, max }] : [];
+  });
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/** Retain machine-readable SMI constraints for type-aware editors and validation. */
+export function extractSyntaxConstraints(
+  syntax: MibModuleEntry['SYNTAX'],
+): SyntaxConstraints | undefined {
+  if (!syntax || typeof syntax === 'string') return undefined;
+  const typeName = Object.keys(syntax)[0];
+  if (!typeName) return undefined;
+  const detail = (syntax as Record<string, unknown>)[typeName];
+  if (!detail || typeof detail !== 'object') return undefined;
+  const record = detail as Record<string, unknown>;
+  const numericRanges = ranges(record.ranges);
+  const sizeRanges = ranges(record.sizes);
+  return numericRanges || sizeRanges
+    ? {
+        ...(numericRanges ? { numericRanges } : {}),
+        ...(sizeRanges ? { sizeRanges } : {}),
+      }
+    : undefined;
+}
+
 /**
  * Render a parsed SYNTAX clause as a compact human string.
  * net-snmp stores it either as a plain string ("Integer32") or as an object

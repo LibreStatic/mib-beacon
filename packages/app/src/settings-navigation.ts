@@ -1,5 +1,6 @@
 export const SETTINGS_SECTIONS = [
   { id: 'appearance', label: 'Appearance & access' },
+  { id: 'liveMibs', label: 'Live MIBs' },
   { id: 'updates', label: 'Updates' },
   { id: 'privacy', label: 'Privacy & automation' },
   { id: 'cache', label: 'Dependency cache' },

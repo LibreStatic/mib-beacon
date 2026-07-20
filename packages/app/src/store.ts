@@ -37,7 +37,8 @@ import type {
 import { upsertPacketTrace } from './packet-console';
 import { normalizePatternTraceColor } from './pattern-trace-settings';
 
-export type Tab = 'browse' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
+export type Tab =
+  'browse' | 'liveMibs' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
 export type AppThemeMode = 'system' | 'light' | 'dark';
 export type AppDensityMode = 'auto' | 'compact' | 'comfortable';
 
@@ -149,6 +150,7 @@ export interface AppState {
   expanded: Record<string, boolean>;
   childrenCache: Record<string, BrowseTreeNode[]>;
   moduleFocus: ModuleView | null;
+  liveMibScopeOid: string | null;
   selected: MibNodeDetail | null;
   search: string;
   hits: MibSearchHit[];
@@ -159,6 +161,7 @@ export interface AppState {
   setExpanded: (oid: string, open: boolean) => void;
   setChildren: (oid: string, children: BrowseTreeNode[]) => void;
   setModuleFocus: (focus: ModuleView | null) => void;
+  setLiveMibScopeOid: (oid: string | null) => void;
   clearChildrenCache: () => void;
   setSelected: (node: MibNodeDetail | null) => void;
   setSearch: (q: string) => void;
@@ -459,6 +462,7 @@ export const useAppStore = create<AppState>((set) => ({
   expanded: {},
   childrenCache: {},
   moduleFocus: null,
+  liveMibScopeOid: null,
   selected: null,
   search: '',
   hits: [],
@@ -470,6 +474,7 @@ export const useAppStore = create<AppState>((set) => ({
   setChildren: (oid, children) =>
     set((s) => ({ childrenCache: { ...s.childrenCache, [oid]: children } })),
   setModuleFocus: (moduleFocus) => set({ moduleFocus }),
+  setLiveMibScopeOid: (liveMibScopeOid) => set({ liveMibScopeOid }),
   clearChildrenCache: () => set({ childrenCache: {}, expanded: {} }),
   setSelected: (selected) => set({ selected }),
   setSearch: (search) => set({ search }),

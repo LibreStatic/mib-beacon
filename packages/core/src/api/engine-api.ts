@@ -770,6 +770,163 @@ export interface MibsAPI {
   translate(oidOrName: string): Promise<OidTranslation | null>;
 }
 
+export type LiveMibRefreshMode = 'adaptive' | 'fixed' | 'manual';
+export type LiveMibWriteMode = 'confirm' | 'blur' | 'change';
+
+export interface LiveMibSettings {
+  refreshMode: LiveMibRefreshMode;
+  refreshIntervalMs: number;
+  staleAfterMs: number;
+  pauseWhenHidden: boolean;
+  scanConcurrency: number;
+  maxInstances: number;
+  showReadOnly: boolean;
+  writeMode: LiveMibWriteMode;
+  writeDebounceMs: number;
+  verifyWrites: boolean;
+  booleanEditor: 'auto' | 'switch' | 'select';
+  preferFormattedValues: boolean;
+  managedTransfersEnabled: boolean;
+  maximumUploadBytes: number;
+}
+
+export interface LiveMibUpload {
+  id: string;
+  name: string;
+  byteLength: number;
+  receivedBytes: number;
+  state: 'receiving' | 'ready';
+}
+
+export interface LiveMibWorkflowCandidate {
+  id: 'direct-binary' | 'timed-block-stream' | 'cisco-transfer-control';
+  name: string;
+  requiresManagedTransfer: boolean;
+  description: string;
+}
+
+export interface LiveMibWorkflowDetection {
+  syntax?: string;
+  textualConventionChain?: string[];
+  module?: string;
+  name: string;
+}
+
+export type LiveMibScanRequest = AgentTarget & {
+  scopeOid: string;
+  concurrency?: number;
+  includeReadOnly?: boolean;
+  maxInstances?: number;
+  /** Instance OIDs that adaptive refresh should schedule before the rest of the scope. */
+  preferredOids?: string[];
+};
+
+export type LiveMibScanState =
+  | 'started'
+  | 'running'
+  | 'done'
+  | 'partial'
+  | 'error'
+  | 'cancelled';
+
+export interface LiveMibScanStatus {
+  handleId: string;
+  state: LiveMibScanState;
+  scopeOid: string;
+  taskCount: number;
+  completedTasks: number;
+  count: number;
+  startedAt: number;
+  updatedAt: number;
+  errors: { oid: string; message: string }[];
+}
+
+export type LiveMibWriteRequest = AgentTarget & {
+  varbind: SnmpVarbindInput;
+  verify?: boolean;
+};
+
+export interface LiveMibWriteResult {
+  value: DecodedVarbind;
+  verified: boolean;
+}
+
+export type LiveMibWorkflowRequest = AgentTarget & {
+  adapterId: LiveMibWorkflowCandidate['id'];
+  uploadId: string;
+  direct?: { oid: string; type: 'OctetString' | 'Opaque' };
+  block?: {
+    blockOid: string;
+    chunkSize: number;
+    type?: 'OctetString' | 'Opaque';
+    credentialVarbinds?: SnmpVarbindInput[];
+    startVarbinds?: SnmpVarbindInput[];
+    finishVarbinds?: SnmpVarbindInput[];
+    eof?: 'none' | 'nul' | 'empty';
+  };
+  controlVarbinds?: SnmpVarbindInput[];
+  managedTransfer?: {
+    bindAddress?: string;
+    port?: number;
+    timeoutMs?: number;
+  };
+  verifyOid?: string;
+};
+
+export interface LiveMibWorkflowStatus {
+  handleId: string;
+  adapterId: LiveMibWorkflowCandidate['id'];
+  state:
+    | 'preparing'
+    | 'authenticating'
+    | 'transferring'
+    | 'processing'
+    | 'verifying'
+    | 'done'
+    | 'error'
+    | 'cancelled';
+  uploadName: string;
+  totalBytes: number;
+  sentBytes: number;
+  startedAt: number;
+  updatedAt: number;
+  message?: string;
+}
+
+export interface LiveMibsAPI {
+  settings: {
+    get(): Promise<LiveMibSettings>;
+    update(patch: Partial<LiveMibSettings>): Promise<LiveMibSettings>;
+  };
+  agentOverrides: {
+    get(agentId: string): Promise<Partial<LiveMibSettings> | null>;
+    update(
+      agentId: string,
+      patch: Partial<LiveMibSettings>,
+    ): Promise<Partial<LiveMibSettings>>;
+    reset(agentId: string): Promise<void>;
+  };
+  scan: {
+    start(request: LiveMibScanRequest): Promise<OperationHandle>;
+    status(handleId: string): Promise<LiveMibScanStatus | null>;
+    cancel(handleId: string): Promise<void>;
+  };
+  writeCell(request: LiveMibWriteRequest): Promise<LiveMibWriteResult>;
+  uploads: {
+    create(input: { name: string; byteLength: number; agentId?: string }): Promise<LiveMibUpload>;
+    append(id: string, offset: number, base64: string): Promise<LiveMibUpload>;
+    complete(id: string): Promise<LiveMibUpload>;
+    status(id: string): Promise<LiveMibUpload | null>;
+    dispose(id: string): Promise<void>;
+  };
+  workflows: {
+    detect(input: LiveMibWorkflowDetection): Promise<LiveMibWorkflowCandidate[]>;
+    start(request: LiveMibWorkflowRequest): Promise<OperationHandle>;
+    status(handleId: string): Promise<LiveMibWorkflowStatus | null>;
+    cancel(handleId: string): Promise<void>;
+  };
+}
+
 export interface EngineAPI {
   system: {
     info(): Promise<EngineInfo>;
@@ -787,6 +944,7 @@ export interface EngineAPI {
     };
   };
   mibs: MibsAPI;
+  liveMibs: LiveMibsAPI;
   ops: {
     get(req: GetRequest): Promise<DecodedVarbind[]>;
     getNext(req: GetRequest): Promise<DecodedVarbind[]>;
