@@ -48,6 +48,10 @@ import type { AppHostAdapter, HostUpdateStatus } from '../AppRoot';
 import { RELEASE_INFO } from '../generated/release-info';
 import licenseInventory from '../generated/third-party-licenses.json';
 import {
+  DEFAULT_PATTERN_TRACE_COLOR,
+  isPatternTraceColor,
+} from '../pattern-trace-settings';
+import {
   getActiveSettingsSection,
   SETTINGS_SECTIONS,
   type SettingsSectionId,
@@ -72,6 +76,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const error = useAppStore((s) => s.resolverError);
   const themeMode = useAppStore((s) => s.themeMode);
   const densityMode = useAppStore((s) => s.densityMode);
+  const patternTraceColor = useAppStore((s) => s.patternTraceColor);
   const packetStatus = useAppStore((s) => s.packetStatus);
   const [editing, setEditing] = useState<SourceConfig | 'new' | null>(null);
   const [testModule, setTestModule] = useState('IF-MIB');
@@ -83,6 +88,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const [showLicenses, setShowLicenses] = useState(false);
   const [packetRetention, setPacketRetention] = useState('32');
   const [packetMessage, setPacketMessage] = useState<string | null>(null);
+  const [patternTraceColorDraft, setPatternTraceColorDraft] = useState(patternTraceColor);
   const settingsScroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
@@ -106,6 +112,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   useEffect(() => {
     if (packetStatus) setPacketRetention(String(packetStatus.retentionMiB));
   }, [packetStatus]);
+  useEffect(() => setPatternTraceColorDraft(patternTraceColor), [patternTraceColor]);
   const savePacketRetention = async () => {
     const value = Number(packetRetention);
     if (!Number.isInteger(value) || value < 0 || value > 256) {
@@ -274,6 +281,40 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
                   />
                 ))}
               </Row>
+              <Label size={11}>Pattern tracer marker color</Label>
+              <Row style={[styles.wrap, styles.patternColorRow]}>
+                <Field
+                  label="Hex color"
+                  value={patternTraceColorDraft}
+                  onChangeText={setPatternTraceColorDraft}
+                  onBlur={() => {
+                    if (isPatternTraceColor(patternTraceColorDraft)) {
+                      useAppStore.getState().setPatternTraceColor(patternTraceColorDraft);
+                    } else {
+                      setPatternTraceColorDraft(patternTraceColor);
+                    }
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View
+                  accessibilityLabel={`Pattern tracer color ${patternTraceColor}`}
+                  style={[styles.patternColorPreview, { backgroundColor: patternTraceColor }]}
+                />
+                <Button
+                  title="Reset"
+                  small
+                  variant="ghost"
+                  onPress={() => {
+                    setPatternTraceColorDraft(DEFAULT_PATTERN_TRACE_COLOR);
+                    useAppStore.getState().setPatternTraceColor(DEFAULT_PATTERN_TRACE_COLOR);
+                  }}
+                />
+              </Row>
+              <Label tone="dim" size={10}>
+                Used for saved Pattern Tracer markers and response-time overlays. Enter a six-digit
+                hex value such as #ef4444.
+              </Label>
               <Label tone="ok" size={11}>
                 Semantic status, diff, severity, focus, and text tokens are WCAG AA checked in both
                 themes. Text controls support scaling through 130%.
@@ -1560,6 +1601,8 @@ const styles = StyleSheet.create({
   settingsIndexItemCompact: { paddingVertical: 7, minWidth: 130 },
   screen: { flex: 1 },
   content: { padding: 12, gap: 12 },
+  patternColorRow: { alignItems: 'center' },
+  patternColorPreview: { width: 32, height: 32, borderRadius: 16, borderWidth: 1 },
   desktopContent: {
     width: '100%',
     maxWidth: 980,

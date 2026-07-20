@@ -9,9 +9,18 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
-import type { PollSample } from '@mibbeacon/core/client';
+import type {
+  PatternTraceEvent,
+  PatternTraceSession,
+  PollSample,
+} from '@mibbeacon/core/client';
 import { Button, Label, Mono, Row, useTheme } from '@mibbeacon/ui';
-import { chartPoints, polylinePoints } from '../tool-chart';
+import {
+  chartPoints,
+  patternLatencyPoints,
+  patternMarkerX,
+  polylinePoints,
+} from '../tool-chart';
 
 export interface ToolChartSeries {
   id: string;
@@ -23,13 +32,22 @@ export interface ToolChartSeries {
 export function ToolLineChart({
   series,
   title = 'Performance history',
+  patternSessions = [],
+  patternEvents = {},
+  hiddenPatternSessionIds,
+  onTogglePatternSession,
 }: {
   series: ToolChartSeries[];
   title?: string;
+  patternSessions?: PatternTraceSession[];
+  patternEvents?: Record<string, PatternTraceEvent[]>;
+  hiddenPatternSessionIds?: string[];
+  onTogglePatternSession?: (sessionId: string) => void;
 }) {
   const t = useTheme();
   const [width, setWidth] = useState(520);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [hiddenPatterns, setHiddenPatterns] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState<{
     x: number;
     name: string;
@@ -44,6 +62,12 @@ export function ToolLineChart({
     ) => void;
   } | null>(null);
   const visible = series.filter((item) => !hidden.has(item.id));
+  const visiblePatterns = patternSessions.filter(
+    (session) => !(hiddenPatternSessionIds ?? [...hiddenPatterns]).includes(session.id),
+  );
+  const traceEvents = visiblePatterns.flatMap((session) =>
+    uniquePatternEvents(patternEvents[session.id] ?? []),
+  );
   const bounds = useMemo(() => {
     const samples = visible
       .flatMap((item) => item.samples)
@@ -51,19 +75,46 @@ export function ToolLineChart({
         (sample): sample is PollSample & { value: number } =>
           sample.value !== null && Number.isFinite(sample.value),
       );
-    if (!samples.length) return null;
+    const traceTimes = traceEvents.map((event) => event.hitAt);
+    if (!samples.length && !traceTimes.length) return null;
     return {
-      minTime: Math.min(...samples.map((sample) => sample.sampledAt)),
-      maxTime: Math.max(...samples.map((sample) => sample.sampledAt)),
-      minValue: Math.min(...samples.map((sample) => sample.value)),
-      maxValue: Math.max(...samples.map((sample) => sample.value)),
+      minTime: Math.min(
+        ...samples.map((sample) => sample.sampledAt),
+        ...(traceTimes.length ? traceTimes : [Number.POSITIVE_INFINITY]),
+      ),
+      maxTime: Math.max(
+        ...samples.map((sample) => sample.sampledAt),
+        ...(traceTimes.length ? traceTimes : [Number.NEGATIVE_INFINITY]),
+      ),
+      minValue: samples.length ? Math.min(...samples.map((sample) => sample.value)) : 0,
+      maxValue: samples.length ? Math.max(...samples.map((sample) => sample.value)) : 1,
     };
-  }, [visible]);
+  }, [traceEvents, visible]);
   const plotWidth = Math.max(120, width - 44);
   const plotHeight = 190;
   const rendered = visible.map((item) => ({
     ...item,
     points: bounds ? chartPoints(item.samples, plotWidth, plotHeight, bounds) : [],
+  }));
+  const maxLatency = Math.max(
+    1,
+    ...traceEvents.flatMap((event) =>
+      event.latencyMs !== undefined && Number.isFinite(event.latencyMs) ? [event.latencyMs] : [],
+    ),
+  );
+  const renderedPatterns = visiblePatterns.map((session) => ({
+    session,
+    events: limitPatternEvents(uniquePatternEvents(patternEvents[session.id] ?? []), plotWidth),
+    latencyPoints: patternLatencyPoints(
+      limitPatternEvents(uniquePatternEvents(patternEvents[session.id] ?? []), plotWidth),
+      plotWidth,
+      plotHeight,
+      {
+      minTime: bounds?.minTime ?? 0,
+      maxTime: bounds?.maxTime ?? 1,
+      maxLatency,
+      },
+    ),
   }));
 
   const selectNearest = (event: GestureResponderEvent) => {
@@ -166,6 +217,23 @@ export function ToolLineChart({
               <SvgText x={Math.max(36, width - 86)} y={216} fill={t.textDim} fontSize={9}>
                 {new Date(bounds.maxTime).toLocaleTimeString()}
               </SvgText>
+              {traceEvents.some((event) => event.latencyMs !== undefined) ? (
+                <>
+                  <Line
+                    x1={36 + plotWidth}
+                    y1={8}
+                    x2={36 + plotWidth}
+                    y2={198}
+                    stroke={t.border}
+                  />
+                  <SvgText x={Math.max(36, width - 34)} y={14} fill={t.textDim} fontSize={9}>
+                    {formatNumber(maxLatency)}ms
+                  </SvgText>
+                  <SvgText x={Math.max(36, width - 25)} y={198} fill={t.textDim} fontSize={9}>
+                    0ms
+                  </SvgText>
+                </>
+              ) : null}
             </>
           ) : null}
           {rendered.map((item) => (
@@ -174,6 +242,35 @@ export function ToolLineChart({
               points={polylinePoints(item.points)}
               fill="none"
               stroke={item.color}
+              strokeWidth={2}
+            />
+          ))}
+          {bounds
+            ? renderedPatterns.flatMap(({ session, events }) =>
+                events.map((event) => {
+                  const x = 36 + patternMarkerX(event, plotWidth, bounds);
+                  return (
+                    <Line
+                      key={`${session.id}-${event.id}`}
+                      x1={x}
+                      y1={8}
+                      x2={x}
+                      y2={198}
+                      stroke={session.color}
+                      strokeOpacity={0.7}
+                      strokeDasharray="2 4"
+                    />
+                  );
+                }),
+              )
+            : null}
+          {renderedPatterns.map(({ session, latencyPoints }) => (
+            <Polyline
+              key={`${session.id}-latency`}
+              points={polylinePoints(latencyPoints)}
+              fill="none"
+              stroke={session.color}
+              strokeDasharray="5 3"
               strokeWidth={2}
             />
           ))}
@@ -234,6 +331,33 @@ export function ToolLineChart({
             <Text style={{ color: t.text, fontSize: 10 }}>{item.name}</Text>
           </Pressable>
         ))}
+        {patternSessions.map((session) => {
+          const isHidden = (hiddenPatternSessionIds ?? [...hiddenPatterns]).includes(session.id);
+          return (
+            <Pressable
+              key={session.id}
+              accessibilityRole="button"
+              accessibilityLabel={`${isHidden ? 'Show' : 'Hide'} pattern trace ${session.name}`}
+              accessibilityState={{ selected: !isHidden }}
+              onPress={() => {
+                if (onTogglePatternSession) {
+                  onTogglePatternSession(session.id);
+                } else {
+                  setHiddenPatterns((current) => {
+                    const next = new Set(current);
+                    if (next.has(session.id)) next.delete(session.id);
+                    else next.add(session.id);
+                    return next;
+                  });
+                }
+              }}
+              style={[styles.legendItem, { opacity: isHidden ? 0.4 : 1 }]}
+            >
+              <View style={[styles.dot, { backgroundColor: session.color }]} />
+              <Text style={{ color: t.text, fontSize: 10 }}>Pattern: {session.name}</Text>
+            </Pressable>
+          );
+        })}
       </Row>
     </View>
   );
@@ -252,6 +376,18 @@ function formatNumber(value: number): string {
   return Math.abs(value) >= 1_000_000
     ? value.toExponential(2)
     : value.toFixed(2).replace(/\.00$/, '');
+}
+
+function limitPatternEvents(events: PatternTraceEvent[], width: number): PatternTraceEvent[] {
+  if (events.length <= 2_000) return events;
+  const stride = Math.ceil(events.length / Math.max(1, width * 4));
+  return events.filter((_event, index) => index % stride === 0);
+}
+
+function uniquePatternEvents(events: PatternTraceEvent[]): PatternTraceEvent[] {
+  const unique = new Map<string, PatternTraceEvent>();
+  for (const event of events) unique.set(`${event.hitIndex}:${event.hitAt}`, event);
+  return [...unique.values()];
 }
 
 const styles = StyleSheet.create({

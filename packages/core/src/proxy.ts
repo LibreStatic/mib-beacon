@@ -191,6 +191,14 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
         save: (input) => call('tools.charts.save', input),
         remove: (id) => call('tools.charts.remove', id),
       },
+      patterns: {
+        list: (input) => call('tools.patterns.list', input),
+        events: (id) => call('tools.patterns.events', id),
+        start: (input) => call('tools.patterns.start', input),
+        annotate: (input) => call('tools.patterns.annotate', input),
+        cancel: (id) => call('tools.patterns.cancel', id),
+        remove: (id) => call('tools.patterns.remove', id),
+      },
       discovery: {
         start: (input) => call('tools.discovery.start', input),
         cancel: (handleId) => call('tools.discovery.cancel', handleId),

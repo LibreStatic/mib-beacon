@@ -1,9 +1,15 @@
-import type { PollSample } from '@mibbeacon/core/client';
+import type { PatternTraceEvent, PollSample } from '@mibbeacon/core/client';
 
 export interface ChartPoint {
   x: number;
   y: number;
   sample: PollSample;
+}
+
+export interface PatternLatencyPoint {
+  x: number;
+  y: number;
+  event: PatternTraceEvent;
 }
 
 export function chartPoints(
@@ -27,6 +33,32 @@ export function chartPoints(
   }));
 }
 
-export function polylinePoints(points: readonly ChartPoint[]): string {
+export function polylinePoints(points: readonly { x: number; y: number }[]): string {
   return points.map(({ x, y }) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+}
+
+export function patternMarkerX(
+  event: Pick<PatternTraceEvent, 'hitAt'>,
+  width: number,
+  bounds: { minTime: number; maxTime: number },
+): number {
+  const timeSpan = Math.max(1, bounds.maxTime - bounds.minTime);
+  return ((event.hitAt - bounds.minTime) / timeSpan) * width;
+}
+
+export function patternLatencyPoints(
+  events: readonly PatternTraceEvent[],
+  width: number,
+  height: number,
+  bounds: { minTime: number; maxTime: number; maxLatency: number },
+): PatternLatencyPoint[] {
+  const maxLatency = Math.max(1, bounds.maxLatency);
+  return events.flatMap((event) => {
+    if (event.latencyMs === undefined || !Number.isFinite(event.latencyMs)) return [];
+    return [{
+      x: patternMarkerX(event, width, bounds),
+      y: height - (Math.max(0, event.latencyMs) / maxLatency) * height,
+      event,
+    }];
+  });
 }

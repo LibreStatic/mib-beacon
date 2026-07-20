@@ -4,6 +4,8 @@ import type {
   AgentProfile,
   DiscoveryResult,
   EngineInfo,
+  PatternTraceEvent,
+  PatternTraceSession,
   PollSample,
   PollChart,
   PollSeries,
@@ -66,17 +68,29 @@ const COLORS = [
   '#d96bc0',
   '#8fa63f',
 ];
-
 export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const agents = useAppStore((state) => state.agentProfiles);
+  const patternTraceColor = useAppStore((state) => state.patternTraceColor);
   const [section, setSection] = useState<ToolSection>('graphs');
   const [series, setSeries] = useState<PollSeries[]>([]);
   const [watches, setWatches] = useState<PollWatch[]>([]);
   const [charts, setCharts] = useState<PollChart[]>([]);
   const [samples, setSamples] = useState<Record<string, PollSample[]>>({});
+  const [patternSessions, setPatternSessions] = useState<PatternTraceSession[]>([]);
+  const [patternEvents, setPatternEvents] = useState<Record<string, PatternTraceEvent[]>>({});
+  const [hiddenPatternSessionIds, setHiddenPatternSessionIds] = useState<string[]>([]);
+  const [activeChartId, setActiveChartId] = useState<string | null>(null);
+  const [patternMode, setPatternMode] = useState<'active' | 'passive'>('active');
+  const [patternName, setPatternName] = useState('Pattern trace');
+  const [patternCadence, setPatternCadence] = useState('500');
+  const [patternDuration, setPatternDuration] = useState('60000');
+  const [patternStart, setPatternStart] = useState(() => new Date(Date.now() - 60_000).toISOString());
+  const [patternEnd, setPatternEnd] = useState(() => new Date().toISOString());
+  const [patternHandle, setPatternHandle] = useState<string | null>(null);
+  const [patternStopping, setPatternStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [seriesName, setSeriesName] = useState('New series');
@@ -177,6 +191,15 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
       ]),
     ];
     if (!selectedSeries.length && ids.length) setSelectedSeries(ids);
+    const nextPatternSessions = await engine.tools.patterns.list({ seriesIds: ids });
+    setPatternSessions(nextPatternSessions);
+    const nextPatternEvents = await Promise.all(
+      nextPatternSessions.map(async (session) => [
+        session.id,
+        await engine.tools.patterns.events(session.id),
+      ] as const),
+    );
+    setPatternEvents(Object.fromEntries(nextPatternEvents));
     setSamples(
       Object.fromEntries(
         await Promise.all(
@@ -191,6 +214,20 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
     const off = engine.events.subscribe('tools', (event) => {
       if (event.kind === 'sample' || event.kind === 'watch-alert' || event.kind === 'poll-error')
         void refresh();
+      if (event.handleId === patternHandle) {
+        if (event.kind === 'pattern-event') {
+          const traceEvent = event.payload as PatternTraceEvent;
+          setPatternEvents((current) => ({
+            ...current,
+            [traceEvent.sessionId]: [...(current[traceEvent.sessionId] ?? []), traceEvent],
+          }));
+        }
+        if (['done', 'error', 'pattern-finished'].includes(event.kind)) {
+          setPatternHandle(null);
+          setPatternStopping(false);
+          void refresh();
+        }
+      }
       if (event.handleId === discoveryHandle) {
         if (event.kind === 'discovery-result')
           setDiscoveryResults((current) => [...current, event.payload as DiscoveryResult]);
@@ -221,7 +258,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
       }
     });
     return off;
-  }, [engine, discoveryHandle, reachHandle, compareHandle, portHandle, refresh, report]);
+  }, [engine, discoveryHandle, reachHandle, compareHandle, portHandle, patternHandle, refresh, report]);
 
   const chartSeries = useMemo(
     () =>
@@ -240,6 +277,53 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
       }),
     [samples, selectedSeries, series],
   );
+  const chartPatterns = useMemo(
+    () =>
+      patternSessions.filter((session) =>
+        session.seriesIds.some((seriesId) => selectedSeries.includes(seriesId)),
+      ),
+    [patternSessions, selectedSeries],
+  );
+  const startPattern = async () => {
+    if (!selectedSeries.length || patternHandle) return;
+    try {
+      if (patternMode === 'active') {
+        const result = await engine.tools.patterns.start({
+          name: patternName,
+          seriesIds: selectedSeries,
+          cadenceMs: Number(patternCadence),
+          durationMs: Number(patternDuration),
+          color: patternTraceColor,
+          chartId: activeChartId ?? undefined,
+        });
+        setPatternHandle(result.handleId);
+        void refresh();
+      } else {
+        const startAt = Date.parse(patternStart);
+        const endAt = Date.parse(patternEnd);
+        await engine.tools.patterns.annotate({
+          name: patternName,
+          seriesIds: selectedSeries,
+          cadenceMs: Number(patternCadence),
+          startAt,
+          endAt,
+          color: patternTraceColor,
+          chartId: activeChartId ?? undefined,
+        });
+        await refresh();
+      }
+    } catch (caught) {
+      report(caught);
+    }
+  };
+  const stopPattern = () => {
+    if (!patternHandle || patternStopping) return;
+    setPatternStopping(true);
+    void engine.tools.patterns.cancel(patternHandle).catch((caught) => {
+      setPatternStopping(false);
+      report(caught);
+    });
+  };
   const visiblePorts = useMemo(
     () =>
       [...ports]
@@ -350,6 +434,98 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               )}
             </Card>
             <Card>
+              <Row style={styles.between}>
+                <View style={{ flex: 1 }}>
+                  <SectionTitle>3. Pattern Tracer</SectionTitle>
+                  <Label tone="dim" size={10}>
+                    Mark repeated requests over the graph and overlay measured response time. Active
+                    runs use fixed cadence; history mode adds markers without sending traffic.
+                  </Label>
+                </View>
+                {patternHandle ? (
+                  <Pill text={patternStopping ? 'STOPPING' : 'RUNNING'} color={t.warn} />
+                ) : null}
+              </Row>
+              <Row style={styles.wrap}>
+                <Chip
+                  label="Active test"
+                  active={patternMode === 'active'}
+                  onPress={() => setPatternMode('active')}
+                />
+                <Chip
+                  label="Annotate history"
+                  active={patternMode === 'passive'}
+                  onPress={() => setPatternMode('passive')}
+                />
+              </Row>
+              <Row style={styles.wrap}>
+                <Field label="Name" value={patternName} onChangeText={setPatternName} />
+                <Field
+                  label="Cadence ms"
+                  value={patternCadence}
+                  onChangeText={setPatternCadence}
+                  keyboardType="numeric"
+                />
+                {patternMode === 'active' ? (
+                  <Field
+                    label="Duration ms"
+                    value={patternDuration}
+                    onChangeText={setPatternDuration}
+                    keyboardType="numeric"
+                  />
+                ) : (
+                  <>
+                    <Field label="Start ISO time" value={patternStart} onChangeText={setPatternStart} />
+                    <Field label="End ISO time" value={patternEnd} onChangeText={setPatternEnd} />
+                  </>
+                )}
+              </Row>
+              <Row style={styles.wrap}>
+                <Button
+                  title={patternMode === 'active' ? 'Start pattern' : 'Annotate history'}
+                  small
+                  disabled={!selectedSeries.length || Boolean(patternHandle)}
+                  onPress={() => void startPattern()}
+                />
+                {patternHandle ? (
+                  <Button
+                    title={patternStopping ? 'Stopping…' : 'Stop'}
+                    small
+                    variant="danger"
+                    disabled={patternStopping}
+                    onPress={stopPattern}
+                  />
+                ) : null}
+                <Label tone="dim" size={10}>
+                  Marker color: {patternTraceColor}
+                </Label>
+              </Row>
+              {chartPatterns.length ? (
+                <Row style={styles.patternSessionList}>
+                  {chartPatterns.map((session) => (
+                    <Row key={session.id} style={styles.patternSessionRow}>
+                      <View style={[styles.patternColorDot, { backgroundColor: session.color }]} />
+                      <Label size={10}>
+                        {session.name} · {session.mode} · {session.successCount}/{session.hitCount}{' '}
+                        successful
+                      </Label>
+                      <Button
+                        title="Delete"
+                        small
+                        variant="danger"
+                        onPress={() =>
+                          void engine.tools.patterns
+                            .remove(session.id)
+                            .then(refresh)
+                            .catch(report)
+                        }
+                      />
+                    </Row>
+                  ))}
+                </Row>
+              ) : null}
+            </Card>
+            <Card>
               {charts.length ? (
                 <Row style={styles.wrap}>
                   {charts.map((chart) => (
@@ -357,7 +533,11 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       key={chart.id}
                       label={chart.name}
                       active={chart.seriesIds.every((id) => selectedSeries.includes(id))}
-                      onPress={() => setSelectedSeries(chart.seriesIds)}
+                      onPress={() => {
+                        setActiveChartId(chart.id);
+                        setSelectedSeries(chart.seriesIds);
+                        setHiddenPatternSessionIds(chart.hiddenPatternSessionIds ?? []);
+                      }}
                     />
                   ))}
                 </Row>
@@ -373,7 +553,19 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                 ))}
               </Row>
               {chartSeries.length ? (
-                <ToolLineChart series={chartSeries} />
+                <ToolLineChart
+                  series={chartSeries}
+                  patternSessions={chartPatterns}
+                  patternEvents={patternEvents}
+                  hiddenPatternSessionIds={hiddenPatternSessionIds}
+                  onTogglePatternSession={(sessionId) =>
+                    setHiddenPatternSessionIds((current) =>
+                      current.includes(sessionId)
+                        ? current.filter((id) => id !== sessionId)
+                        : [...current, sessionId],
+                    )
+                  }
+                />
               ) : (
                 <Label tone="dim">Create and select up to eight series.</Label>
               )}
@@ -393,8 +585,12 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   onPress={() =>
                     void engine.tools.charts
                       .save({
-                        name: `Chart ${new Date().toLocaleTimeString()}`,
+                        id: activeChartId ?? undefined,
+                        name:
+                          charts.find((chart) => chart.id === activeChartId)?.name ??
+                          `Chart ${new Date().toLocaleTimeString()}`,
                         seriesIds: selectedSeries,
+                        hiddenPatternSessionIds,
                       })
                       .then(refresh)
                       .catch(report)
@@ -1213,6 +1409,9 @@ const styles = StyleSheet.create({
   },
   wrap: { flexWrap: 'wrap' },
   between: { justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  patternSessionList: { flexDirection: 'column', alignItems: 'stretch', gap: 6 },
+  patternSessionRow: { alignItems: 'center', gap: 6 },
+  patternColorDot: { width: 9, height: 9, borderRadius: 5 },
   targetCopy: { flex: 1, minWidth: 0, gap: 3 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   watchCard: { minWidth: 230, flexGrow: 1, borderWidth: 1 },

@@ -34,6 +34,7 @@ import type {
   PacketTraceServiceStatus,
 } from '@mibbeacon/core/client';
 import { upsertPacketTrace } from './packet-console';
+import { normalizePatternTraceColor } from './pattern-trace-settings';
 
 export type Tab = 'browse' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
 export type AppThemeMode = 'system' | 'light' | 'dark';
@@ -129,6 +130,8 @@ export interface AppState {
   densityMode: AppDensityMode;
   setThemeMode: (mode: AppThemeMode) => void;
   setDensityMode: (mode: AppDensityMode) => void;
+  patternTraceColor: string;
+  setPatternTraceColor: (color: string) => void;
 
   packetConsoleOpen: boolean;
   packetFeedPaused: boolean;
@@ -387,11 +390,15 @@ const defaultNotification: NotificationForm = {
 };
 
 function readUiPreference<T extends string>(key: string, values: readonly T[], fallback: T): T {
+  const value = readStoredPreference(key) as T | null;
+  return value && values.includes(value) ? value : fallback;
+}
+
+function readStoredPreference(key: string): string | null {
   try {
-    const value = (globalThis as { localStorage?: Storage }).localStorage?.getItem(key) as T | null;
-    return value && values.includes(value) ? value : fallback;
+    return (globalThis as { localStorage?: Storage }).localStorage?.getItem(key) ?? null;
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -408,6 +415,9 @@ export const useAppStore = create<AppState>((set) => ({
   setTab: (tab) => set({ tab }),
   themeMode: readUiPreference('mibbeacon:theme', ['system', 'light', 'dark'], 'system'),
   densityMode: readUiPreference('mibbeacon:density', ['auto', 'compact', 'comfortable'], 'auto'),
+  patternTraceColor: normalizePatternTraceColor(
+    readStoredPreference('mibbeacon:pattern-trace-color'),
+  ),
   setThemeMode: (themeMode) => {
     writeUiPreference('mibbeacon:theme', themeMode);
     set({ themeMode });
@@ -415,6 +425,11 @@ export const useAppStore = create<AppState>((set) => ({
   setDensityMode: (densityMode) => {
     writeUiPreference('mibbeacon:density', densityMode);
     set({ densityMode });
+  },
+  setPatternTraceColor: (color) => {
+    const normalized = normalizePatternTraceColor(color);
+    writeUiPreference('mibbeacon:pattern-trace-color', normalized);
+    set({ patternTraceColor: normalized });
   },
   packetConsoleOpen: false,
   packetFeedPaused: false,

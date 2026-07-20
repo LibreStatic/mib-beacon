@@ -510,8 +510,43 @@ export interface PollChart {
   name: string;
   seriesIds: string[];
   hiddenSeriesIds: string[];
+  hiddenPatternSessionIds: string[];
   createdAt: number;
   updatedAt: number;
+}
+export type PatternTraceMode = 'active' | 'passive';
+export type PatternTraceSessionStatus = 'running' | 'completed' | 'cancelled' | 'failed';
+export type PatternTraceEventStatus = 'success' | 'error' | 'skipped' | 'annotated';
+export interface PatternTraceSession {
+  id: string;
+  name: string;
+  mode: PatternTraceMode;
+  seriesIds: string[];
+  chartId?: string;
+  cadenceMs: number;
+  startAt: number;
+  endAt: number;
+  color: string;
+  status: PatternTraceSessionStatus;
+  hitCount: number;
+  successCount: number;
+  errorCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface PatternTraceEvent {
+  id: number;
+  sessionId: string;
+  seriesId: string;
+  hitIndex: number;
+  hitAt: number;
+  elapsedMs: number;
+  latencyMs?: number;
+  status: PatternTraceEventStatus;
+  errorMessage?: string;
+}
+export interface PatternTraceStartResult extends OperationHandle {
+  sessionId: string;
 }
 export interface DiscoveryCredential {
   agentId?: string;
@@ -581,8 +616,32 @@ export interface ToolsAPI {
       name: string;
       seriesIds: string[];
       hiddenSeriesIds?: string[];
+      hiddenPatternSessionIds?: string[];
     }): Promise<PollChart>;
     remove(id: string): Promise<void>;
+  };
+  patterns: {
+    list(input?: { seriesIds?: string[] }): Promise<PatternTraceSession[]>;
+    events(sessionId: string): Promise<PatternTraceEvent[]>;
+    start(input: {
+      name?: string;
+      seriesIds: string[];
+      cadenceMs: number;
+      durationMs: number;
+      color: string;
+      chartId?: string;
+    }): Promise<PatternTraceStartResult>;
+    annotate(input: {
+      name?: string;
+      seriesIds: string[];
+      cadenceMs: number;
+      startAt: number;
+      endAt: number;
+      color: string;
+      chartId?: string;
+    }): Promise<PatternTraceSession>;
+    cancel(handleId: string): Promise<void>;
+    remove(sessionId: string): Promise<void>;
   };
   discovery: {
     start(input: {

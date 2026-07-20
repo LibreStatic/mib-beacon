@@ -34,6 +34,134 @@ async function savedAgent(engine: ReturnType<typeof createEngine>, host = '127.0
 }
 
 describe('tools service', () => {
+  it('marks persisted running patterns as failed when the engine restarts', async () => {
+    vi.useFakeTimers();
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-pattern-restart-'));
+    const dbPath = join(directory, 'engine.sqlite');
+    try {
+      const transport = createNodeTransport({ secrets: encryptedSecrets() });
+      const first = createEngine(transport, {
+        dbPath,
+        agentTester: async (_agent, oids) => oids.map((oid) => varbind(oid, 42, 'Gauge')),
+      });
+      const agent = await savedAgent(first);
+      const series = await first.tools.polls.create({
+        name: 'Restart target',
+        agentId: agent.id,
+        oid: '1.3.6.1.2.1.1.3.0',
+        intervalMs: 5_000,
+        mode: 'raw',
+      });
+      const run = await first.tools.patterns.start({
+        name: 'Interrupted pattern',
+        seriesIds: [series.id],
+        cadenceMs: 500,
+        durationMs: 60_000,
+        color: '#ef4444',
+      });
+
+      const restarted = createEngine(createNodeTransport({ secrets: encryptedSecrets() }), {
+        dbPath,
+        agentTester: async (_agent, oids) => oids.map((oid) => varbind(oid, 42, 'Gauge')),
+      });
+      const session = (await restarted.tools.patterns.list()).find(
+        (item) => item.id === run.sessionId,
+      );
+
+      expect(session?.status).toBe('failed');
+      await first.tools.patterns.cancel(run.handleId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('runs active patterns at fixed cadence without adding trace hits to poll history', async () => {
+    vi.useFakeTimers();
+    try {
+      let now = 0;
+      const tester = vi.fn(async (_agent, oids: string[]) =>
+        oids.map((oid) => varbind(oid, 42, 'Gauge')),
+      );
+      const engine = createEngine(createNodeTransport({ secrets: encryptedSecrets() }), {
+        dbPath: ':memory:',
+        agentTester: tester,
+        tools: { now: () => now },
+      });
+      const agent = await savedAgent(engine);
+      const series = await engine.tools.polls.create({
+        name: 'Active pattern target',
+        agentId: agent.id,
+        oid: '1.3.6.1.2.1.1.3.0',
+        intervalMs: 5_000,
+        mode: 'raw',
+      });
+      const run = await engine.tools.patterns.start({
+        name: 'Fixed cadence',
+        seriesIds: [series.id],
+        cadenceMs: 500,
+        durationMs: 1_000,
+        color: '#ef4444',
+      });
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      now = 1_000;
+      await Promise.resolve();
+      const events = await engine.tools.patterns.events(run.sessionId);
+      const session = (await engine.tools.patterns.list()).find((item) => item.id === run.sessionId);
+
+      expect(tester).toHaveBeenCalledTimes(2);
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => event.hitAt)).toEqual([0, 500]);
+      expect(session?.status).toBe('completed');
+      expect(await engine.tools.polls.samples(series.id)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('persists passive pattern annotations and includes them in CSV export', async () => {
+    const transport = createNodeTransport({ secrets: encryptedSecrets() });
+    const engine = createEngine(transport, {
+      dbPath: ':memory:',
+      agentTester: async (_agent, oids) => oids.map((oid) => varbind(oid, 42, 'Gauge')),
+    });
+    const agent = await savedAgent(engine);
+    const series = await engine.tools.polls.create({
+      name: 'Pattern target',
+      agentId: agent.id,
+      oid: '1.3.6.1.2.1.1.3.0',
+      intervalMs: 5_000,
+      mode: 'raw',
+    });
+
+    const session = await engine.tools.patterns.annotate({
+      name: 'Historical stress window',
+      seriesIds: [series.id],
+      cadenceMs: 500,
+      startAt: 1_000,
+      endAt: 2_000,
+      color: '#ef4444',
+    });
+    const events = await engine.tools.patterns.events(session.id);
+    const csv = await engine.tools.polls.exportCsv(series.id);
+
+    expect(session).toMatchObject({
+      mode: 'passive',
+      seriesIds: [series.id],
+      color: '#ef4444',
+      status: 'completed',
+      hitCount: 2,
+    });
+    expect(events).toMatchObject([
+      { sessionId: session.id, seriesId: series.id, hitIndex: 0, hitAt: 1_000, status: 'annotated' },
+      { sessionId: session.id, seriesId: series.id, hitIndex: 1, hitAt: 1_500, status: 'annotated' },
+    ]);
+    expect(csv).toContain('pattern_session_ids,pattern_active,pattern_event_count');
+    expect(csv).toContain('# pattern_trace_events');
+    expect(csv).toContain(`${session.id},Historical stress window,passive`);
+    expect(csv).toContain('#ef4444');
+  });
+
   it('batches due series, persists wrap-safe rates, prunes retention, and emits a threshold alert', async () => {
     let now = 0;
     let counter = '18446744073709551610';

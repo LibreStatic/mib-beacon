@@ -32,6 +32,8 @@ describe('runMigrations', () => {
         'poll_samples',
         'poll_watches',
         'poll_charts',
+        'poll_pattern_sessions',
+        'poll_pattern_events',
       ]),
     );
     db.close();

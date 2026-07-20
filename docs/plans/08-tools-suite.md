@@ -63,6 +63,10 @@ Foundation for graphs, watches, and port view:
   the cross-platform dependency surface small. It supports up to eight series, persisted history,
   time/value axes, tap/hover-nearest tooltips, legend toggles, theme colors, PNG sharing/download,
   and per-series CSV.
+- **Pattern Tracer extension:** Tools graphs now support active fixed-cadence traces and passive
+  historical annotations. Trace sessions/events are stored separately from poll samples, preserving
+  delta/rate calculations while adding configurable-color timestamp markers and measured latency
+  overlays. CSV export retains sample context plus a complete trace-event section.
 - **T3:** persisted watch cards show current/min/max/average/last-change values and sparklines.
   Raw or derived thresholds emit a transition-only `watch-alert`; the app maps that event to the
   same host Notification API used by trap rules.

@@ -9,6 +9,12 @@ import type {
   PollSeries,
   PollSeriesDraft,
   PollWatch,
+  PatternTraceEvent,
+  PatternTraceEventStatus,
+  PatternTraceMode,
+  PatternTraceSession,
+  PatternTraceSessionStatus,
+  PatternTraceStartResult,
   PortViewRow,
   ToolsAPI,
   WalkDiffRow,
@@ -22,6 +28,12 @@ import { diffWalks, parseNumericSnmpwalk, type WalkValue } from './diff';
 import { expandIpv4Target } from './discovery';
 import { buildPingArgs, parsePingSummary } from './reachability';
 import type { PacketTraceEvent } from '../packet-trace';
+import {
+  isPatternTraceColor,
+  MAX_PATTERN_TRACE_IN_FLIGHT,
+  patternHitTimes,
+  validatePatternTraceWindow,
+} from './pattern-trace';
 
 interface PollSeriesRow {
   id: string;
@@ -49,6 +61,33 @@ interface PollSampleRow {
   type_name: string | null;
 }
 
+interface PatternTraceSessionRow {
+  id: string;
+  name: string;
+  mode: PatternTraceMode;
+  series_ids_json: string;
+  chart_id: string | null;
+  cadence_ms: number;
+  start_at: number;
+  end_at: number;
+  color: string;
+  status: PatternTraceSessionStatus;
+  created_at: number;
+  updated_at: number;
+}
+
+interface PatternTraceEventRow {
+  id: number;
+  session_id: string;
+  series_id: string;
+  hit_index: number;
+  hit_at: number;
+  elapsed_ms: number;
+  latency_ms: number | null;
+  status: PatternTraceEventStatus;
+  error_message: string | null;
+}
+
 export class ToolService {
   readonly api: ToolsAPI;
   private readonly pollTimers = new Map<string, ReturnType<typeof setInterval>>();
@@ -68,6 +107,10 @@ export class ToolService {
     private readonly now: () => number = Date.now,
     private readonly onPacket?: (event: PacketTraceEvent) => void,
   ) {
+    this.db.run(
+      "UPDATE poll_pattern_sessions SET status='failed',updated_at=? WHERE status='running'",
+      [this.now()],
+    );
     this.api = this.buildApi();
     this.reschedulePolls();
   }
@@ -96,6 +139,14 @@ export class ToolService {
         remove: async (id) => {
           this.db.run('DELETE FROM poll_charts WHERE id = ?', [id]);
         },
+      },
+      patterns: {
+        list: async (input) => this.listPatternSessions(input),
+        events: async (sessionId) => this.listPatternEvents(sessionId),
+        start: async (input) => this.startPattern(input),
+        annotate: async (input) => this.annotatePattern(input),
+        cancel: async (handleId) => this.cancelOperation(handleId),
+        remove: async (sessionId) => this.removePattern(sessionId),
       },
       discovery: {
         start: async (input) => this.startDiscovery(input),
@@ -309,14 +360,48 @@ export class ToolService {
 
   private exportSeriesCsv(id: string): string {
     this.requireSeries(id);
-    const rows = ['timestamp,raw_value,value,type'];
+    const sessions = this.listPatternSessions({ seriesIds: [id] });
+    const events = sessions.flatMap((session) => this.listPatternEvents(session.id)
+      .filter((event) => event.seriesId === id)
+      .map((event) => ({ event, session })));
+    const rows = [
+      'timestamp,raw_value,value,type,pattern_session_ids,pattern_active,pattern_event_count',
+    ];
     for (const sample of this.listSamples(id)) {
+      const activeSessions = sessions.filter(
+        (session) => session.startAt <= sample.sampledAt && sample.sampledAt < session.endAt,
+      );
+      const eventCount = events.filter(({ event }) => event.hitAt === sample.sampledAt).length;
       rows.push(
         [
           new Date(sample.sampledAt).toISOString(),
           csv(sample.rawValue),
           sample.value ?? '',
           csv(sample.typeName ?? ''),
+          csv(activeSessions.map((session) => session.id).join(';')),
+          activeSessions.length ? '1' : '0',
+          eventCount,
+        ].join(','),
+      );
+    }
+    rows.push('', '# pattern_trace_events');
+    rows.push(
+      'session_id,session_name,mode,series_id,hit_index,hit_at,elapsed_ms,latency_ms,status,error_message,marker_color',
+    );
+    for (const { event, session } of events) {
+      rows.push(
+        [
+          csv(event.sessionId),
+          csv(session.name),
+          session.mode,
+          csv(event.seriesId),
+          event.hitIndex,
+          new Date(event.hitAt).toISOString(),
+          event.elapsedMs,
+          event.latencyMs ?? '',
+          event.status,
+          csv(event.errorMessage ?? ''),
+          session.color,
         ].join(','),
       );
     }
@@ -437,6 +522,7 @@ export class ToolService {
         name: string;
         series_ids_json: string;
         hidden_series_ids_json: string;
+        hidden_pattern_session_ids_json: string;
         created_at: number;
         updated_at: number;
       }>('SELECT * FROM poll_charts ORDER BY name COLLATE NOCASE')
@@ -445,6 +531,7 @@ export class ToolService {
         name: row.name,
         seriesIds: JSON.parse(row.series_ids_json) as string[],
         hiddenSeriesIds: JSON.parse(row.hidden_series_ids_json) as string[],
+        hiddenPatternSessionIds: JSON.parse(row.hidden_pattern_session_ids_json) as string[],
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));
@@ -455,6 +542,7 @@ export class ToolService {
     name: string;
     seriesIds: string[];
     hiddenSeriesIds?: string[];
+    hiddenPatternSessionIds?: string[];
   }): PollChart {
     const seriesIds = [...new Set(input.seriesIds)];
     if (!input.name.trim()) throw new Error('Chart name is required');
@@ -463,20 +551,350 @@ export class ToolService {
     for (const id of seriesIds) this.requireSeries(id);
     const id = input.id ?? this.id('chart');
     const at = this.now();
+    const hiddenPatternSessionIds = [...new Set(input.hiddenPatternSessionIds ?? [])];
     this.db.run(
-      `INSERT INTO poll_charts(id,name,series_ids_json,hidden_series_ids_json,created_at,updated_at)
-       VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,
-       series_ids_json=excluded.series_ids_json,hidden_series_ids_json=excluded.hidden_series_ids_json,updated_at=excluded.updated_at`,
+      `INSERT INTO poll_charts(id,name,series_ids_json,hidden_series_ids_json,
+       hidden_pattern_session_ids_json,created_at,updated_at)
+       VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,
+       series_ids_json=excluded.series_ids_json,hidden_series_ids_json=excluded.hidden_series_ids_json,
+       hidden_pattern_session_ids_json=excluded.hidden_pattern_session_ids_json,updated_at=excluded.updated_at`,
       [
         id,
         input.name.trim(),
         JSON.stringify(seriesIds),
         JSON.stringify(input.hiddenSeriesIds ?? []),
+        JSON.stringify(hiddenPatternSessionIds),
         at,
         at,
       ],
     );
     return this.listCharts().find((chart) => chart.id === id)!;
+  }
+
+  private listPatternSessions(input?: { seriesIds?: string[] }): PatternTraceSession[] {
+    const requested = new Set(input?.seriesIds ?? []);
+    const counts = new Map<string, { hitCount: number; successCount: number; errorCount: number }>();
+    for (const row of this.db.all<{
+      session_id: string;
+      hit_count: number;
+      success_count: number;
+      error_count: number;
+    }>(
+      `SELECT session_id, COUNT(*) AS hit_count,
+       COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) AS success_count,
+       COALESCE(SUM(CASE WHEN status='error' THEN 1 ELSE 0 END),0) AS error_count
+       FROM poll_pattern_events GROUP BY session_id`,
+    )) {
+      counts.set(row.session_id, {
+        hitCount: row.hit_count,
+        successCount: row.success_count,
+        errorCount: row.error_count,
+      });
+    }
+    return this.db
+      .all<PatternTraceSessionRow>(
+        'SELECT * FROM poll_pattern_sessions ORDER BY start_at DESC, created_at DESC',
+      )
+      .map((row) => {
+        const seriesIds = JSON.parse(row.series_ids_json) as string[];
+        const count = counts.get(row.id) ?? { hitCount: 0, successCount: 0, errorCount: 0 };
+        return { row, seriesIds, count };
+      })
+      .filter(({ seriesIds }) =>
+        requested.size === 0 ? true : seriesIds.some((id) => requested.has(id)),
+      )
+      .map(({ row, seriesIds, count }) => publicPatternSession(row, seriesIds, count));
+  }
+
+  private listPatternEvents(sessionId: string): PatternTraceEvent[] {
+    return this.db
+      .all<PatternTraceEventRow>(
+        'SELECT * FROM poll_pattern_events WHERE session_id=? ORDER BY hit_at ASC,id ASC',
+        [sessionId],
+      )
+      .map(publicPatternEvent);
+  }
+
+  private startPattern(input: {
+    name?: string;
+    seriesIds: string[];
+    cadenceMs: number;
+    durationMs: number;
+    color: string;
+    chartId?: string;
+  }): PatternTraceStartResult {
+    const seriesIds = validatePatternSeries(input.seriesIds);
+    validatePatternTraceWindow(input.cadenceMs, input.durationMs);
+    const color = normalizePatternColor(input.color);
+    const startAt = this.now();
+    const sessionId = this.createPatternSession({
+      name: input.name,
+      mode: 'active',
+      seriesIds,
+      chartId: input.chartId,
+      cadenceMs: input.cadenceMs,
+      startAt,
+      endAt: startAt + input.durationMs,
+      color,
+      status: 'running',
+    });
+    const handleId = this.operationId('pattern');
+    const controller = new AbortController();
+    this.operations.set(handleId, controller);
+    void this.runPattern(sessionId, handleId, controller).catch((error) => {
+      this.updatePatternStatus(sessionId, 'failed');
+      this.emitToolError(handleId, error);
+      this.finishOperation(handleId);
+    });
+    return { handleId, sessionId };
+  }
+
+  private annotatePattern(input: {
+    name?: string;
+    seriesIds: string[];
+    cadenceMs: number;
+    startAt: number;
+    endAt: number;
+    color: string;
+    chartId?: string;
+  }): PatternTraceSession {
+    const seriesIds = validatePatternSeries(input.seriesIds);
+    if (!Number.isInteger(input.startAt) || !Number.isInteger(input.endAt) || input.endAt <= input.startAt)
+      throw new Error('Pattern annotation requires an increasing time window');
+    validatePatternTraceWindow(input.cadenceMs, input.endAt - input.startAt);
+    const sessionId = this.createPatternSession({
+      name: input.name,
+      mode: 'passive',
+      seriesIds,
+      chartId: input.chartId,
+      cadenceMs: input.cadenceMs,
+      startAt: input.startAt,
+      endAt: input.endAt,
+      color: normalizePatternColor(input.color),
+      status: 'completed',
+    });
+    for (const [hitIndex, hitAt] of patternHitTimes(input.startAt, input.endAt, input.cadenceMs).entries()) {
+      for (const seriesId of seriesIds) {
+        this.recordPatternEvent({
+          sessionId,
+          seriesId,
+          hitIndex,
+          hitAt,
+          elapsedMs: hitAt - input.startAt,
+          status: 'annotated',
+        });
+      }
+    }
+    return this.requirePatternSession(sessionId);
+  }
+
+  private createPatternSession(input: {
+    name?: string;
+    mode: PatternTraceMode;
+    seriesIds: string[];
+    chartId?: string;
+    cadenceMs: number;
+    startAt: number;
+    endAt: number;
+    color: string;
+    status: PatternTraceSessionStatus;
+  }): string {
+    const id = this.id('pattern');
+    const at = this.now();
+    this.db.run(
+      `INSERT INTO poll_pattern_sessions
+       (id,name,mode,series_ids_json,chart_id,cadence_ms,start_at,end_at,color,status,created_at,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        input.name?.trim() || `Pattern ${new Date(input.startAt).toLocaleTimeString()}`,
+        input.mode,
+        JSON.stringify(input.seriesIds),
+        input.chartId ?? null,
+        input.cadenceMs,
+        input.startAt,
+        input.endAt,
+        input.color,
+        input.status,
+        at,
+        at,
+      ],
+    );
+    return id;
+  }
+
+  private requirePatternSession(id: string): PatternTraceSession {
+    const row = this.db.get<PatternTraceSessionRow>(
+      'SELECT * FROM poll_pattern_sessions WHERE id=?',
+      [id],
+    );
+    if (!row) throw new Error(`Pattern trace session ${id} does not exist`);
+    const count = this.db.get<{ hitCount: number; successCount: number; errorCount: number }>(
+      `SELECT COUNT(*) AS hitCount,
+       COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) AS successCount,
+       COALESCE(SUM(CASE WHEN status='error' THEN 1 ELSE 0 END),0) AS errorCount
+       FROM poll_pattern_events WHERE session_id=?`,
+      [id],
+    ) ?? { hitCount: 0, successCount: 0, errorCount: 0 };
+    return publicPatternSession(row, JSON.parse(row.series_ids_json) as string[], count);
+  }
+
+  private removePattern(sessionId: string): void {
+    const session = this.requirePatternSession(sessionId);
+    if (session.status === 'running') throw new Error('Stop a running pattern before deleting it');
+    this.db.run('DELETE FROM poll_pattern_sessions WHERE id=?', [sessionId]);
+  }
+
+  private async runPattern(
+    sessionId: string,
+    handleId: string,
+    controller: AbortController,
+  ): Promise<void> {
+    const session = this.requirePatternSession(sessionId);
+    const series = session.seriesIds.map((id) => this.requireSeries(id));
+    const groups = new Map<string, PollSeries[]>();
+    for (const item of series) {
+      const group = groups.get(item.agentId) ?? [];
+      group.push(item);
+      groups.set(item.agentId, group);
+    }
+    const pending = new Set<Promise<void>>();
+    try {
+      for (const [hitIndex, hitAt] of patternHitTimes(session.startAt, session.endAt, session.cadenceMs).entries()) {
+        await waitUntil(hitAt, controller.signal, this.now);
+        if (controller.signal.aborted) break;
+        for (const group of groups.values()) {
+          if (pending.size >= MAX_PATTERN_TRACE_IN_FLIGHT) {
+            for (const item of group) {
+              this.recordPatternEvent({
+                sessionId,
+                seriesId: item.id,
+                hitIndex,
+                hitAt,
+                elapsedMs: hitAt - session.startAt,
+                status: 'skipped',
+              }, handleId);
+            }
+            continue;
+          }
+          const task = this.executePatternHit(session, handleId, group, hitIndex, hitAt);
+          pending.add(task);
+          void task.then(
+            () => pending.delete(task),
+            () => pending.delete(task),
+          );
+        }
+      }
+      await Promise.all([...pending]);
+      const status = controller.signal.aborted ? 'cancelled' : 'completed';
+      this.updatePatternStatus(sessionId, status);
+      this.bus.emit({
+        channel: 'tools',
+        handleId,
+        kind: 'pattern-finished',
+        payload: this.requirePatternSession(sessionId),
+      });
+      if (status === 'completed') {
+        this.bus.emit({
+          channel: 'tools',
+          handleId,
+          kind: 'done',
+          payload: this.requirePatternSession(sessionId),
+        });
+      }
+    } catch (error) {
+      this.updatePatternStatus(sessionId, 'failed');
+      this.emitToolError(handleId, error);
+    } finally {
+      this.finishOperation(handleId);
+    }
+  }
+
+  private async executePatternHit(
+    session: PatternTraceSession,
+    handleId: string,
+    series: PollSeries[],
+    hitIndex: number,
+    hitAt: number,
+  ): Promise<void> {
+    let values: DecodedVarbind[] = [];
+    let latencyMs: number | undefined;
+    let failure: string | undefined;
+    try {
+      const agent = await this.agents.resolve(series[0]!.agentId);
+      const startedAt = this.now();
+      values = await this.get(agent, series.map((item) => item.oid));
+      latencyMs = Math.max(0, this.now() - startedAt);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
+    }
+    const byOid = new Map(values.map((value) => [value.oid, value]));
+    for (const item of series) {
+      const varbind = byOid.get(item.oid);
+      const errorMessage = failure ?? (varbind?.isError ? varbind.errorText : undefined) ??
+        (!varbind ? `No value for ${item.oid}` : undefined);
+      this.recordPatternEvent({
+        sessionId: session.id,
+        seriesId: item.id,
+        hitIndex,
+        hitAt,
+        elapsedMs: hitAt - session.startAt,
+        ...(errorMessage ? {} : { latencyMs }),
+        status: errorMessage ? 'error' : 'success',
+        ...(errorMessage ? { errorMessage } : {}),
+      }, handleId);
+    }
+  }
+
+  private recordPatternEvent(
+    input: {
+      sessionId: string;
+      seriesId: string;
+      hitIndex: number;
+      hitAt: number;
+      elapsedMs: number;
+      latencyMs?: number;
+      status: PatternTraceEventStatus;
+      errorMessage?: string;
+    },
+    handleId?: string,
+  ): void {
+    this.db.run(
+      `INSERT INTO poll_pattern_events
+       (session_id,series_id,hit_index,hit_at,elapsed_ms,latency_ms,status,error_message)
+       VALUES(?,?,?,?,?,?,?,?)`,
+      [
+        input.sessionId,
+        input.seriesId,
+        input.hitIndex,
+        input.hitAt,
+        input.elapsedMs,
+        input.latencyMs ?? null,
+        input.status,
+        input.errorMessage ?? null,
+      ],
+    );
+    if (handleId) {
+      const event = this.db.get<PatternTraceEventRow>(
+        'SELECT * FROM poll_pattern_events WHERE id=last_insert_rowid()',
+      );
+      if (event) {
+        this.bus.emit({
+          channel: 'tools',
+          handleId,
+          kind: 'pattern-event',
+          payload: publicPatternEvent(event),
+        });
+      }
+    }
+  }
+
+  private updatePatternStatus(sessionId: string, status: PatternTraceSessionStatus): void {
+    this.db.run('UPDATE poll_pattern_sessions SET status=?,updated_at=? WHERE id=?', [
+      status,
+      this.now(),
+      sessionId,
+    ]);
   }
 
   private startDiscovery(input: {
@@ -1037,6 +1455,76 @@ function publicSample(row: PollSampleRow): PollSample {
     value: row.value,
     ...(row.type_name ? { typeName: row.type_name } : {}),
   };
+}
+
+function publicPatternSession(
+  row: PatternTraceSessionRow,
+  seriesIds: string[],
+  count: { hitCount: number; successCount: number; errorCount: number },
+): PatternTraceSession {
+  return {
+    id: row.id,
+    name: row.name,
+    mode: row.mode,
+    seriesIds,
+    ...(row.chart_id ? { chartId: row.chart_id } : {}),
+    cadenceMs: row.cadence_ms,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    color: row.color,
+    status: row.status,
+    hitCount: count.hitCount,
+    successCount: count.successCount,
+    errorCount: count.errorCount,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function publicPatternEvent(row: PatternTraceEventRow): PatternTraceEvent {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    seriesId: row.series_id,
+    hitIndex: row.hit_index,
+    hitAt: row.hit_at,
+    elapsedMs: row.elapsed_ms,
+    ...(row.latency_ms === null ? {} : { latencyMs: row.latency_ms }),
+    status: row.status,
+    ...(row.error_message ? { errorMessage: row.error_message } : {}),
+  };
+}
+
+function validatePatternSeries(seriesIds: string[]): string[] {
+  const unique = [...new Set(seriesIds)];
+  if (unique.length < 1 || unique.length > 8) throw new Error('Patterns require 1 to 8 series');
+  return unique;
+}
+
+function normalizePatternColor(value: string): string {
+  if (!isPatternTraceColor(value)) throw new Error('Pattern color must be a six-digit hex color');
+  return value.trim().toLowerCase();
+}
+
+async function waitUntil(
+  targetAt: number,
+  signal: AbortSignal,
+  now: () => number,
+): Promise<void> {
+  const delay = Math.max(0, targetAt - now());
+  if (delay === 0 || signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delay);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function validateSeriesDraft(draft: PollSeriesDraft): void {

@@ -251,6 +251,43 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 10,
+    name: 'pattern_traces',
+    up: `
+      ALTER TABLE poll_charts ADD COLUMN hidden_pattern_session_ids_json TEXT NOT NULL DEFAULT '[]';
+      CREATE TABLE IF NOT EXISTS poll_pattern_sessions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        series_ids_json TEXT NOT NULL,
+        chart_id TEXT,
+        cadence_ms INTEGER NOT NULL,
+        start_at INTEGER NOT NULL,
+        end_at INTEGER NOT NULL,
+        color TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS poll_pattern_sessions_status_idx
+        ON poll_pattern_sessions(status, start_at DESC);
+      CREATE TABLE IF NOT EXISTS poll_pattern_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        hit_index INTEGER NOT NULL,
+        hit_at INTEGER NOT NULL,
+        elapsed_ms INTEGER NOT NULL,
+        latency_ms INTEGER,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        FOREIGN KEY(session_id) REFERENCES poll_pattern_sessions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS poll_pattern_events_session_series_time_idx
+        ON poll_pattern_events(session_id, series_id, hit_at);
+    `,
+  },
 ];
 
 /** Apply any migrations newer than the recorded version. Idempotent. */
