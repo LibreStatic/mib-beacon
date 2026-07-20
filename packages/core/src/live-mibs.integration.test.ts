@@ -157,6 +157,32 @@ describe('live MIB engine API', () => {
     expect(events).toEqual(expect.arrayContaining(['started', 'batch', 'done']));
   });
 
+  it('returns the scan handle before publishing events for fast remote scans', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-live-scan-order-'));
+    const engine = createEngine(createNodeTransport({ dataDir: directory }), {
+      dbPath: join(directory, 'mibbeacon.db'),
+      agentTester: async (_agent, oids) => oids.map((oid) => varbind(oid, 3)),
+    });
+    await engine.mibs.importTexts([{ name: 'LIVE-TEST-MIB', content: LIVE_MIB }]);
+    let startResolved = false;
+    const prematureEvents: string[] = [];
+    engine.events.subscribe('live-mibs', (event) => {
+      if (!startResolved) prematureEvents.push(event.kind);
+    });
+
+    const { handleId } = await engine.liveMibs.scan.start({
+      agent: { host: '127.0.0.1', version: 'v2c', community: 'public' },
+      scopeOid: '1.3.6.1.4.1.99123',
+      concurrency: 1,
+      includeReadOnly: false,
+    });
+    startResolved = true;
+
+    const terminal = await waitForLiveScan(engine, handleId);
+    expect(terminal).toMatchObject({ state: 'done', count: 1 });
+    expect(prematureEvents).toEqual([]);
+  });
+
   it('schedules adaptive preferred scalar instances before the rest of the scope', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-live-preferred-'));
     const requested: string[][] = [];
@@ -200,6 +226,41 @@ describe('live MIB engine API', () => {
       verified: true,
       value: expect.objectContaining({ oid: '1.3.6.1.4.1.99123.1.0', value: 7 }),
     });
+  });
+
+  it('verifies printable and hexadecimal OctetString writes against the matching representation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-live-octets-'));
+    const verified = {
+      ...varbind('1.3.6.1.4.1.99123.1.0', 'edge'),
+      rawValue: '65 64 67 65',
+      rawHex: '65 64 67 65',
+    };
+    const engine = createEngine(createNodeTransport({ dataDir: directory }), {
+      dbPath: join(directory, 'mibbeacon.db'),
+      agentTester: async () => [verified],
+      agentSetter: async () => [verified],
+    });
+    const agent = { host: '127.0.0.1', version: 'v2c' as const, community: 'private' };
+
+    await expect(
+      engine.liveMibs.writeCell({
+        agent,
+        varbind: { oid: verified.oid, type: 'OctetString', value: 'edge' },
+        verify: true,
+      }),
+    ).resolves.toMatchObject({ verified: true, value: { value: 'edge' } });
+    await expect(
+      engine.liveMibs.writeCell({
+        agent,
+        varbind: {
+          oid: verified.oid,
+          type: 'OctetString',
+          value: '65:64:67:65',
+          encoding: 'hex',
+        },
+        verify: true,
+      }),
+    ).resolves.toMatchObject({ verified: true, value: { rawHex: '65 64 67 65' } });
   });
 
   it('rejects a Set when authoritative read-back differs from the requested value', async () => {

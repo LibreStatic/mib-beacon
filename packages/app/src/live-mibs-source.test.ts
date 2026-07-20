@@ -17,4 +17,16 @@ describe('Live MIB source guards', () => {
     expect(liveMibs).toContain('onViewableItemsChanged={onViewableItemsChanged}');
     expect(liveMibs).not.toContain('onViewableItemsChanged={({ viewableItems }) =>');
   });
+
+  it('reconciles terminal scan status when an event races a reconnect', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('engine.liveMibs.scan.status(handleId)');
+    expect(liveMibs).toContain("['started', 'running'].includes(scan.state)");
+  });
+
+  it('keeps the compact tree and grid reachable with vertical scrolling', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('style={styles.compactWorkspaceScroll}');
+    expect(liveMibs).toContain('contentContainerStyle={styles.compactWorkspaceContent}');
+  });
 });

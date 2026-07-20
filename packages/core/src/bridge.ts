@@ -196,6 +196,7 @@ export const ENGINE_EVENT_CHANNELS: EngineEventChannel[] = [
   'tools',
   'logs',
   'packets',
+  'live-mibs',
 ];
 
 export async function dispatchEngineCall(

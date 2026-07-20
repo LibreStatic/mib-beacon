@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { EngineAPI } from './api/engine-api';
-import { dispatchEngineCall, ENGINE_METHODS } from './bridge';
+import { dispatchEngineCall, ENGINE_EVENT_CHANNELS, ENGINE_METHODS } from './bridge';
 
 describe('engine bridge', () => {
+  it('forwards Live MIB scan events to remote clients', () => {
+    expect(ENGINE_EVENT_CHANNELS).toContain('live-mibs');
+  });
+
   it('registers every method invoked by the remote engine proxy', () => {
     const proxySource = readFileSync(new URL('./proxy.ts', import.meta.url), 'utf8');
     const proxyMethods = [

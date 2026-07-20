@@ -243,6 +243,21 @@ export function LiveMibsScreen() {
     [engine, hydrateMetadata],
   );
 
+  // Reconcile authoritative terminal state if a reconnect drops a progress or
+  // completion event. Row batches remain event-driven.
+  useEffect(() => {
+    if (!scan || !['started', 'running'].includes(scan.state)) return;
+    const timer = setInterval(() => {
+      const handleId = handleRef.current;
+      if (!handleId) return;
+      void engine.liveMibs.scan.status(handleId).then((status) => {
+        if (!status || status.handleId !== handleId) return;
+        setScan(status);
+      });
+    }, 500);
+    return () => clearInterval(timer);
+  }, [engine, scan]);
+
   const startScan = useCallback(async () => {
     const target = targetForWorkspace();
     if (!target) {
@@ -262,8 +277,7 @@ export function LiveMibsScreen() {
         concurrency: settings.scanConcurrency,
         includeReadOnly: settings.showReadOnly,
         maxInstances: settings.maxInstances,
-        preferredOids:
-          settings.refreshMode === 'adaptive' ? visibleOidsRef.current : undefined,
+        preferredOids: settings.refreshMode === 'adaptive' ? visibleOidsRef.current : undefined,
       });
       handleRef.current = handleId;
       const status = await engine.liveMibs.scan.status(handleId);
@@ -312,14 +326,23 @@ export function LiveMibsScreen() {
     const all = flattenTree(treeCache, expanded);
     const query = treeSearch.trim().toLowerCase();
     return query
-      ? all.filter(({ node }) => node.name.toLowerCase().includes(query) || node.oid.includes(query))
+      ? all.filter(
+          ({ node }) => node.name.toLowerCase().includes(query) || node.oid.includes(query),
+        )
       : all;
   }, [expanded, treeCache, treeSearch]);
   const dataRows = useMemo(
-    () => [...rows.values()].sort((left, right) => left.oid.localeCompare(right.oid, undefined, { numeric: true })),
+    () =>
+      [...rows.values()].sort((left, right) =>
+        left.oid.localeCompare(right.oid, undefined, { numeric: true }),
+      ),
     [rows],
   );
   const busy = scan?.state === 'started' || scan?.state === 'running';
+  const resultsIncomplete =
+    !!scan &&
+    ['done', 'partial'].includes(scan.state) &&
+    scan.count > dataRows.length;
 
   const toggleTreeNode = async (node: MibNodeSummary) => {
     if (node.hasChildren) {
@@ -356,6 +379,7 @@ export function LiveMibsScreen() {
       />
       <FlatList
         data={treeRows}
+        nestedScrollEnabled={mode === 'compact'}
         keyExtractor={({ node }) => `${node.module ?? ''}:${node.oid}`}
         renderItem={({ item: { node, depth } }) => (
           <Pressable
@@ -382,13 +406,21 @@ export function LiveMibsScreen() {
             </View>
           </Pressable>
         )}
-        ListEmptyComponent={<EmptyState title="No MIB nodes" hint="Import or load a MIB in Browse." />}
+        ListEmptyComponent={
+          <EmptyState title="No MIB nodes" hint="Import or load a MIB in Browse." />
+        }
       />
     </View>
   );
 
   const gridPane = (
-    <View style={[styles.gridPane, { borderColor: t.border, backgroundColor: t.bg }]}>
+    <View
+      style={[
+        styles.gridPane,
+        mode === 'compact' ? styles.compactGridPane : null,
+        { borderColor: t.border, backgroundColor: t.bg },
+      ]}
+    >
       <View style={[styles.gridToolbar, { borderBottomColor: t.border }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <SectionTitle>{scope ? scope.name : 'Live values'}</SectionTitle>
@@ -400,11 +432,13 @@ export function LiveMibsScreen() {
         </View>
         <Row style={styles.wrap}>
           <Pill
-            text={(scan?.state ?? 'idle').toUpperCase()}
+            text={(resultsIncomplete ? 'incomplete' : (scan?.state ?? 'idle')).toUpperCase()}
             color={
               scan?.state === 'error'
                 ? t.error
-                : scan?.state === 'done'
+                : resultsIncomplete
+                  ? t.warn
+                  : scan?.state === 'done'
                   ? t.ok
                   : busy
                     ? t.warn
@@ -435,6 +469,14 @@ export function LiveMibsScreen() {
           </Label>
         </View>
       ) : null}
+      {resultsIncomplete ? (
+        <View style={[styles.message, { backgroundColor: t.surfaceAlt }]}>
+          <Label tone="warn">
+            The connection missed {scan.count - dataRows.length} streamed value
+            {scan.count - dataRows.length === 1 ? '' : 's'}. Refresh this scope to reconcile it.
+          </Label>
+        </View>
+      ) : null}
       {busy && dataRows.length === 0 ? (
         <View style={styles.loading}>
           <ActivityIndicator color={t.accent} />
@@ -452,6 +494,7 @@ export function LiveMibsScreen() {
       ) : (
         <FlatList
           data={dataRows}
+          nestedScrollEnabled={mode === 'compact'}
           keyExtractor={({ oid }) => oid}
           contentContainerStyle={styles.gridList}
           renderItem={({ item }) => (
@@ -507,10 +550,21 @@ export function LiveMibsScreen() {
           />
         ))}
       </ScrollView>
-      <View style={[styles.workspace, mode === 'compact' ? styles.compactWorkspace : null]}>
-        {treePane}
-        {gridPane}
-      </View>
+      {mode === 'compact' ? (
+        <ScrollView
+          style={styles.compactWorkspaceScroll}
+          contentContainerStyle={styles.compactWorkspaceContent}
+          nestedScrollEnabled
+        >
+          {treePane}
+          {gridPane}
+        </ScrollView>
+      ) : (
+        <View style={styles.workspace}>
+          {treePane}
+          {gridPane}
+        </View>
+      )}
     </View>
   );
 }
@@ -599,7 +653,7 @@ function LiveMibRow({
   const engine = useEngine();
   const adapter = useFileImportAdapter();
   const t = useTheme();
-  const confirmed = String(row.value.rawValue ?? row.value.value);
+  const confirmed = String(row.value.value);
   const confirmedDisplay = valueText(row.value, settings.preferFormattedValues);
   const [cell, setCell] = useState<LiveMibCellState>({
     confirmedValue: confirmed,
@@ -658,77 +712,76 @@ function LiveMibRow({
     setCell((current) => mergeLiveCellRemote(current, confirmed));
   }, [confirmed]);
 
-  const submit = useCallback(async (draftOverride?: string) => {
-    if (!target || !writable || cell.phase === 'updating') return;
-    const submittedValue = draftOverride ?? cell.draftValue;
-    const submittedError =
-      mibRangeError(row.metadata, submittedValue) ??
-      mibSizeError(row.metadata, submittedValue) ??
-      validateVarbindInput({
-        oid: row.oid,
-        type: inferWireType(row.metadata?.syntax),
-        value: submittedValue,
-      });
-    if (submittedError) {
-      setCell((current) => ({ ...current, phase: 'dirty', error: submittedError }));
-      return;
-    }
-    const requestId = ++requestSequence.current;
-    setConfirmOpen(false);
-    setCell((current) => beginLiveCellWrite(current, requestId));
-    try {
-      const result = await engine.liveMibs.writeCell({
-        ...target,
-        varbind: {
+  const submit = useCallback(
+    async (draftOverride?: string) => {
+      if (!target || !writable || cell.phase === 'updating') return;
+      const submittedValue = draftOverride ?? cell.draftValue;
+      const submittedError =
+        mibRangeError(row.metadata, submittedValue) ??
+        mibSizeError(row.metadata, submittedValue) ??
+        validateVarbindInput({
           oid: row.oid,
           type: inferWireType(row.metadata?.syntax),
           value: submittedValue,
-        },
-        verify: settings.verifyWrites,
-      });
-      setCell((current) =>
-        succeedLiveCellWrite(
-          current,
-          requestId,
-          String(result.value.rawValue ?? result.value.value),
-        ),
-      );
-    } catch (cause) {
-      if (cause instanceof MibBeaconError && cause.code === 'TIMEOUT') {
-        setCell((current) => markLiveCellUncertain(current, requestId, cause.message));
-        try {
-          const [reconciled] = await engine.ops.get({ ...target, oids: [row.oid] });
-          if (reconciled && String(reconciled.rawValue ?? reconciled.value) === submittedValue) {
-            setCell((current) => succeedLiveCellWrite(current, requestId, submittedValue));
-          } else {
+        });
+      if (submittedError) {
+        setCell((current) => ({ ...current, phase: 'dirty', error: submittedError }));
+        return;
+      }
+      const requestId = ++requestSequence.current;
+      setConfirmOpen(false);
+      setCell((current) => beginLiveCellWrite(current, requestId));
+      try {
+        const result = await engine.liveMibs.writeCell({
+          ...target,
+          varbind: {
+            oid: row.oid,
+            type: inferWireType(row.metadata?.syntax),
+            value: submittedValue,
+          },
+          verify: settings.verifyWrites,
+        });
+        setCell((current) =>
+          succeedLiveCellWrite(current, requestId, String(result.value.value)),
+        );
+      } catch (cause) {
+        if (cause instanceof MibBeaconError && cause.code === 'TIMEOUT') {
+          setCell((current) => markLiveCellUncertain(current, requestId, cause.message));
+          try {
+            const [reconciled] = await engine.ops.get({ ...target, oids: [row.oid] });
+            if (reconciled && String(reconciled.value) === submittedValue) {
+              setCell((current) => succeedLiveCellWrite(current, requestId, submittedValue));
+            } else {
+              setCell((current) =>
+                failLiveCellWrite(
+                  current,
+                  requestId,
+                  'The Set timed out and the device retained its previous value.',
+                ),
+              );
+            }
+          } catch {
             setCell((current) =>
-              failLiveCellWrite(
+              markLiveCellUncertain(
                 current,
                 requestId,
-                'The Set timed out and the device retained its previous value.',
+                'The Set timed out and the device value could not be reconciled.',
               ),
             );
           }
-        } catch {
-          setCell((current) =>
-            markLiveCellUncertain(
-              current,
-              requestId,
-              'The Set timed out and the device value could not be reconciled.',
-            ),
-          );
+          return;
         }
-        return;
+        setCell((current) =>
+          failLiveCellWrite(
+            current,
+            requestId,
+            cause instanceof Error ? cause.message : String(cause),
+          ),
+        );
       }
-      setCell((current) =>
-        failLiveCellWrite(
-          current,
-          requestId,
-          cause instanceof Error ? cause.message : String(cause),
-        ),
-      );
-    }
-  }, [cell.draftValue, cell.phase, engine, row, settings, target, writable]);
+    },
+    [cell.draftValue, cell.phase, engine, row, settings, target, writable],
+  );
 
   useEffect(() => {
     if (settings.writeMode !== 'change' || cell.phase !== 'dirty') return;
@@ -861,7 +914,9 @@ function LiveMibRow({
             color={writable ? t.ok : t.textDim}
           />
           <Pill
-            text={(stale && cell.phase === 'fresh' ? 'stale' : cell.phase).replace('-', ' ').toUpperCase()}
+            text={(stale && cell.phase === 'fresh' ? 'stale' : cell.phase)
+              .replace('-', ' ')
+              .toUpperCase()}
             color={
               cell.phase === 'error-reverted' || cell.phase === 'conflict'
                 ? t.error
@@ -940,11 +995,7 @@ function LiveMibRow({
             value={cell.draftValue}
             onChangeText={change}
             placeholder={
-              editor === 'ip'
-                ? '192.0.2.1'
-                : editor === 'oid'
-                  ? '1.3.6.1.4.1…'
-                  : undefined
+              editor === 'ip' ? '192.0.2.1' : editor === 'oid' ? '1.3.6.1.4.1…' : undefined
             }
             onBlur={() => {
               if (settings.writeMode === 'blur' && cell.phase === 'dirty') requestCommit();
@@ -1020,11 +1071,7 @@ function LiveMibRow({
         onRequestClose={() => setWorkflowSetupOpen(false)}
         footer={
           <Row style={styles.dialogActions}>
-            <Button
-              title="Cancel"
-              variant="ghost"
-              onPress={() => setWorkflowSetupOpen(false)}
-            />
+            <Button title="Cancel" variant="ghost" onPress={() => setWorkflowSetupOpen(false)} />
             <Button title="Choose file & start" onPress={() => void uploadBinary()} />
           </Row>
         }
@@ -1097,13 +1144,29 @@ const styles = StyleSheet.create({
   agentStrip: { flexGrow: 0, borderBottomWidth: 1 },
   agentStripContent: { paddingHorizontal: 12, paddingVertical: 7, gap: 6 },
   workspace: { flex: 1, minHeight: 0, flexDirection: 'row', gap: 8, padding: 8 },
-  compactWorkspace: { flexDirection: 'column' },
+  compactWorkspaceScroll: { flex: 1, minHeight: 0 },
+  compactWorkspaceContent: { flexGrow: 1, gap: 8, padding: 8 },
   treePane: { width: 300, minHeight: 180, borderWidth: 1, borderRadius: 10, padding: 8, gap: 8 },
   compactTreePane: { width: '100%', height: 260 },
   paneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   treeRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 6 },
-  gridPane: { flex: 1, minWidth: 0, minHeight: 240, borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
-  gridToolbar: { minHeight: 58, padding: 10, borderBottomWidth: 1, flexDirection: 'row', gap: 8, alignItems: 'center' },
+  gridPane: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 240,
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  compactGridPane: { flexGrow: 0, flexShrink: 0, height: 420 },
+  gridToolbar: {
+    minHeight: 58,
+    padding: 10,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
   gridList: { padding: 8, gap: 7 },
   pivotScroll: { padding: 8 },
   pivotTable: { minWidth: 600 },

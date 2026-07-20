@@ -32,4 +32,14 @@ describe('live MIB grid batches', () => {
     expect(valueText(item, true)).toBe('up(1)');
     expect(valueText(item, false)).toBe('1');
   });
+
+  it('uses printable OctetString text instead of its lossless hex representation', () => {
+    const item = {
+      ...varbind('1.2.3', 'edge'),
+      rawValue: '65 64 67 65',
+      rawHex: '65 64 67 65',
+    };
+    expect(valueText(item, true)).toBe('edge');
+    expect(valueText(item, false)).toBe('65 64 67 65');
+  });
 });

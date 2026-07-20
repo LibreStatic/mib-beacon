@@ -35,7 +35,7 @@ export function attachLiveMibMetadata(
 export function valueText(value: DecodedVarbind, preferFormatted = true): string {
   return String(
     preferFormatted
-      ? (value.formattedValue ?? value.rawValue ?? value.value)
+      ? (value.formattedValue ?? value.value)
       : (value.rawValue ?? value.value),
   );
 }

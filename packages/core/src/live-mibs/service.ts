@@ -167,26 +167,26 @@ export class LiveMibService {
     requested: SnmpVarbindInput,
     verified: DecodedVarbind,
   ): boolean {
-    const actual = verified.rawValue ?? verified.value;
     if (
       /^(?:Integer|Integer32|Unsigned32|Counter32|Counter64|Gauge32|TimeTicks)$/.test(
         requested.type,
       )
     )
-      return Number(actual) === Number(requested.value);
+      return Number(verified.rawValue ?? verified.value) === Number(requested.value);
     if (requested.encoding === 'hex') {
       const expected = requested.value.replace(/^0x/i, '').replace(/[\s:-]/g, '').toLowerCase();
+      const actual = verified.rawHex ?? verified.rawValue ?? verified.value;
       const actualHex =
         Buffer.isBuffer(actual)
           ? Buffer.from(actual).toString('hex')
           : String(actual).replace(/^0x/i, '').replace(/[\s:-]/g, '').toLowerCase();
       return actualHex === expected;
     }
-    return String(actual) === requested.value;
+    return String(verified.value) === requested.value;
   }
 
   private varbindText(varbind: DecodedVarbind): string {
-    const value = varbind.rawValue ?? varbind.value;
+    const value = varbind.value;
     return Buffer.isBuffer(value) ? Buffer.from(value).toString('hex') : String(value);
   }
 
@@ -242,15 +242,20 @@ export class LiveMibService {
     const controller = new AbortController();
     this.scans.set(handleId, status);
     this.scanControllers.set(handleId, controller);
-    this.emitScan(status, 'started');
-    void this.runScan(
-      request,
-      tasks,
-      status,
-      controller,
-      clamp(request.concurrency ?? settings.scanConcurrency, 1, 8),
-      clamp(request.maxInstances ?? settings.maxInstances, 1, 1_000_000),
-    );
+    // Remote bridges cannot associate events with this handle until the start
+    // result has reached the caller. Defer every scan event to the next task so
+    // even a fast scalar read cannot publish its batch before that result.
+    setTimeout(() => {
+      this.emitScan(status, 'started');
+      void this.runScan(
+        request,
+        tasks,
+        status,
+        controller,
+        clamp(request.concurrency ?? settings.scanConcurrency, 1, 8),
+        clamp(request.maxInstances ?? settings.maxInstances, 1, 1_000_000),
+      );
+    }, 0);
     return { handleId };
   }
 

@@ -935,7 +935,7 @@ export class ResolverService {
     }
     const match = staged.index.resolve(oid);
     const availableOffline = resolution.documents.some(
-      (document) => document.module.toLowerCase() === candidate.module.toLowerCase(),
+      (document) => document.module?.toLowerCase() === candidate.module.toLowerCase(),
     );
     const verified = match?.module?.toLowerCase() === candidate.module.toLowerCase();
     return {
