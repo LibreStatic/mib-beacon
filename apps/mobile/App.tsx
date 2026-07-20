@@ -1,5 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import { Platform, SafeAreaView, StatusBar, useColorScheme } from 'react-native';
+import { Platform, StatusBar, useColorScheme } from 'react-native';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { File, Paths } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
 import * as Sharing from 'expo-sharing';
@@ -18,7 +23,6 @@ import {
 } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
 import { acquireNativeThemeFiles } from './src/theme-import';
-import { getMobileSafeAreaPaddingTop } from './src/safe-area';
 
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
 const SPIKE_HOST = '10.0.2.2';
@@ -29,6 +33,15 @@ const SPIKE_PORT = 1611;
  * transport backend. The same SpikeScreen renders as on desktop.
  */
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <MobileApp />
+    </SafeAreaProvider>
+  );
+}
+
+function MobileApp() {
+  const insets = useSafeAreaInsets();
   const engine = useMemo(() => {
     const transport = createReactNativeTransport();
     return createEngine(transport, { dbPath: `${transport.files.dataDir()}mibbeacon.db` });
@@ -130,19 +143,22 @@ export default function App() {
     }),
     [],
   );
-  const safeAreaPaddingTop = getMobileSafeAreaPaddingTop(Platform.OS, StatusBar.currentHeight);
   return (
     <SafeAreaView
+      edges={['top', 'left', 'right']}
       style={{
         flex: 1,
-        paddingTop: safeAreaPaddingTop,
         backgroundColor: isDark ? '#1f1f1f' : '#f8f8f8',
       }}
     >
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <EngineProvider engine={engine}>
         <FileImportProvider adapter={fileImportAdapter}>
-          <AppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
+          <AppRoot
+            host={host}
+            paletteHistoryStorage={paletteHistoryStorage}
+            safeAreaBottomInset={insets.bottom}
+          />
         </FileImportProvider>
       </EngineProvider>
     </SafeAreaView>

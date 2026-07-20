@@ -55,3 +55,4 @@ export {
   type ResponsiveMode,
 } from './breakpoints';
 export { Dialog, type DialogProps } from './dialog';
+export { SafeAreaBottomInsetProvider, useSafeAreaBottomInset } from './safe-area';

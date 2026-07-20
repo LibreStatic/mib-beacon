@@ -5,6 +5,7 @@ import {
   CODE_OSS_DEFAULT_THEMES,
   Card,
   Label,
+  SafeAreaBottomInsetProvider,
   SectionTitle,
   Text,
   ThemeProvider,
@@ -68,6 +69,8 @@ import {
 import { acquireBrowserThemeFiles } from './theme-file-picker';
 import { prepareThemeImports } from './theme-import';
 
+const TABBAR_BASE_PADDING = 6;
+
 export interface HostUpdateStatus {
   phase:
     | 'disabled'
@@ -113,13 +116,19 @@ export interface PacketCaptureExportReader {
 export function AppRoot({
   host,
   paletteHistoryStorage,
+  safeAreaBottomInset = 0,
 }: {
   host?: AppHostAdapter;
   paletteHistoryStorage?: PaletteHistoryStorage;
+  safeAreaBottomInset?: number;
 }) {
   return (
     <ResponsiveLayoutProvider>
-      <ThemedAppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
+      <ThemedAppRoot
+        host={host}
+        paletteHistoryStorage={paletteHistoryStorage}
+        safeAreaBottomInset={safeAreaBottomInset}
+      />
     </ResponsiveLayoutProvider>
   );
 }
@@ -127,9 +136,11 @@ export function AppRoot({
 function ThemedAppRoot({
   host,
   paletteHistoryStorage,
+  safeAreaBottomInset,
 }: {
   host?: AppHostAdapter;
   paletteHistoryStorage?: PaletteHistoryStorage;
+  safeAreaBottomInset: number;
 }) {
   const { mode } = useResponsiveLayout();
   const themeMode = useAppStore((state) => state.themeMode);
@@ -152,30 +163,35 @@ function ThemedAppRoot({
     getCodeOssDefaultTheme(darkThemeId) ??
     installedThemes.find(({ id, scheme }) => id === darkThemeId && scheme === 'dark');
   return (
-    <ThemeProvider
-      mode={previewTheme?.scheme ?? themeMode}
-      density={density}
-      lightTheme={lightTheme}
-      darkTheme={darkTheme}
-    >
-      <ResponsiveAppRoot
-        host={host}
-        paletteHistoryStorage={paletteHistoryStorage}
-        onPreviewTheme={setPreviewTheme}
-        onClearThemePreview={() => setPreviewTheme(null)}
-      />
-    </ThemeProvider>
+    <SafeAreaBottomInsetProvider bottomInset={safeAreaBottomInset}>
+      <ThemeProvider
+        mode={previewTheme?.scheme ?? themeMode}
+        density={density}
+        lightTheme={lightTheme}
+        darkTheme={darkTheme}
+      >
+        <ResponsiveAppRoot
+          host={host}
+          paletteHistoryStorage={paletteHistoryStorage}
+          safeAreaBottomInset={safeAreaBottomInset}
+          onPreviewTheme={setPreviewTheme}
+          onClearThemePreview={() => setPreviewTheme(null)}
+        />
+      </ThemeProvider>
+    </SafeAreaBottomInsetProvider>
   );
 }
 
 function ResponsiveAppRoot({
   host,
   paletteHistoryStorage,
+  safeAreaBottomInset,
   onPreviewTheme,
   onClearThemePreview,
 }: {
   host?: AppHostAdapter;
   paletteHistoryStorage?: PaletteHistoryStorage;
+  safeAreaBottomInset: number;
   onPreviewTheme: (theme: ThemeDescriptor) => void;
   onClearThemePreview: () => void;
 }) {
@@ -640,7 +656,13 @@ function ResponsiveAppRoot({
       />
 
       {mode === 'compact' ? (
-        <BottomNavigation tabs={tabs} tab={activeTab} trapCount={trapCount} onSelect={selectTab} />
+        <BottomNavigation
+          tabs={tabs}
+          tab={activeTab}
+          trapCount={trapCount}
+          safeAreaBottomInset={safeAreaBottomInset}
+          onSelect={selectTab}
+        />
       ) : null}
 
       <ToastHost />
@@ -924,11 +946,13 @@ function BottomNavigation({
   tabs,
   tab,
   trapCount,
+  safeAreaBottomInset,
   onSelect,
 }: {
   tabs: NavigationTab[];
   tab: Tab;
   trapCount: number;
+  safeAreaBottomInset: number;
   onSelect: (tab: Tab) => void;
 }) {
   const t = useTheme();
@@ -940,6 +964,7 @@ function BottomNavigation({
         {
           backgroundColor: t.workbench.activityBarBackground,
           borderTopColor: t.workbench.panelBorder,
+          paddingBottom: TABBAR_BASE_PADDING + safeAreaBottomInset,
         },
       ]}
     >
@@ -1131,7 +1156,7 @@ const styles = StyleSheet.create({
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   engineTitle: { fontSize: 10, fontWeight: '700' },
   engineMeta: { fontSize: 9, marginTop: 1 },
-  tabbar: { flexDirection: 'row', borderTopWidth: 1, paddingBottom: 6, paddingTop: 6 },
+  tabbar: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 6 },
   tab: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
   tabGlyph: { fontSize: 20, lineHeight: 24 },
   tabLabel: { fontSize: 11, fontWeight: '600' },

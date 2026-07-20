@@ -13,6 +13,9 @@ import {
 } from 'react-native';
 import { getResponsiveMode } from './breakpoints';
 import { Button, Card, Label, SectionTitle } from './primitives';
+import { useSafeAreaBottomInset } from './safe-area';
+
+const DIALOG_CARD_PADDING = 12;
 
 export interface DialogProps {
   visible: boolean;
@@ -53,6 +56,7 @@ export function Dialog({
   closeAccessibilityLabel,
 }: DialogProps) {
   const { width, height } = useWindowDimensions();
+  const safeAreaBottomInset = useSafeAreaBottomInset();
   const sheet =
     presentation === 'sheet' ||
     (presentation === 'auto' && getResponsiveMode(width) === 'compact');
@@ -94,6 +98,8 @@ export function Dialog({
     <Modal
       visible={visible}
       transparent
+      navigationBarTranslucent
+      statusBarTranslucent
       animationType={sheet ? 'slide' : 'fade'}
       onShow={focusHeading}
       onRequestClose={requestClose}
@@ -117,6 +123,7 @@ export function Dialog({
             style={[
               styles.sheet,
               sheet ? styles.sheetBottom : null,
+              sheet ? { paddingBottom: DIALOG_CARD_PADDING + safeAreaBottomInset } : null,
               { maxHeight: sheetMaxHeight },
               fillHeight ? { height: sheetMaxHeight } : null,
             ]}
