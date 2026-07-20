@@ -68,4 +68,10 @@ describe('web LAN runtime', () => {
     expect(serverVite).toContain("global: 'globalThis'");
     expect(desktopVite).toContain("global: 'globalThis'");
   });
+
+  it('allows the React Native web root to shrink within tablet viewports', () => {
+    const indexHtml = read('apps/server/src/web/index.html');
+
+    expect(indexHtml).toMatch(/#app-root\s*\{[^}]*min-width:\s*0;/s);
+  });
 });
