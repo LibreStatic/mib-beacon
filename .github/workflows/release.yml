@@ -1057,6 +1057,7 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" \
               --title "MIB Beacon $RELEASE_VERSION" \
+              --draft=false \
               "${prerelease_args[@]}"
           else
             gh release create "$RELEASE_TAG" \
@@ -1079,6 +1080,8 @@ jobs:
           rm -rf published-assets
           mkdir published-assets
           gh release download "$RELEASE_TAG" --dir published-assets
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > published-release.json
+          jq -e '.draft == false' published-release.json
 
           find publish-assets -maxdepth 1 -type f -printf '%f\n' | sort > expected-assets.txt
           find published-assets -maxdepth 1 -type f -printf '%f\n' | sort > published-assets.txt

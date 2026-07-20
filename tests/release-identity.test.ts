@@ -170,6 +170,7 @@ describe('release identity', () => {
     expect(workflow).toContain('gh api --method DELETE');
     expect(workflow).toContain('gh release upload');
     expect(workflow).toContain('--clobber');
+    expect(workflow).toContain('--draft=false');
     expect(workflow).toContain('--prerelease');
     expect(workflow).toContain('CODE_SIGNING_ALLOWED=NO');
     expect(workflow).toContain('-sdk iphoneos');
@@ -182,6 +183,7 @@ describe('release identity', () => {
     expect(workflow).toContain('gh release download "$RELEASE_TAG" --dir published-assets');
     expect(workflow).toContain('diff -u expected-assets.txt published-assets.txt');
     expect(workflow).toContain('sha256sum --check --strict SHA256SUMS');
+    expect(workflow).toContain("jq -e '.draft == false'");
     expect(workflow).toContain('Downloaded SHA-256 checksums: all passed');
   });
 
