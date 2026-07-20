@@ -638,7 +638,7 @@ export function SettingsScreen({
               ) : null}
               <SettingToggle
                 label="Show read-only objects"
-                hint="Off keeps the grid focused on values that can be edited. Locked values remain available when enabled."
+                hint="Off keeps the document tree focused on editable values. Locked values remain available when enabled."
                 value={effectiveLiveSettings.showReadOnly}
                 disabled={liveBusy}
                 onChange={(showReadOnly) => void updateLiveSetting({ showReadOnly })}
@@ -700,6 +700,16 @@ export function SettingsScreen({
                 onChange={(preferFormattedValues) =>
                   void updateLiveSetting({ preferFormattedValues })
                 }
+              />
+              <Field
+                label="Auto-collapse object after instances"
+                value={String(effectiveLiveSettings.documentAutoCollapseThreshold)}
+                keyboardType="numeric"
+                onChangeText={(value) => {
+                  const parsed = Number(value);
+                  if (Number.isFinite(parsed))
+                    void updateLiveSetting({ documentAutoCollapseThreshold: parsed });
+                }}
               />
 
               <SettingToggle

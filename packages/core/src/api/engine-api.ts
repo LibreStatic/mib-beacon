@@ -786,6 +786,7 @@ export interface LiveMibSettings {
   verifyWrites: boolean;
   booleanEditor: 'auto' | 'switch' | 'select';
   preferFormattedValues: boolean;
+  documentAutoCollapseThreshold: number;
   managedTransfersEnabled: boolean;
   maximumUploadBytes: number;
 }

@@ -16,6 +16,7 @@ export interface LiveMibSettings {
   verifyWrites: boolean;
   booleanEditor: 'auto' | 'switch' | 'select';
   preferFormattedValues: boolean;
+  documentAutoCollapseThreshold: number;
   managedTransfersEnabled: boolean;
   maximumUploadBytes: number;
 }
@@ -33,6 +34,7 @@ export const DEFAULT_LIVE_MIB_SETTINGS: LiveMibSettings = {
   verifyWrites: true,
   booleanEditor: 'auto',
   preferFormattedValues: true,
+  documentAutoCollapseThreshold: 20,
   managedTransfersEnabled: false,
   maximumUploadBytes: 65_535,
 };
@@ -51,6 +53,7 @@ export function normalizeLiveMibSettings(
     staleAfterMs: clamp(merged.staleAfterMs, 500, 3_600_000),
     maxInstances: clamp(merged.maxInstances, 1, 1_000_000),
     writeDebounceMs: clamp(merged.writeDebounceMs, 0, 2_000),
+    documentAutoCollapseThreshold: clamp(merged.documentAutoCollapseThreshold, 1, 10_000),
     maximumUploadBytes: clamp(merged.maximumUploadBytes, 1, 1_073_741_824),
   };
 }

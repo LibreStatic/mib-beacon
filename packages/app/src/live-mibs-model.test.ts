@@ -23,6 +23,7 @@ describe('live MIB settings', () => {
       writeMode: 'confirm',
       writeDebounceMs: 500,
       verifyWrites: true,
+      documentAutoCollapseThreshold: 20,
     });
   });
 
@@ -31,11 +32,13 @@ describe('live MIB settings', () => {
       scanConcurrency: 99,
       refreshIntervalMs: 100,
       writeDebounceMs: 9_999,
+      documentAutoCollapseThreshold: 0,
     });
     expect(global).toMatchObject({
       scanConcurrency: 8,
       refreshIntervalMs: 500,
       writeDebounceMs: 2_000,
+      documentAutoCollapseThreshold: 1,
     });
     expect(resolveLiveMibSettings(global, { scanConcurrency: 2, showReadOnly: true })).toMatchObject({
       scanConcurrency: 2,

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Button,
-  Card,
   Chip,
   Dialog,
   EmptyState,
@@ -27,7 +26,6 @@ import type {
   LiveMibWorkflowStatus,
   MibNodeDetail,
   MibNodeSummary,
-  TableIndexDescriptor,
 } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
@@ -47,13 +45,14 @@ import {
 } from '../live-mibs-model';
 import {
   attachLiveMibMetadata,
+  buildLiveMibDocumentGroups,
+  liveMibInstanceKey,
   mergeLiveMibRows,
   valueText,
   type LiveMibGridRow,
 } from '../live-mibs-grid';
 import { useFileImportAdapter } from '../file-import-context';
 import { bitIsSelected, mibRangeError, mibSizeError, toggleBitHex } from '../mib-set-editor';
-import { buildTableRows, type TableViewColumn } from '../table-view';
 
 type TreeCache = Record<string, MibNodeSummary[]>;
 
@@ -62,10 +61,10 @@ interface TreeRow {
   depth: number;
 }
 
-interface LiveTableDescriptor {
-  columns: TableViewColumn[];
-  indexes: TableIndexDescriptor[];
-}
+type LiveMibDocumentItem =
+  | { kind: 'branch'; id: string; label: string; count: number; depth: number }
+  | { kind: 'close'; id: string; depth: number }
+  | { kind: 'value'; id: string; depth: number; propertyKey: string; row: LiveMibGridRow };
 
 function flattenTree(cache: TreeCache, expanded: Record<string, boolean>): TreeRow[] {
   const rows: TreeRow[] = [];
@@ -119,7 +118,6 @@ export function LiveMibsScreen() {
   const [treeCache, setTreeCache] = useState<TreeCache>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [scope, setScope] = useState<MibNodeDetail | null>(null);
-  const [tableDescriptor, setTableDescriptor] = useState<LiveTableDescriptor | null>(null);
   const [treeSearch, setTreeSearch] = useState('');
   const [rows, setRows] = useState<Map<string, LiveMibGridRow>>(new Map());
   const [scan, setScan] = useState<LiveMibScanStatus | null>(null);
@@ -128,8 +126,10 @@ export function LiveMibsScreen() {
   const handleRef = useRef<string | null>(null);
   const visibleOidsRef = useRef<string[]>([]);
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: { item: LiveMibGridRow }[] }) => {
-      visibleOidsRef.current = viewableItems.map(({ item }) => item.oid).filter(Boolean);
+    ({ viewableItems }: { viewableItems: { item: LiveMibDocumentItem }[] }) => {
+      visibleOidsRef.current = viewableItems
+        .flatMap(({ item }) => (item.kind === 'value' ? [item.row.oid] : []))
+        .filter(Boolean);
     },
   ).current;
 
@@ -152,52 +152,6 @@ export function LiveMibsScreen() {
       active = false;
     };
   }, [engine, requestedScopeOid]);
-
-  useEffect(() => {
-    if (!scope || !['table', 'entry', 'column'].includes(scope.kind)) {
-      setTableDescriptor(null);
-      return;
-    }
-    let active = true;
-    void (async () => {
-      let entry = scope;
-      if (scope.kind === 'table') {
-        const child = (await engine.mibs.tree(scope.oid)).find(({ kind }) => kind === 'entry');
-        if (!child) return null;
-        entry = (await engine.mibs.node(child.oid, child.module)) ?? scope;
-      } else if (scope.kind === 'column') {
-        const parentOid = scope.oid.split('.').slice(0, -1).join('.');
-        entry = (await engine.mibs.node(parentOid, scope.module)) ?? scope;
-      }
-      if (entry.kind !== 'entry') return null;
-      const summaries = (await engine.mibs.tree(entry.oid)).filter(({ kind }) => kind === 'column');
-      const details = await Promise.all(
-        summaries.map((column) => engine.mibs.node(column.oid, column.module)),
-      );
-      const indexDetails = await Promise.all(
-        (entry.indexes ?? []).map((name) => engine.mibs.node(name, entry.module)),
-      );
-      return {
-        columns: summaries.map((column, index) => ({
-          oid: column.oid,
-          name: column.name,
-          access: details[index]?.access,
-          syntax: details[index]?.syntax,
-        })),
-        indexes: (entry.indexes ?? []).map((name, index) => ({
-          name,
-          syntax: indexDetails[index]?.syntax ?? 'INTEGER',
-          implied: entry.impliedIndexes?.includes(name),
-          displayHint: indexDetails[index]?.displayHint,
-        })),
-      } satisfies LiveTableDescriptor;
-    })().then((descriptor) => {
-      if (active) setTableDescriptor(descriptor);
-    });
-    return () => {
-      active = false;
-    };
-  }, [engine, scope]);
 
   useEffect(() => {
     let active = true;
@@ -483,43 +437,16 @@ export function LiveMibsScreen() {
           <Label tone="dim">Scanning {scope?.name ?? 'scope'}…</Label>
         </View>
       ) : null}
-      {tableDescriptor && dataRows.length > 0 ? (
-        <LiveMibPivot
-          rows={dataRows}
-          descriptor={tableDescriptor}
-          settings={settings}
-          target={targetForWorkspace()}
-          now={now}
-        />
-      ) : (
-        <FlatList
-          data={dataRows}
-          nestedScrollEnabled={mode === 'compact'}
-          keyExtractor={({ oid }) => oid}
-          contentContainerStyle={styles.gridList}
-          renderItem={({ item }) => (
-            <LiveMibRow
-              row={item}
-              settings={settings}
-              target={targetForWorkspace()}
-              stale={now - item.updatedAt >= settings.staleAfterMs}
-            />
-          )}
-          onViewableItemsChanged={onViewableItemsChanged}
-          ListEmptyComponent={
-            !busy ? (
-              <EmptyState
-                title={scope ? 'No values loaded' : 'Choose a MIB scope'}
-                hint={
-                  scope
-                    ? 'Refresh the scope or enable read-only objects in Settings.'
-                    : 'The selected subtree becomes a live, editable data grid.'
-                }
-              />
-            ) : null
-          }
-        />
-      )}
+      <LiveMibDocumentTree
+        rows={dataRows}
+        settings={settings}
+        target={targetForWorkspace()}
+        now={now}
+        nestedScrollEnabled={mode === 'compact'}
+        busy={busy}
+        hasScope={!!scope}
+        onViewableItemsChanged={onViewableItemsChanged}
+      />
     </View>
   );
 
@@ -550,104 +477,221 @@ export function LiveMibsScreen() {
           />
         ))}
       </ScrollView>
-      {mode === 'compact' ? (
-        <ScrollView
-          style={styles.compactWorkspaceScroll}
-          contentContainerStyle={styles.compactWorkspaceContent}
-          nestedScrollEnabled
-        >
-          {treePane}
-          {gridPane}
-        </ScrollView>
-      ) : (
-        <View style={styles.workspace}>
-          {treePane}
-          {gridPane}
-        </View>
-      )}
+      <View style={[styles.workspace, mode === 'compact' ? styles.compactWorkspace : null]}>
+        {treePane}
+        {gridPane}
+      </View>
     </View>
   );
 }
 
-function LiveMibPivot({
+function LiveMibDocumentTree({
   rows,
-  descriptor,
   settings,
   target,
   now,
+  nestedScrollEnabled,
+  busy,
+  hasScope,
+  onViewableItemsChanged,
 }: {
   rows: LiveMibGridRow[];
-  descriptor: LiveTableDescriptor;
   settings: LiveMibSettings;
   target: AgentTarget | null;
   now: number;
+  nestedScrollEnabled: boolean;
+  busy: boolean;
+  hasScope: boolean;
+  onViewableItemsChanged: ({
+    viewableItems,
+  }: {
+    viewableItems: { item: LiveMibDocumentItem }[];
+  }) => void;
 }) {
   const t = useTheme();
-  const byOid = new Map(rows.map((row) => [row.oid, row]));
-  const tableRows = buildTableRows(
-    rows.map(({ value }) => value),
-    descriptor.columns,
-    descriptor.indexes,
+  const [branchOverrides, setBranchOverrides] = useState<Map<string, boolean>>(() => new Map());
+  const [cellStates, setCellStates] = useState<Map<string, LiveMibCellState>>(() => new Map());
+  const requestSequences = useRef<Map<string, number>>(new Map());
+  const updateCell = useCallback(
+    (
+      oid: string,
+      initialValue: string,
+      updater: (current: LiveMibCellState) => LiveMibCellState,
+    ) =>
+      setCellStates((current) => {
+        const next = new Map(current);
+        const previous = next.get(oid) ?? {
+          confirmedValue: initialValue,
+          draftValue: initialValue,
+          phase: 'fresh',
+          requestId: 0,
+        };
+        next.set(oid, updater(previous));
+        return next;
+      }),
+    [],
   );
+  const allocateRequestId = useCallback((oid: string) => {
+    const requestId = (requestSequences.current.get(oid) ?? 0) + 1;
+    requestSequences.current.set(oid, requestId);
+    return requestId;
+  }, []);
+  const isCollapsed = useCallback(
+    (id: string, depth: number, count: number) =>
+      branchOverrides.get(id) ??
+      (depth === 1 && count > settings.documentAutoCollapseThreshold),
+    [branchOverrides, settings.documentAutoCollapseThreshold],
+  );
+  const items = useMemo(() => {
+    const result: LiveMibDocumentItem[] = [];
+    for (const module of buildLiveMibDocumentGroups(rows)) {
+      result.push({
+        kind: 'branch',
+        id: module.id,
+        label: module.name,
+        count: module.objects.reduce((count, object) => count + object.rows.length, 0),
+        depth: 0,
+      });
+      if (!isCollapsed(module.id, 0, module.objects.length)) {
+        for (const object of module.objects) {
+          result.push({
+            kind: 'branch',
+            id: object.id,
+            label: object.name,
+            count: object.rows.length,
+            depth: 1,
+          });
+          if (!isCollapsed(object.id, 1, object.rows.length)) {
+            for (const row of object.rows)
+              result.push({
+                kind: 'value',
+                id: row.oid,
+                depth: 2,
+                propertyKey: liveMibInstanceKey(row),
+                row,
+              });
+          }
+          result.push({ kind: 'close', id: `${object.id}:close`, depth: 1 });
+        }
+      }
+      result.push({ kind: 'close', id: `${module.id}:close`, depth: 0 });
+    }
+    return result;
+  }, [isCollapsed, rows]);
+
+  const toggle = (item: Extract<LiveMibDocumentItem, { kind: 'branch' }>) =>
+    setBranchOverrides((current) => {
+      const next = new Map(current);
+      const currentValue =
+        current.get(item.id) ??
+        (item.depth === 1 && item.count > settings.documentAutoCollapseThreshold);
+      next.set(item.id, !currentValue);
+      return next;
+    });
+
   return (
-    <ScrollView horizontal contentContainerStyle={styles.pivotScroll}>
-      <View style={styles.pivotTable}>
-        <Row style={[styles.pivotHeader, { borderBottomColor: t.border }]}>
-          <Text style={[styles.pivotIndex, { color: t.textDim }]}>Index</Text>
-          {descriptor.columns.map((column) => (
-            <Text key={column.oid} style={[styles.pivotColumnHeader, { color: t.textDim }]}>
-              {column.name}
+    <FlatList
+      data={items}
+      nestedScrollEnabled={nestedScrollEnabled}
+      keyExtractor={({ id }) => id}
+      contentContainerStyle={styles.documentTree}
+      onViewableItemsChanged={onViewableItemsChanged}
+      renderItem={({ item }) => {
+        if (item.kind === 'branch') {
+          const branchIsCollapsed = isCollapsed(item.id, item.depth, item.count);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: !branchIsCollapsed }}
+              accessibilityLabel={`${branchIsCollapsed ? 'Expand' : 'Collapse'} ${item.label}, ${item.count} values`}
+              onPress={() => toggle(item)}
+              style={({ pressed }) => [
+                styles.documentBranch,
+                { marginLeft: item.depth * 18, backgroundColor: pressed ? t.surfaceAlt : undefined },
+              ]}
+            >
+              <Text style={{ color: t.accent }}>{branchIsCollapsed ? '›' : '⌄'}</Text>
+              <Text style={[styles.documentSyntax, { color: t.accent }]}>
+                &quot;{item.label}&quot;
+              </Text>
+              <Text style={{ color: t.text }}>:{' {'}</Text>
+              <Label tone="dim" size={9}>
+                {item.count}
+              </Label>
+            </Pressable>
+          );
+        }
+        if (item.kind === 'close')
+          return (
+            <Text
+              style={[
+                styles.documentSyntax,
+                { marginLeft: item.depth * 18, color: t.textDim },
+              ]}
+            >
+              {'}'}
             </Text>
-          ))}
-        </Row>
-        <FlatList
-          data={tableRows}
-          keyExtractor={({ key }) => key}
-          renderItem={({ item }) => (
-            <Row style={[styles.pivotRow, { borderBottomColor: t.border }]}>
-              <View style={styles.pivotIndex}>
-                <Mono size={10}>
-                  {item.indexes.map(({ formatted }) => formatted).join(' / ') || item.key}
-                </Mono>
-              </View>
-              {descriptor.columns.map((column) => {
-                const cell = item.cells[column.oid];
-                const source = cell ? byOid.get(cell.oid) : undefined;
-                return (
-                  <View key={column.oid} style={styles.pivotCell}>
-                    {source ? (
-                      <LiveMibRow
-                        row={source}
-                        settings={settings}
-                        target={target}
-                        compact
-                        stale={now - source.updatedAt >= settings.staleAfterMs}
-                      />
-                    ) : (
-                      <Label tone="dim">—</Label>
-                    )}
-                  </View>
-                );
-              })}
-            </Row>
-          )}
-        />
-      </View>
-    </ScrollView>
+          );
+        return (
+          <LiveMibRow
+            row={item.row}
+            propertyKey={item.propertyKey}
+            depth={item.depth}
+            cell={
+              cellStates.get(item.row.oid) ?? {
+                confirmedValue: String(item.row.value.value),
+                draftValue: String(item.row.value.value),
+                phase: 'fresh',
+                requestId: 0,
+              }
+            }
+            updateCell={updateCell}
+            allocateRequestId={allocateRequestId}
+            settings={settings}
+            target={target}
+            stale={now - item.row.updatedAt >= settings.staleAfterMs}
+          />
+        );
+      }}
+      ListEmptyComponent={
+        !busy ? (
+          <EmptyState
+            title={hasScope ? 'No values loaded' : 'Choose a MIB scope'}
+            hint={
+              hasScope
+                ? 'Refresh the scope or enable read-only objects in Settings.'
+                : 'The selected subtree becomes a live, editable document tree.'
+            }
+          />
+        ) : null
+      }
+    />
   );
 }
 
 function LiveMibRow({
   row,
+  propertyKey,
+  depth,
+  cell,
+  updateCell,
+  allocateRequestId,
   settings,
   target,
-  compact = false,
   stale = false,
 }: {
   row: LiveMibGridRow;
+  propertyKey: string;
+  depth: number;
+  cell: LiveMibCellState;
+  updateCell: (
+    oid: string,
+    initialValue: string,
+    updater: (current: LiveMibCellState) => LiveMibCellState,
+  ) => void;
+  allocateRequestId: (oid: string) => number;
   settings: LiveMibSettings;
   target: AgentTarget | null;
-  compact?: boolean;
   stale?: boolean;
 }) {
   const engine = useEngine();
@@ -655,13 +699,15 @@ function LiveMibRow({
   const t = useTheme();
   const confirmed = String(row.value.value);
   const confirmedDisplay = valueText(row.value, settings.preferFormattedValues);
-  const [cell, setCell] = useState<LiveMibCellState>({
-    confirmedValue: confirmed,
-    draftValue: confirmed,
-    phase: 'fresh',
-    requestId: 0,
-  });
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const setCell = useCallback(
+    (updater: (current: LiveMibCellState) => LiveMibCellState) =>
+      updateCell(row.oid, confirmed, updater),
+    [confirmed, row.oid, updateCell],
+  );
+  const nextRequestId = useCallback(
+    () => allocateRequestId(row.oid),
+    [allocateRequestId, row.oid],
+  );
   const [workflow, setWorkflow] = useState<LiveMibWorkflowStatus | null>(null);
   const [workflowCandidates, setWorkflowCandidates] = useState<LiveMibWorkflowCandidate[]>([]);
   const [workflowSetupOpen, setWorkflowSetupOpen] = useState(false);
@@ -672,7 +718,6 @@ function LiveMibRow({
   const [controlVarbinds, setControlVarbinds] = useState('[]');
   const [tftpBindAddress, setTftpBindAddress] = useState('0.0.0.0');
   const [tftpPort, setTftpPort] = useState('69');
-  const requestSequence = useRef(0);
   const writable = /read-write|read-create|write-only/i.test(row.metadata?.access ?? '');
   const editor = inferLiveMibEditor(row.metadata ?? {});
   const presentedEditor =
@@ -680,6 +725,7 @@ function LiveMibRow({
   const booleanValues = row.metadata?.enumValues
     ? getBooleanEnumValues(row.metadata.enumValues)
     : null;
+  const editorLabel = `Edit ${row.metadata?.name ?? row.value.name ?? row.oid} instance ${propertyKey}`;
   const validationError =
     mibRangeError(row.metadata, cell.draftValue) ??
     mibSizeError(row.metadata, cell.draftValue) ??
@@ -710,7 +756,7 @@ function LiveMibRow({
 
   useEffect(() => {
     setCell((current) => mergeLiveCellRemote(current, confirmed));
-  }, [confirmed]);
+  }, [confirmed, setCell]);
 
   const submit = useCallback(
     async (draftOverride?: string) => {
@@ -728,8 +774,7 @@ function LiveMibRow({
         setCell((current) => ({ ...current, phase: 'dirty', error: submittedError }));
         return;
       }
-      const requestId = ++requestSequence.current;
-      setConfirmOpen(false);
+      const requestId = nextRequestId();
       setCell((current) => beginLiveCellWrite(current, requestId));
       try {
         const result = await engine.liveMibs.writeCell({
@@ -780,7 +825,7 @@ function LiveMibRow({
         );
       }
     },
-    [cell.draftValue, cell.phase, engine, row, settings, target, writable],
+    [cell.draftValue, cell.phase, engine, nextRequestId, row, setCell, settings, target, writable],
   );
 
   useEffect(() => {
@@ -794,7 +839,6 @@ function LiveMibRow({
   const requestCommit = (draftOverride?: string) => {
     if (settings.writeMode === 'confirm') {
       setCell((current) => ({ ...current, phase: 'awaiting-confirmation' }));
-      setConfirmOpen(true);
     } else void submit(draftOverride);
   };
 
@@ -903,12 +947,18 @@ function LiveMibRow({
   };
 
   return (
-    <Card style={[styles.valueRow, compact ? styles.compactValueRow : null]}>
-      <View style={[styles.valueIdentity, compact ? styles.compactValueIdentity : null]}>
+    <View
+      style={[
+        styles.documentValue,
+        { marginLeft: depth * 18, borderBottomColor: t.border, backgroundColor: t.surface },
+      ]}
+    >
+      <View style={styles.documentValueHeader}>
         <Row style={styles.wrap}>
-          <Text style={{ color: t.text, fontWeight: '700', fontSize: 12 }}>
-            {row.value.name ?? row.metadata?.name ?? row.oid}
+          <Text style={[styles.documentSyntax, { color: t.accent }]}>
+            &quot;{propertyKey}&quot;
           </Text>
+          <Text style={{ color: t.text }}>:</Text>
           <Pill
             text={(row.metadata?.access ?? 'unknown').toUpperCase()}
             color={writable ? t.ok : t.textDim}
@@ -942,7 +992,7 @@ function LiveMibRow({
         ) : presentedEditor === 'boolean' && row.metadata?.enumValues ? (
           <Row style={styles.booleanEditor}>
             <ThemedSwitch
-              accessibilityLabel={`Edit ${row.metadata.name}`}
+              accessibilityLabel={editorLabel}
               value={booleanValues ? cell.draftValue === booleanValues.on : false}
               onValueChange={(enabled) => {
                 if (!booleanValues) return;
@@ -983,6 +1033,7 @@ function LiveMibRow({
           </ScrollView>
         ) : (
           <Field
+            accessibilityLabel={editorLabel}
             label={
               editor === 'number'
                 ? 'Numeric value'
@@ -1038,11 +1089,10 @@ function LiveMibRow({
         ) : null}
       </View>
       <Dialog
-        visible={confirmOpen}
+        visible={cell.phase === 'awaiting-confirmation'}
         title={`Apply ${row.metadata?.name ?? row.oid}?`}
         subtitle="The device will receive an SNMP Set immediately after confirmation."
         onRequestClose={() => {
-          setConfirmOpen(false);
           setCell((current) => ({ ...current, phase: 'dirty' }));
         }}
         footer={
@@ -1051,7 +1101,6 @@ function LiveMibRow({
               title="Cancel"
               variant="ghost"
               onPress={() => {
-                setConfirmOpen(false);
                 setCell((current) => ({ ...current, phase: 'dirty' }));
               }}
             />
@@ -1119,7 +1168,7 @@ function LiveMibRow({
           ) : null}
         </ScrollView>
       </Dialog>
-    </Card>
+    </View>
   );
 }
 
@@ -1144,10 +1193,9 @@ const styles = StyleSheet.create({
   agentStrip: { flexGrow: 0, borderBottomWidth: 1 },
   agentStripContent: { paddingHorizontal: 12, paddingVertical: 7, gap: 6 },
   workspace: { flex: 1, minHeight: 0, flexDirection: 'row', gap: 8, padding: 8 },
-  compactWorkspaceScroll: { flex: 1, minHeight: 0 },
-  compactWorkspaceContent: { flexGrow: 1, gap: 8, padding: 8 },
+  compactWorkspace: { flexDirection: 'column' },
   treePane: { width: 300, minHeight: 180, borderWidth: 1, borderRadius: 10, padding: 8, gap: 8 },
-  compactTreePane: { width: '100%', height: 260 },
+  compactTreePane: { width: '100%', height: 180, minHeight: 0, flexShrink: 0 },
   paneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   treeRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 6 },
   gridPane: {
@@ -1158,7 +1206,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
-  compactGridPane: { flexGrow: 0, flexShrink: 0, height: 420 },
+  compactGridPane: { flex: 1, minHeight: 0 },
   gridToolbar: {
     minHeight: 58,
     padding: 10,
@@ -1167,22 +1215,22 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
-  gridList: { padding: 8, gap: 7 },
-  pivotScroll: { padding: 8 },
-  pivotTable: { minWidth: 600 },
-  pivotHeader: { minHeight: 38, borderBottomWidth: 1 },
-  pivotRow: { alignItems: 'stretch', borderBottomWidth: 1 },
-  pivotIndex: { width: 150, padding: 8 },
-  pivotColumnHeader: { width: 260, padding: 8, fontSize: 10, fontWeight: '800' },
-  pivotCell: { width: 260, padding: 4 },
+  documentTree: { padding: 8, gap: 2 },
+  documentBranch: {
+    minHeight: 32,
+    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 5,
+  },
+  documentSyntax: { fontFamily: 'monospace', fontSize: 11, fontWeight: '700' },
+  documentValue: { borderBottomWidth: 1, padding: 8, gap: 7 },
+  documentValueHeader: { gap: 3 },
   loading: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
   message: { margin: 8, padding: 8, borderRadius: 8 },
   workflowDialog: { maxHeight: 420 },
-  valueRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: 10 },
-  valueIdentity: { flex: 1.2, minWidth: 180, gap: 3 },
-  compactValueRow: { padding: 6, gap: 6 },
-  compactValueIdentity: { display: 'none' },
-  valueEditor: { flex: 1, minWidth: 180, gap: 6 },
+  valueEditor: { minWidth: 0, gap: 6 },
   readOnlyValue: { minHeight: 40, borderRadius: 7, padding: 10, justifyContent: 'center' },
   booleanEditor: { minHeight: 42 },
   wrap: { flexWrap: 'wrap' },

@@ -48,11 +48,17 @@ describe('live MIB engine API', () => {
       scanConcurrency: 1,
       showReadOnly: false,
       writeMode: 'confirm',
+      documentAutoCollapseThreshold: 20,
     });
-    await engine.liveMibs.settings.update({ scanConcurrency: 99, refreshIntervalMs: 100 });
+    await engine.liveMibs.settings.update({
+      scanConcurrency: 99,
+      refreshIntervalMs: 100,
+      documentAutoCollapseThreshold: 0,
+    });
     await expect(engine.liveMibs.settings.get()).resolves.toMatchObject({
       scanConcurrency: 8,
       refreshIntervalMs: 500,
+      documentAutoCollapseThreshold: 1,
     });
 
     await engine.liveMibs.agentOverrides.update('agent-a', {

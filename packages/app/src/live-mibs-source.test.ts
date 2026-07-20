@@ -24,9 +24,27 @@ describe('Live MIB source guards', () => {
     expect(liveMibs).toContain("['started', 'running'].includes(scan.state)");
   });
 
-  it('keeps the compact tree and grid reachable with vertical scrolling', () => {
+  it('keeps compact tree and document panes independently reachable', () => {
     const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
-    expect(liveMibs).toContain('style={styles.compactWorkspaceScroll}');
-    expect(liveMibs).toContain('contentContainerStyle={styles.compactWorkspaceContent}');
+    expect(liveMibs).toContain("mode === 'compact' ? styles.compactWorkspace : null");
+    expect(liveMibs).toContain("nestedScrollEnabled={mode === 'compact'}");
+    expect(liveMibs).toContain('compactGridPane: { flex: 1, minHeight: 0 }');
+  });
+
+  it('renders live values as an editable document tree instead of a pivot grid', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('function LiveMibDocumentTree');
+    expect(liveMibs).toContain('&quot;{propertyKey}&quot;');
+    expect(liveMibs).not.toContain('function LiveMibPivot');
+  });
+
+  it('keeps transactional cell state above collapsible virtualized rows', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    const tree = liveMibs.split('function LiveMibDocumentTree')[1]?.split('function LiveMibRow')[0];
+    const row = liveMibs.split('function LiveMibRow')[1];
+    expect(tree).toContain('const [cellStates, setCellStates]');
+    expect(tree).toContain('requestSequences');
+    expect(row).not.toContain('useState<LiveMibCellState>');
+    expect(row).toContain("visible={cell.phase === 'awaiting-confirmation'}");
   });
 });
