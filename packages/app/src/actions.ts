@@ -12,6 +12,7 @@ import type {
   NotificationAgentSendRequest,
   TrapQuery,
   OidLookupResult,
+  VendorMibBrowseResult,
   ResolverOperationStatus,
   ResolverSettings,
   ResolverSourceDraft,
@@ -527,6 +528,8 @@ export async function cancelImport(engine: EngineAPI): Promise<void> {
 const TERMINAL_STATES = new Set(['done', 'partial', 'error', 'cancelled', 'expired']);
 
 const resolverRefreshes = new WeakMap<EngineAPI, Promise<void>>();
+const vendorBrowseStarts = new Set<string>();
+let lookupCandidateStartPending = false;
 
 export function refreshResolverState(engine: EngineAPI): Promise<void> {
   const current = resolverRefreshes.get(engine);
@@ -674,12 +677,14 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
   const sourceId = Object.entries(s.sourceTestHandles).find(([, id]) => id === event.handleId)?.[0];
   const isSourcePreview = Boolean(event.handleId && event.handleId === s.sourcePreviewHandle);
   const lookupOid = Object.entries(s.lookupHandles).find(([, id]) => id === event.handleId)?.[0];
+  const vendorBrowseOid = Object.entries(s.vendorMibBrowseHandles).find(([, id]) => id === event.handleId)?.[0];
   const isImport = Boolean(
     event.handleId && event.handleId === useAppStore.getState().importHandle,
   );
 
   if (event.kind === 'consent-required' && event.handleId) {
-    const active = isImport || Boolean(sourceId) || isSourcePreview || Boolean(lookupOid);
+    const active =
+      isImport || Boolean(sourceId) || isSourcePreview || Boolean(lookupOid) || Boolean(vendorBrowseOid);
     if (active) {
       s.enqueueConsent({
         handleId: event.handleId,
@@ -733,6 +738,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
     s.finishImport(status, finalResult);
     s.settleFileImportDraft(status.handleId, status.state);
     await Promise.all([refreshModules(engine), refreshResolverState(engine)]);
+    await refreshLoadedOidLookups(engine);
     const fresh = useAppStore.getState();
     fresh.clearChildrenCache();
     await loadChildren(engine, '');
@@ -774,6 +780,39 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
     });
     await refreshResolverState(engine);
   }
+
+  if (vendorBrowseOid) {
+    const result = payload.result as VendorMibBrowseResult | undefined;
+    s.finishVendorMibBrowse(vendorBrowseOid, {
+      state: status.state,
+      result,
+      error: status.failures[0]?.message,
+    });
+    await refreshResolverState(engine);
+  }
+}
+
+async function refreshLoadedOidLookups(engine: EngineAPI): Promise<void> {
+  const snapshot = useAppStore.getState();
+  const unresolved = Object.entries(snapshot.oidLookups).filter(
+    ([oid, lookup]) =>
+      lookup.result &&
+      !lookup.result.loaded &&
+      !snapshot.lookupHandles[oid],
+  );
+  await Promise.all(
+    unresolved.map(async ([oid]) => {
+      const loaded = await engine.mibs.resolve(oid);
+      if (!loaded) return;
+      const current = useAppStore.getState().oidLookups[oid];
+      if (!current?.result || current.result.loaded) return;
+      useAppStore.getState().finishOidLookup(oid, {
+        ...current,
+        state: 'done',
+        result: { ...current.result, loaded, cached: null },
+      });
+    }),
+  );
 }
 
 export async function respondResolverConsent(
@@ -941,22 +980,55 @@ export async function lookupUnknownOid(engine: EngineAPI, oid: string): Promise<
   }
 }
 
+export async function browseVendorMibs(
+  engine: EngineAPI,
+  oid: string,
+  vendor: string,
+): Promise<void> {
+  const normalized = oid.trim().replace(/^\./, '');
+  if (!/^\d+(?:\.\d+)+$/.test(normalized)) return;
+  const state = useAppStore.getState();
+  if (state.vendorMibBrowseHandles[normalized] || vendorBrowseStarts.has(normalized)) return;
+  vendorBrowseStarts.add(normalized);
+  try {
+    const settings = await engine.resolver.settings.get();
+    const { handleId } = await engine.resolver.browseVendorMibs({
+      oid: normalized,
+      vendor,
+      network: settings.enabled,
+    });
+    useAppStore.getState().beginVendorMibBrowse(normalized, handleId);
+    await syncResolverOperation(engine, handleId);
+  } catch (error) {
+    useAppStore.getState().finishVendorMibBrowse(normalized, {
+      state: 'error',
+      error: describeError(error),
+    });
+  } finally {
+    vendorBrowseStarts.delete(normalized);
+  }
+}
+
 /** Resolve a lookup candidate through the configured chain, or strictly from local cache. */
 export async function loadLookupCandidate(
   engine: EngineAPI,
   module: string,
   cachedOnly = false,
+  preferredSourceId?: string,
 ): Promise<void> {
   const state = useAppStore.getState();
-  if (state.importHandle) return;
+  if (state.importHandle || lookupCandidateStartPending) return;
+  lookupCandidateStartPending = true;
   try {
     const { handleId } = cachedOnly
       ? await engine.resolver.loadCachedModules([module])
-      : await engine.resolver.resolveModules([module]);
+      : await engine.resolver.resolveModules([module], { preferredSourceId });
     state.beginImport(handleId);
     await syncResolverOperation(engine, handleId);
   } catch (error) {
     state.setResolverError(describeError(error));
+  } finally {
+    lookupCandidateStartPending = false;
   }
 }
 

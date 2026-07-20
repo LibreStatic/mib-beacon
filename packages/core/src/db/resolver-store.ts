@@ -10,8 +10,9 @@ import {
   PassiveFtpClient,
   type CachedMib,
   type MibCache,
-  type MibSource,
+  type ConfiguredMibSource,
   type SourceConfig,
+  type SourceCandidate,
   type SourceIndexStore,
   type SourceIndexSnapshot,
 } from '@mibbeacon/resolver';
@@ -313,13 +314,13 @@ export class ResolverSourceStore {
     return this.list();
   }
 
-  instantiate(transport: Transport): MibSource[] {
+  instantiate(transport: Transport): ConfiguredMibSource[] {
     const resolveSecret = (reference: string) => transport.secrets.get(reference);
     const ftpClient = new PassiveFtpClient(transport.tcp);
-    return this.list().flatMap((config): MibSource[] => {
+    return this.list().flatMap((config): ConfiguredMibSource[] => {
       if (!config.enabled || config.kind === 'cache' || config.validationError) return [];
       try {
-        let source: MibSource;
+        let source: ConfiguredMibSource;
         if (config.kind === 'http-template')
           source = new HttpTemplateSource(config, transport.http, resolveSecret);
         else if (config.kind === 'github-tree') {
@@ -482,6 +483,33 @@ export class ResolverSourceStore {
       }
     }
     return candidates;
+  }
+
+  async discoverCandidates(
+    evidence: string[],
+    transport: Transport,
+    signal?: AbortSignal,
+  ): Promise<(SourceCandidate & { sourceName: string })[]> {
+    const discovered: (SourceCandidate & { sourceName: string })[] = [];
+    for (const source of this.instantiate(transport)) {
+      if (!source.discover) continue;
+      try {
+        const candidates = await source.discover(evidence, { signal });
+        discovered.push(...candidates.map((candidate) => ({ ...candidate, sourceName: source.name })));
+      } catch {
+        // A single unavailable index must not prevent other sources from being explored.
+      }
+    }
+    const indexed = this.candidates(evidence).map((candidate) => ({
+      ...candidate,
+      sourceName: this.get(candidate.sourceId)?.name ?? candidate.sourceId,
+    }));
+    const unique = new Map<string, SourceCandidate & { sourceName: string }>();
+    for (const candidate of [...discovered, ...indexed]) {
+      unique.set(`${candidate.sourceId}:${candidate.module}`, candidate);
+      if (unique.size >= 50) break;
+    }
+    return [...unique.values()];
   }
 
   private indexStore(sourceId: string): SourceIndexStore {

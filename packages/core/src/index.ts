@@ -36,6 +36,10 @@ export type {
   ResolverCacheStats,
   OidLookupRequest,
   OidLookupResult,
+  VendorMibBrowseRequest,
+  VendorMibCandidate,
+  VendorMibBrowseResult,
+  ResolverResolveOptions,
   ResolverHistoryEntry,
 } from './api/engine-api';
 export type { SourceConfig, SourceKind } from '@mibbeacon/resolver';

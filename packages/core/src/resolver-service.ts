@@ -22,6 +22,10 @@ import type {
   ResolverOperationResult,
   ResolverSourceDraft,
   ResolverSettings,
+  VendorMibBrowseRequest,
+  VendorMibBrowseResult,
+  VendorMibCandidate,
+  ResolverResolveOptions,
 } from './api/engine-api';
 import type { EventBus } from './events';
 import { MibBeaconError } from './errors';
@@ -50,11 +54,12 @@ interface ImportOperation {
   controller: AbortController;
   request:
     | MibStartImportRequest
-    | { modules: string[] }
+    | { modules: string[]; preferredSourceId?: string }
     | { cachedModules: string[] }
     | { sourceTest: { sourceId: string; module: string } }
     | { sourcePreview: ResolverSourceDraft }
-    | { oidLookup: { oid: string; network: boolean } };
+    | { oidLookup: { oid: string; network: boolean } }
+    | { vendorBrowse: VendorMibBrowseRequest };
   consent?: (allowed: boolean) => void;
   consentTimer?: ReturnType<typeof setTimeout>;
   stagedStore?: MibStore;
@@ -189,10 +194,10 @@ export class ResolverService {
       history: {
         list: async (limit = 50) => this.listHistory(limit),
       },
-      resolveModules: async (modules) => {
-        const operation = this.createOperation({ modules });
+      resolveModules: async (modules, options: ResolverResolveOptions = {}) => {
+        const operation = this.createOperation({ modules, preferredSourceId: options.preferredSourceId });
         void this.mutationQueue
-          .run(() => this.runExplicitResolution(operation, modules))
+          .run(() => this.runExplicitResolution(operation, modules, options.preferredSourceId))
           .catch((error) => this.failUnexpected(operation, error));
         return { handleId: operation.status.handleId };
       },
@@ -208,6 +213,15 @@ export class ResolverService {
           oidLookup: { oid: request.oid, network: request.network ?? true },
         });
         void this.runOidLookup(operation, request.oid, request.network ?? true).catch((error) =>
+          this.failUnexpected(operation, error),
+        );
+        return { handleId: operation.status.handleId };
+      },
+      browseVendorMibs: async (request) => {
+        const operation = this.createOperation({
+          vendorBrowse: { oid: request.oid, vendor: request.vendor, network: request.network ?? true },
+        });
+        void this.runVendorBrowse(operation, request).catch((error) =>
           this.failUnexpected(operation, error),
         );
         return { handleId: operation.status.handleId };
@@ -280,6 +294,7 @@ export class ResolverService {
   private async runExplicitResolution(
     operation: ImportOperation,
     modules: string[],
+    preferredSourceId?: string,
   ): Promise<void> {
     operation.stagedStore = this.mibStore.fork();
     operation.stagedCache = new StagedMibCache(this.cache);
@@ -288,6 +303,7 @@ export class ResolverService {
       modules.map((module) => ({ module, symbols: [] })),
       [],
       true,
+      preferredSourceId,
     );
   }
 
@@ -313,6 +329,7 @@ export class ResolverService {
     missing: MibImport[],
     retryFiles: { name: string; content: string }[],
     explicit = false,
+    preferredSourceId?: string,
   ): Promise<void> {
     if (!this.readSettings().enabled || (!explicit && !this.readSettings().autoResolveImports)) {
       operation.status.failures.push(
@@ -326,7 +343,7 @@ export class ResolverService {
       return;
     }
     this.transition(operation, 'resolving-cache');
-    const cacheResult = await this.runResolver(operation, missing, []);
+    const cacheResult = await this.runResolver(operation, missing, [], preferredSourceId);
     if (operation.controller.signal.aborted) return;
     if (cacheResult.status === 'resolved') {
       this.loadResolvedDocuments(operation, cacheResult);
@@ -357,7 +374,7 @@ export class ResolverService {
         return;
     }
     this.transition(operation, 'resolving');
-    const networkResult = await this.runResolver(operation, missing, sources);
+    const networkResult = await this.runResolver(operation, missing, sources, preferredSourceId);
     this.loadResolvedDocuments(operation, networkResult);
     if (operation.controller.signal.aborted) return;
     await this.retryAndFinish(operation, retryFiles, networkResult);
@@ -379,6 +396,7 @@ export class ResolverService {
     operation: ImportOperation,
     missing: MibImport[],
     sources: ReturnType<ResolverService['availableSources']>,
+    preferredSourceId?: string,
   ): Promise<ResolverResult> {
     const resolver = new MibResolver({
       sources,
@@ -391,6 +409,7 @@ export class ResolverService {
         .listModules()
         .map((module) => module.name),
       signal: operation.controller.signal,
+      preferredSourceId,
       onProgress: (progress) => this.onProgress(operation, progress),
     });
   }
@@ -846,6 +865,89 @@ export class ResolverService {
     this.finish(operation, 'done', 'done', result);
   }
 
+  private async runVendorBrowse(
+    operation: ImportOperation,
+    request: VendorMibBrowseRequest,
+  ): Promise<void> {
+    const oid = normalizeNumericOid(request.oid);
+    if (!oid || enterpriseNumberFromOid(oid) === null) {
+      this.finish(operation, 'error', 'error', {
+        code: 'INVALID_OID',
+        message: 'Vendor MIB browsing requires an enterprise OID',
+      });
+      return;
+    }
+    const network = request.network ?? true;
+    const sources = network ? this.availableSources() : [];
+    operation.status.sourceHosts = unique(sources.flatMap((source) => source.hosts));
+    if (network) {
+      if (this.rejectExternalWhenDisabled(operation)) return;
+      if (!this.readSettings().externalConsentRemembered) {
+        const allowed = await this.waitForConsent(operation);
+        if (!allowed || isTerminal(operation.status.state)) return;
+      }
+      this.transition(operation, 'resolving');
+    } else {
+      this.transition(operation, 'resolving-cache');
+    }
+
+    const indexed = network
+      ? await this.sourceStore.discoverCandidates([request.vendor], this.transport, operation.controller.signal)
+      : this.sourceStore.candidates([request.vendor]).map((candidate) => ({
+          ...candidate,
+          sourceName: this.sourceStore.get(candidate.sourceId)?.name ?? candidate.sourceId,
+        }));
+    const candidates = indexed.slice(0, 12);
+    const verified = await mapConcurrent(
+      candidates,
+      2,
+      (candidate) =>
+        this.verifyVendorCandidate(oid, candidate, sources, operation.controller.signal),
+    );
+    throwIfAborted(operation.controller.signal);
+    verified.sort((left, right) => Number(right.verified) - Number(left.verified));
+    const result: VendorMibBrowseResult = {
+      oid,
+      vendor: request.vendor,
+      candidates: verified,
+      fromCache: !network,
+    };
+    this.finish(operation, 'done', 'done', result);
+  }
+
+  private async verifyVendorCandidate(
+    oid: string,
+    candidate: { module: string; sourceId: string; sourceName: string; location?: string },
+    sources: ReturnType<ResolverService['availableSources']>,
+    signal?: AbortSignal,
+  ): Promise<VendorMibCandidate> {
+    const resolver = new MibResolver({ sources, cache: this.cache });
+    const resolution = await resolver.resolve({
+      missingImports: [{ module: candidate.module, symbols: [] }],
+      availableModules: this.mibStore.listModules().map((module) => module.name),
+      preferredSourceId: sources.length > 0 ? candidate.sourceId : undefined,
+      signal,
+    });
+    if (resolution.status === 'cancelled') throwIfAborted(signal);
+    const staged = this.mibStore.fork();
+    for (const document of resolution.documents) {
+      staged.importTexts([{ name: document.module, content: document.content }]);
+    }
+    const match = staged.index.resolve(oid);
+    const availableOffline = resolution.documents.some(
+      (document) => document.module.toLowerCase() === candidate.module.toLowerCase(),
+    );
+    const verified = match?.module?.toLowerCase() === candidate.module.toLowerCase();
+    return {
+      ...candidate,
+      availableOffline,
+      verified,
+      ...(match?.name && verified ? { matchName: match.name } : {}),
+      ...(match?.definitionOid && verified ? { matchOid: match.definitionOid } : {}),
+      ...(verified ? {} : { reason: resolution.failed[0]?.reason ?? 'Candidate does not own this OID' }),
+    };
+  }
+
   private rejectExternalWhenDisabled(operation: ImportOperation): boolean {
     if (this.readSettings().enabled) return false;
     const result = {
@@ -920,6 +1022,26 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+async function mapConcurrent<T, U>(
+  values: readonly T[],
+  concurrency: number,
+  map: (value: T) => Promise<U>,
+): Promise<U[]> {
+  const results = new Array<U>(values.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await map(values[index]!);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), values.length) }, worker),
+  );
+  return results;
+}
+
 function summarizeRequest(request: ImportOperation['request']): unknown {
   if ('cachedModules' in request) return { cachedModules: request.cachedModules };
   if ('modules' in request) return { modules: request.modules };
@@ -933,8 +1055,14 @@ function summarizeRequest(request: ImportOperation['request']): unknown {
     };
   }
   if ('oidLookup' in request) return request;
+  if ('vendorBrowse' in request) return request;
   if ('url' in request) return { url: request.url };
   return { files: request.files.map((file) => ({ name: file.name, bytes: file.content.length })) };
+}
+
+function normalizeNumericOid(value: string): string | null {
+  const normalized = value.trim().replace(/^\./, '');
+  return /^\d+(?:\.\d+)+$/.test(normalized) ? normalized : null;
 }
 
 function redactPayload(value: unknown): unknown {

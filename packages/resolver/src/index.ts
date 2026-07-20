@@ -23,5 +23,6 @@ export type {
   SourceIndexStore,
   SecretResolver,
   SourceFetchResult,
+  SourceCandidate,
   MibSource as ConfiguredMibSource,
 } from './sources/types';

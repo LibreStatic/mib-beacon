@@ -25,6 +25,7 @@ import type {
   ResolverHistoryEntry,
   ResolverOperationStatus,
   OidLookupResult,
+  VendorMibBrowseResult,
   ResolverSourcePreviewResult,
   SourceConfig,
   AgentProfile,
@@ -300,6 +301,8 @@ export interface AppState {
   sourcePreview: SourcePreviewState | null;
   lookupHandles: Record<string, string>;
   oidLookups: Record<string, OidLookupState>;
+  vendorMibBrowseHandles: Record<string, string>;
+  vendorMibBrowses: Record<string, VendorMibBrowseState>;
   setResolverSettings: (settings: ResolverSettings | null) => void;
   setResolverSources: (sources: SourceConfig[]) => void;
   setResolverCache: (cache: ResolverCacheStats | null) => void;
@@ -314,6 +317,8 @@ export interface AppState {
   clearSourcePreview: () => void;
   beginOidLookup: (oid: string, handleId: string) => void;
   finishOidLookup: (oid: string, state: OidLookupState) => void;
+  beginVendorMibBrowse: (oid: string, handleId: string) => void;
+  finishVendorMibBrowse: (oid: string, state: VendorMibBrowseState) => void;
 }
 
 export interface ResolverProgressItem {
@@ -346,6 +351,12 @@ export interface SourceTestState {
 export interface OidLookupState {
   state: ResolverOperationState;
   result?: OidLookupResult;
+  error?: string;
+}
+
+export interface VendorMibBrowseState {
+  state: ResolverOperationState;
+  result?: VendorMibBrowseResult;
   error?: string;
 }
 
@@ -761,6 +772,8 @@ export const useAppStore = create<AppState>((set) => ({
   sourcePreview: null,
   lookupHandles: {},
   oidLookups: {},
+  vendorMibBrowseHandles: {},
+  vendorMibBrowses: {},
   setResolverSettings: (resolverSettings) => set({ resolverSettings }),
   setResolverSources: (resolverSources) => set({ resolverSources }),
   setResolverCache: (resolverCache) => set({ resolverCache }),
@@ -809,5 +822,19 @@ export const useAppStore = create<AppState>((set) => ({
       const handles = { ...s.lookupHandles };
       delete handles[oid];
       return { lookupHandles: handles, oidLookups: { ...s.oidLookups, [oid]: state } };
+    }),
+  beginVendorMibBrowse: (oid, handleId) =>
+    set((s) => ({
+      vendorMibBrowseHandles: { ...s.vendorMibBrowseHandles, [oid]: handleId },
+      vendorMibBrowses: { ...s.vendorMibBrowses, [oid]: { state: 'started' } },
+    })),
+  finishVendorMibBrowse: (oid, state) =>
+    set((s) => {
+      const handles = { ...s.vendorMibBrowseHandles };
+      delete handles[oid];
+      return {
+        vendorMibBrowseHandles: handles,
+        vendorMibBrowses: { ...s.vendorMibBrowses, [oid]: state },
+      };
     }),
 }));

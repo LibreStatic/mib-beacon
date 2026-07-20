@@ -41,6 +41,22 @@ export class GitHubTreeIndex {
     return this.index?.get(moduleName.toUpperCase()) ?? null;
   }
 
+  async findCandidates(
+    evidence: string[],
+    context: SourceFetchContext = {},
+  ): Promise<{ module: string; path: string }[]> {
+    await this.loadPersisted();
+    if (!this.index || this.shouldRefresh()) await this.refresh(context);
+    const terms = evidence
+      .flatMap((value) => value.toUpperCase().split(/[^A-Z0-9]+/))
+      .filter((term) => term.length >= 3 && !['MIB', 'THE', 'INC', 'CORP', 'ISO', 'ORG'].includes(term));
+    if (terms.length === 0) return [];
+    return [...(this.index?.entries() ?? [])]
+      .filter(([module, path]) => terms.some((term) => `${module} ${path}`.toUpperCase().includes(term)))
+      .map(([module, path]) => ({ module, path }))
+      .slice(0, 50);
+  }
+
   async refresh(context: SourceFetchContext = {}): Promise<void> {
     if (this.refreshPromise) return this.refreshPromise;
     this.refreshPromise = this.performRefresh(context).finally(() => { this.refreshPromise = null; });
@@ -180,6 +196,14 @@ export class GitHubTreeSource implements MibSource {
       moduleName: validation.moduleName,
       warnings: validation.warnings,
     };
+  }
+
+  async discover(evidence: string[], context: SourceFetchContext = {}) {
+    return (await this.index.findCandidates(evidence, context)).map(({ module, path }) => ({
+      module,
+      sourceId: this.id,
+      location: `https://raw.githubusercontent.com/${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repo)}/${encodeURIComponent(this.config.branch)}/${path.split('/').map(encodeURIComponent).join('/')}`,
+    }));
   }
 
   private notFound(module: string, response: HttpResponse): SourceFetchResult {

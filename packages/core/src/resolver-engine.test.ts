@@ -97,6 +97,148 @@ async function enableResolver(engine: ReturnType<typeof createEngine>) {
 }
 
 describe('engine resolver orchestration', () => {
+  it('browses verified vendor MIB candidates for an unresolved enterprise OID', async () => {
+    const vendorMib = `ACME-MIB DEFINITIONS ::= BEGIN
+IMPORTS enterprises FROM SNMPv2-SMI;
+acmeRoot OBJECT IDENTIFIER ::= { enterprises 99003 }
+END`;
+    const treeUrl = 'https://api.github.com/repos/acme/mibs/git/trees/main?recursive=1';
+    const rawUrl = 'https://raw.githubusercontent.com/acme/mibs/main/vendor/acme/ACME-MIB.my';
+    const http: HttpClient & { fetch: ReturnType<typeof vi.fn> } = {
+      fetch: vi.fn(async ({ url }) => {
+        if (url === treeUrl)
+          return {
+            status: 200,
+            ok: true,
+            headers: {},
+            text: JSON.stringify({ tree: [{ type: 'blob', path: 'vendor/acme/ACME-MIB.my' }] }),
+            bytes: 100,
+          };
+        if (url === rawUrl)
+          return { status: 200, ok: true, headers: {}, text: vendorMib, bytes: vendorMib.length };
+        return { status: 404, ok: false, headers: {}, text: '', bytes: 0 };
+      }),
+    };
+    const engine = createEngine(transportWith(http), { dbPath: ':memory:' });
+    await engine.resolver.settings.update({ enabled: true, externalConsentRemembered: true });
+    await engine.resolver.sources.create({
+      config: {
+        id: 'acme-github',
+        kind: 'github-tree',
+        name: 'Acme MIBs',
+        enabled: true,
+        priority: 0,
+        owner: 'acme',
+        repo: 'mibs',
+        branch: 'main',
+        pathPrefix: 'vendor/',
+      },
+    });
+
+    const operation = await engine.resolver.browseVendorMibs({
+      oid: '1.3.6.1.4.1.99003',
+      vendor: 'Acme Networks',
+      network: true,
+    });
+    await expect(waitForTerminal(engine, operation.handleId)).resolves.toMatchObject({
+      state: 'done',
+      result: {
+        oid: '1.3.6.1.4.1.99003',
+        vendor: 'Acme Networks',
+        candidates: [
+          expect.objectContaining({
+            module: 'ACME-MIB',
+            sourceId: 'acme-github',
+            verified: true,
+            matchName: 'acmeRoot',
+          }),
+        ],
+      },
+    });
+    const callsAfterNetworkBrowse = http.fetch.mock.calls.length;
+    const cachedBrowse = await engine.resolver.browseVendorMibs({
+      oid: '1.3.6.1.4.1.99003',
+      vendor: 'Acme Networks',
+      network: false,
+    });
+    await expect(waitForTerminal(engine, cachedBrowse.handleId)).resolves.toMatchObject({
+      state: 'done',
+      result: {
+        fromCache: true,
+        candidates: [
+          expect.objectContaining({
+            module: 'ACME-MIB',
+            verified: true,
+            availableOffline: true,
+          }),
+        ],
+      },
+    });
+    expect(http.fetch).toHaveBeenCalledTimes(callsAfterNetworkBrowse);
+  });
+
+  it('limits concurrent vendor candidate verification requests', async () => {
+    const modules = ['ACME-ONE-MIB', 'ACME-TWO-MIB', 'ACME-THREE-MIB'];
+    const treeUrl = 'https://api.github.com/repos/acme/mibs/git/trees/main?recursive=1';
+    let activeRawRequests = 0;
+    let maxActiveRawRequests = 0;
+    const http: HttpClient = {
+      fetch: vi.fn(async ({ url }) => {
+        if (url === treeUrl)
+          return {
+            status: 200,
+            ok: true,
+            headers: {},
+            text: JSON.stringify({
+              tree: modules.map((module) => ({
+                type: 'blob',
+                path: `vendor/acme/${module}.my`,
+              })),
+            }),
+            bytes: 300,
+          };
+        const module = modules.find((name) => url.endsWith(`/${name}.my`));
+        if (module) {
+          activeRawRequests += 1;
+          maxActiveRawRequests = Math.max(maxActiveRawRequests, activeRawRequests);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          activeRawRequests -= 1;
+          const content = `${module} DEFINITIONS ::= BEGIN
+IMPORTS enterprises FROM SNMPv2-SMI;
+root OBJECT IDENTIFIER ::= { enterprises ${99003 + modules.indexOf(module)} }
+END`;
+          return { status: 200, ok: true, headers: {}, text: content, bytes: content.length };
+        }
+        return { status: 404, ok: false, headers: {}, text: '', bytes: 0 };
+      }),
+    };
+    const engine = createEngine(transportWith(http), { dbPath: ':memory:' });
+    await engine.resolver.settings.update({ enabled: true, externalConsentRemembered: true });
+    await engine.resolver.sources.create({
+      config: {
+        id: 'acme-github',
+        kind: 'github-tree',
+        name: 'Acme MIBs',
+        enabled: true,
+        priority: 0,
+        owner: 'acme',
+        repo: 'mibs',
+        branch: 'main',
+        pathPrefix: 'vendor/',
+      },
+    });
+
+    const operation = await engine.resolver.browseVendorMibs({
+      oid: '1.3.6.1.4.1.99003',
+      vendor: 'Acme Networks',
+      network: true,
+    });
+    await expect(waitForTerminal(engine, operation.handleId)).resolves.toMatchObject({
+      state: 'done',
+    });
+    expect(maxActiveRawRequests).toBeLessThanOrEqual(2);
+  });
+
   it('keeps all resolver network automation disabled on a fresh install', async () => {
     const engine = createEngine(transportWith(fixtureHttp()), { dbPath: ':memory:' });
 

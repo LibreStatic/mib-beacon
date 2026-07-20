@@ -1,9 +1,11 @@
 import { Linking, View, Text, StyleSheet } from 'react-native';
-import { Button, Card, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@mibbeacon/ui';
+import { useState } from 'react';
+import { Button, Card, Dialog, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
-import { loadLookupCandidate, lookupUnknownOid } from '../actions';
+import { browseVendorMibs, loadLookupCandidate, lookupUnknownOid } from '../actions';
 import { observiumSearchUrl } from '../oid-lookup';
+import { shouldOfferVendorMibBrowse, vendorMibImportAction } from '../vendor-mib-browser';
 
 /** Explicit, one-OID-at-a-time external lookup. It never starts without a user press. */
 export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?: boolean }) {
@@ -12,9 +14,25 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
   const normalized = oid.trim().replace(/^\./, '');
   const lookup = useAppStore((s) => s.oidLookups[normalized]);
   const running = Boolean(useAppStore((s) => s.lookupHandles[normalized]));
+  const vendorBrowse = useAppStore((s) => s.vendorMibBrowses[normalized]);
+  const vendorBrowseRunning = Boolean(useAppStore((s) => s.vendorMibBrowseHandles[normalized]));
   const importing = useAppStore((s) => s.importBusy);
+  const [vendorBrowserOpen, setVendorBrowserOpen] = useState(false);
+  const [vendorBrowseStarting, setVendorBrowseStarting] = useState(false);
+  const [startingCandidate, setStartingCandidate] = useState<string | null>(null);
   const valid = /^\d+(?:\.\d+)+$/.test(normalized);
   if (!valid) return null;
+  const vendorPrompt = lookup?.result
+    ? shouldOfferVendorMibBrowse(lookup.result)
+    : null;
+  const openVendorBrowser = () => {
+    if (!vendorPrompt || !lookup?.result?.enterprise || vendorBrowseStarting) return;
+    setVendorBrowserOpen(true);
+    setVendorBrowseStarting(true);
+    void browseVendorMibs(engine, normalized, vendorPrompt.vendor).finally(() =>
+      setVendorBrowseStarting(false),
+    );
+  };
   const content = (
     <>
       <View style={styles.head}>
@@ -56,6 +74,17 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
           {lookup.result.enterprise ? (
             <Evidence title={`IANA enterprise ${lookup.result.enterprise.number}`} value={lookup.result.enterprise.organization} />
           ) : null}
+          {vendorPrompt ? (
+            <View style={styles.vendorPrompt}>
+              <Label tone="dim" size={11}>No such OID in our MIB database.</Label>
+              <Button
+                title={vendorPrompt.label}
+                small
+                variant="ghost"
+                onPress={openVendorBrowser}
+              />
+            </View>
+          ) : null}
           {lookup.result.oidBase ? (
             <Evidence title="OID-base" value={lookup.result.oidBase.asn1Notation ?? lookup.result.oidBase.description ?? 'Registry match'} />
           ) : null}
@@ -94,7 +123,60 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
       ) : null}
     </>
   );
-  return compact ? <View style={[styles.compact, { borderColor: t.border }]}>{content}</View> : <Card>{content}</Card>;
+  return (
+    <>
+      {compact ? <View style={[styles.compact, { borderColor: t.border }]}>{content}</View> : <Card>{content}</Card>}
+      <Dialog
+        visible={vendorBrowserOpen}
+        onRequestClose={() => setVendorBrowserOpen(false)}
+        title={vendorPrompt ? `MIBs for ${vendorPrompt.vendor}` : 'Vendor MIBs'}
+        subtitle={`Explore sources for ${normalized}`}
+        maxWidth={680}
+      >
+        {vendorBrowseRunning || vendorBrowseStarting ? <Label tone="dim" size={11}>Searching configured MIB sources and verifying OID ownership…</Label> : null}
+        {vendorBrowse?.error ? <Label tone="error" size={11}>{vendorBrowse.error}</Label> : null}
+        {vendorBrowse?.result?.fromCache ? <Pill text="cached-only results" color={t.warn} /> : null}
+        {vendorBrowse?.result?.candidates.map((candidate) => {
+          const action = vendorMibImportAction(vendorBrowse.result!.fromCache, candidate);
+          const candidateKey = `${candidate.sourceId}-${candidate.module}`;
+          return (
+            <View key={candidateKey} style={[styles.browserCandidate, { borderColor: t.border }]}>
+              <View style={styles.browserCandidateCopy}>
+                <Row style={styles.wrap}>
+                  <Mono size={11}>{candidate.module}</Mono>
+                  <Pill
+                    text={candidate.verified ? 'verified OID owner' : 'possible vendor module'}
+                    color={candidate.verified ? t.ok : t.warn}
+                  />
+                </Row>
+                <Label tone="dim" size={10}>{candidate.sourceName}</Label>
+                {candidate.matchName ? <Label tone="dim" size={10}>{candidate.matchName}{candidate.matchOid ? ` · ${candidate.matchOid}` : ''}</Label> : null}
+                {candidate.reason && !candidate.verified ? <Label tone="dim" size={10}>{candidate.reason}</Label> : null}
+              </View>
+              <Button
+                title={action.label}
+                small
+                disabled={importing || startingCandidate !== null || action.disabled}
+                onPress={() => {
+                  if (action.disabled) return;
+                  setStartingCandidate(candidateKey);
+                  void loadLookupCandidate(
+                    engine,
+                    candidate.module,
+                    action.mode === 'cached',
+                    action.mode === 'download' ? candidate.sourceId : undefined,
+                  ).finally(() => setStartingCandidate(null));
+                }}
+              />
+            </View>
+          );
+        })}
+        {vendorBrowse?.result && vendorBrowse.result.candidates.length === 0 && !vendorBrowseRunning && !vendorBrowseStarting ? (
+          <Label tone="dim" size={11}>No matching MIB candidates were found in the available sources.</Label>
+        ) : null}
+      </Dialog>
+    </>
+  );
 }
 
 function Evidence({ title, value }: { title: string; value: string }) {
@@ -112,6 +194,9 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   results: { gap: 6 },
   wrap: { flexWrap: 'wrap' },
+  vendorPrompt: { gap: 2, paddingVertical: 2 },
+  browserCandidate: { borderWidth: 1, borderRadius: 8, padding: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  browserCandidateCopy: { flex: 1, minWidth: 0, gap: 3 },
   evidence: { borderLeftWidth: 2, borderLeftColor: '#4f8ef7', paddingLeft: 7 },
   candidate: { alignItems: 'center', gap: 6 },
 });

@@ -64,9 +64,11 @@ export const ENGINE_METHODS: Record<string, Handler> = {
   'resolver.cache.stats': (e) => e.resolver.cache.stats(),
   'resolver.cache.clear': (e) => e.resolver.cache.clear(),
   'resolver.history.list': (e, limit) => e.resolver.history.list(limit as number | undefined),
-  'resolver.resolveModules': (e, modules) => e.resolver.resolveModules(modules as string[]),
+  'resolver.resolveModules': (e, modules, options) =>
+    e.resolver.resolveModules(modules as string[], options as never),
   'resolver.loadCachedModules': (e, modules) => e.resolver.loadCachedModules(modules as string[]),
   'resolver.lookupOid': (e, request) => e.resolver.lookupOid(request as never),
+  'resolver.browseVendorMibs': (e, request) => e.resolver.browseVendorMibs(request as never),
   'tools.polls.list': (e) => e.tools.polls.list(),
   'tools.polls.create': (e, draft) => e.tools.polls.create(draft as never),
   'tools.polls.update': (e, id, patch) => e.tools.polls.update(id as string, patch as never),

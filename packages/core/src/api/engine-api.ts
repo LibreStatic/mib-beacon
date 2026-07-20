@@ -313,6 +313,35 @@ export interface OidLookupRequest {
   network?: boolean;
 }
 
+export interface VendorMibBrowseRequest {
+  oid: string;
+  vendor: string;
+  network?: boolean;
+}
+
+export interface VendorMibCandidate {
+  module: string;
+  sourceId: string;
+  sourceName: string;
+  location?: string;
+  availableOffline: boolean;
+  verified: boolean;
+  matchName?: string;
+  matchOid?: string;
+  reason?: string;
+}
+
+export interface VendorMibBrowseResult {
+  oid: string;
+  vendor: string;
+  candidates: VendorMibCandidate[];
+  fromCache: boolean;
+}
+
+export interface ResolverResolveOptions {
+  preferredSourceId?: string;
+}
+
 export interface OidLookupResult {
   oid: string;
   loaded: ResolvedName | null;
@@ -329,6 +358,7 @@ export type ResolverOperationResult =
   | ResolverSourcePreviewResult
   | ResolverSourceTestResult
   | OidLookupResult
+  | VendorMibBrowseResult
   | ImportResult
   | {
       resolution?: unknown;
@@ -371,10 +401,11 @@ export interface ResolverAPI {
     clear(): Promise<void>;
   };
   history: { list(limit?: number): Promise<ResolverHistoryEntry[]> };
-  resolveModules(modules: string[]): Promise<OperationHandle>;
+  resolveModules(modules: string[], options?: ResolverResolveOptions): Promise<OperationHandle>;
   /** Load a dependency closure exclusively from the local resolver cache. */
   loadCachedModules(modules: string[]): Promise<OperationHandle>;
   lookupOid(request: OidLookupRequest): Promise<OperationHandle>;
+  browseVendorMibs(request: VendorMibBrowseRequest): Promise<OperationHandle>;
 }
 
 export interface TrapReceiverStatus {

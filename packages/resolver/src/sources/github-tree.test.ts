@@ -47,6 +47,24 @@ describe('GitHubTreeIndex', () => {
     expect(http.requests).toHaveLength(1);
   });
 
+  it('discovers vendor-related modules after refreshing the tree index', async () => {
+    const tree = JSON.stringify({
+      tree: [
+        { type: 'blob', path: 'vendor/cisco/CISCO-SMI.my' },
+        { type: 'blob', path: 'vendor/cisco/CISCO-TC.my' },
+        { type: 'blob', path: 'vendor/juniper/JUNIPER-MIB.my' },
+      ],
+    });
+    const http = new FixtureHttpClient({ [TREE_URL]: { status: 200, ok: true, text: tree } });
+    const index = new GitHubTreeIndex(CONFIG, http);
+
+    await expect(index.findCandidates(['Cisco Systems'])).resolves.toEqual([
+      expect.objectContaining({ module: 'CISCO-SMI', path: 'vendor/cisco/CISCO-SMI.my' }),
+      expect.objectContaining({ module: 'CISCO-TC', path: 'vendor/cisco/CISCO-TC.my' }),
+    ]);
+    expect(http.requests).toHaveLength(1);
+  });
+
   it('single-flights concurrent refreshes and persists index metadata', async () => {
     const tree = JSON.stringify({ tree: [{ type: 'blob', path: 'vendor/IF-MIB.mib' }] });
     const http = new FixtureHttpClient({

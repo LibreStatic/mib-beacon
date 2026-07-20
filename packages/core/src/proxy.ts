@@ -167,9 +167,10 @@ export function createEngineProxy(adapter: ProxyAdapter): EngineAPI {
         clear: () => call('resolver.cache.clear'),
       },
       history: { list: (limit) => call('resolver.history.list', limit) },
-      resolveModules: (modules) => call('resolver.resolveModules', modules),
+      resolveModules: (modules, options) => call('resolver.resolveModules', modules, options),
       loadCachedModules: (modules) => call('resolver.loadCachedModules', modules),
       lookupOid: (request) => call('resolver.lookupOid', request),
+      browseVendorMibs: (request) => call('resolver.browseVendorMibs', request),
     },
     tools: {
       polls: {

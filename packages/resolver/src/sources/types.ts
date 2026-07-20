@@ -104,6 +104,12 @@ export interface SourceFetchContext {
   signal?: AbortSignal;
 }
 
+export interface SourceCandidate {
+  module: string;
+  sourceId: string;
+  location?: string;
+}
+
 export interface MibSource {
   readonly id: string;
   readonly kind: SourceKind;
@@ -112,6 +118,7 @@ export interface MibSource {
   readonly priority: number;
   readonly hosts: string[];
   fetch(module: string, context?: SourceFetchContext): Promise<SourceFetchResult>;
+  discover?(evidence: string[], context?: SourceFetchContext): Promise<SourceCandidate[]>;
 }
 
 export type SecretResolver = (reference: string) => Promise<string | null>;

@@ -104,6 +104,25 @@ describe('MibResolver', () => {
     });
   });
 
+  it('uses the explicitly selected source for the root module only', async () => {
+    const selected = new MapSource({ 'A-MIB': mib('A-MIB', importFrom('b', 'B-MIB')) });
+    (selected as { id: string }).id = 'selected';
+    const fallback = new MapSource({ 'A-MIB': mib('A-MIB'), 'B-MIB': mib('B-MIB') });
+    (fallback as { id: string }).id = 'fallback';
+
+    const result = await new MibResolver({
+      sources: [fallback, selected],
+      cache: new InMemoryMibCache(),
+    }).resolve({
+      missingImports: [{ module: 'A-MIB', symbols: [] }],
+      preferredSourceId: 'selected',
+    });
+
+    expect(result.status).toBe('resolved');
+    expect(selected.calls).toEqual(['A-MIB']);
+    expect(fallback.calls).toEqual(['B-MIB']);
+  });
+
   it('records but does not fetch dependencies already available in the catalog', async () => {
     const source = new MapSource({
       'A-MIB': mib('A-MIB', importFrom('OBJECT-TYPE', 'SNMPv2-SMI')),

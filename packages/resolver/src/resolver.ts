@@ -168,12 +168,14 @@ export interface ResolveRequest {
   onProgress?: (event: ResolverProgress) => void;
   signal?: AbortSignal;
   availableModules?: Iterable<string>;
+  preferredSourceId?: string;
 }
 
 interface QueueItem {
   module: string;
   depth: number;
   requestedBy?: string;
+  preferredSourceId?: string;
 }
 
 export class MibResolver {
@@ -209,7 +211,10 @@ export class MibResolver {
     const candidates: QueueItem[] = roots
       .filter((module) => !available.has(module))
       .map((module) => ({ module, depth: 0 }));
-    const queue = candidates.slice(0, this.maxModules);
+    const queue: QueueItem[] = candidates.slice(0, this.maxModules).map((item) => ({
+      ...item,
+      preferredSourceId: request.preferredSourceId,
+    }));
     const queued = new Set(queue.map((item) => item.module));
     const graph = new Map<string, MibImport[]>();
     const documents = new Map<string, ResolvedDocument>();
@@ -235,7 +240,13 @@ export class MibResolver {
           if (item.depth > this.maxDepth) {
             return { item, reason: `maximum dependency depth ${this.maxDepth} exceeded` } as const;
           }
-          const fetched = await this.fetch(item.module, requestedBy, request.onProgress, request.signal);
+          const fetched = await this.fetch(
+            item.module,
+            requestedBy,
+            request.onProgress,
+            request.signal,
+            item.preferredSourceId,
+          );
           if (!fetched.document) return { item, reason: fetched.reason } as const;
           return { item, document: fetched.document, imports: parseMibDocument(fetched.document.content) } as const;
         }),
@@ -317,21 +328,29 @@ export class MibResolver {
     requestedBy: Map<string, Set<string>>,
     onProgress?: (event: ResolverProgress) => void,
     signal?: AbortSignal,
+    preferredSourceId?: string,
   ): Promise<{ document?: ResolvedDocument; reason: string }> {
     if (signal?.aborted) return { reason: 'operation aborted' };
-    const cached = await this.cache.get(module);
-    if (signal?.aborted) return { reason: 'operation aborted' };
-    if (cached) {
-      const invalid = this.validateDocument(module, cached.content);
-      if (!invalid) {
-        onProgress?.({ type: 'cache-hit', module });
-        return { document: { ...cached, fromCache: true }, reason: '' };
+    if (!preferredSourceId) {
+      const cached = await this.cache.get(module);
+      if (signal?.aborted) return { reason: 'operation aborted' };
+      if (cached) {
+        const invalid = this.validateDocument(module, cached.content);
+        if (!invalid) {
+          onProgress?.({ type: 'cache-hit', module });
+          return { document: { ...cached, fromCache: true }, reason: '' };
+        }
+        await this.cache.delete(module);
       }
-      await this.cache.delete(module);
+    } else if (signal?.aborted) {
+      return { reason: 'operation aborted' };
     }
 
     let lastReason = 'not found';
-    for (const source of this.sources) {
+    const sources = preferredSourceId
+      ? this.sources.filter((source) => source.id === preferredSourceId)
+      : this.sources;
+    for (const source of sources) {
       if (signal?.aborted) return { reason: 'operation aborted' };
       const cooldownUntil = this.cooldowns.get(source.id) ?? 0;
       if (cooldownUntil > this.now()) continue;
