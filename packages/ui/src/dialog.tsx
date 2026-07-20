@@ -86,6 +86,10 @@ export function Dialog({
   }, [dismissable, onRequestClose, visible]);
 
   const focusHeading = () => {
+    if (Platform.OS === 'web') {
+      (heading.current as unknown as FocusTarget)?.focus?.();
+      return;
+    }
     const handle = findNodeHandle(heading.current);
     if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
   };
@@ -130,6 +134,7 @@ export function Dialog({
           >
             <View
               ref={heading}
+              tabIndex={-1}
               style={styles.heading}
               accessible
               accessibilityRole="header"

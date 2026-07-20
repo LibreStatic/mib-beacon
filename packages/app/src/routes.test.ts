@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { routeForTab, tabFromUrl } from './routes';
+import { replaceRouteForTab, routeForTab, tabFromUrl } from './routes';
 
 describe('main-screen routes', () => {
   it('creates stable web routes and restores their tabs', () => {
@@ -14,5 +14,18 @@ describe('main-screen routes', () => {
     expect(tabFromUrl('mibbeacon://open/traps')).toBe('traps');
     expect(tabFromUrl('mibbeacon://settings')).toBe('settings');
     expect(tabFromUrl('https://localhost/#/unknown')).toBeNull();
+  });
+
+  it('does not assume React Native window has browser history', () => {
+    const previousWindow = globalThis.window;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {},
+    });
+    expect(() => replaceRouteForTab('liveMibs')).not.toThrow();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: previousWindow,
+    });
   });
 });

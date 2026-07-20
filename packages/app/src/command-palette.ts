@@ -11,6 +11,7 @@ export type PaletteCommandId =
   | 'preferences:color-theme'
   | 'preferences:browse-color-themes'
   | 'preferences:import-color-theme'
+  | 'agents:create-profile'
   | 'app:shortcuts'
   | 'window:new'
   | 'query:prepare-get'
@@ -28,6 +29,7 @@ export type PaletteCommandEffect =
   | { kind: 'open-theme-picker' }
   | { kind: 'open-theme-catalog' }
   | { kind: 'import-theme' }
+  | { kind: 'create-agent-profile' }
   | { kind: 'show-shortcuts' }
   | { kind: 'new-window' }
   | { kind: 'prepare-query'; operation: QueryOperation }
@@ -36,7 +38,7 @@ export type PaletteCommandEffect =
 export interface PaletteCommand {
   id: PaletteCommandId;
   label: string;
-  group: 'Navigation' | 'Preferences' | 'Application' | 'Query' | 'Traps';
+  group: 'Navigation' | 'Preferences' | 'Application' | 'Agents' | 'Query' | 'Traps';
   glyph: string;
   keywords: readonly string[];
   effect: PaletteCommandEffect;
@@ -65,6 +67,7 @@ export interface PaletteCommandContext {
   openThemePicker(): void;
   openThemeCatalog(): void;
   importTheme(): void;
+  createAgentProfile(): void;
   showShortcuts(): void;
   newWindow?(): void;
   prepareQuery(operation: QueryOperation): void;
@@ -85,6 +88,10 @@ export function applyPaletteCommandEffect(
   } else if (effect.kind === 'open-theme-picker') context.openThemePicker();
   else if (effect.kind === 'open-theme-catalog') context.openThemeCatalog();
   else if (effect.kind === 'import-theme') context.importTheme();
+  else if (effect.kind === 'create-agent-profile') {
+    context.navigate('liveMibs');
+    context.createAgentProfile();
+  }
   else if (effect.kind === 'show-shortcuts') context.showShortcuts();
   else if (effect.kind === 'new-window') context.newWindow?.();
   else if (effect.kind === 'prepare-query') {
@@ -152,6 +159,14 @@ const STATIC_COMMANDS: readonly PaletteCommand[] = [
     glyph: '⇧',
     keywords: ['appearance', 'color', 'theme', 'json', 'jsonc', 'vsix', 'file'],
     effect: { kind: 'import-theme' },
+  },
+  {
+    id: 'agents:create-profile',
+    label: 'Create agent profile',
+    group: 'Agents',
+    glyph: '＋',
+    keywords: ['agent', 'target', 'snmp', 'profile', 'live mibs'],
+    effect: { kind: 'create-agent-profile' },
   },
   {
     id: 'app:shortcuts',

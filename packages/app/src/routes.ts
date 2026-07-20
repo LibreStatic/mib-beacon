@@ -16,7 +16,7 @@ export function routeForTab(tab: Tab): string {
 }
 
 export function replaceRouteForTab(tab: Tab): void {
-  if (typeof window !== 'undefined')
+  if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function')
     window.history.replaceState(null, '', routeForTab(tab));
 }
 

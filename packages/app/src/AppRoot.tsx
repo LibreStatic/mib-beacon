@@ -217,6 +217,11 @@ function ResponsiveAppRoot({
     [installedThemes],
   );
   const [browseSearchFocusRequest, setBrowseSearchFocusRequest] = useState(0);
+  const [agentProfileCreateRequest, setAgentProfileCreateRequest] = useState(0);
+  const handleAgentProfileCreateRequest = useCallback(
+    () => setAgentProfileCreateRequest(0),
+    [],
+  );
   const resolvedPaletteStorage = useMemo(
     () => paletteHistoryStorage ?? createBrowserPaletteHistoryStorage(),
     [paletteHistoryStorage],
@@ -350,6 +355,8 @@ function ResponsiveAppRoot({
             }
           })();
         },
+        createAgentProfile: () =>
+          setAgentProfileCreateRequest((request) => request + 1),
         showShortcuts: () => setShortcutsOpen(true),
         newWindow: host?.canOpenWindow ? host.newWindow : undefined,
         prepareQuery: state.setQueryOperation,
@@ -597,7 +604,13 @@ function ResponsiveAppRoot({
           {activeTab === 'browse' ? (
             <BrowseScreen info={info} unified focusSearchRequest={browseSearchFocusRequest} />
           ) : null}
-          {activeTab === 'liveMibs' ? <LiveMibsScreen /> : null}
+          {activeTab === 'liveMibs' ? (
+            <LiveMibsScreen
+              info={info}
+              createProfileRequest={agentProfileCreateRequest}
+              onCreateProfileRequestHandled={handleAgentProfileCreateRequest}
+            />
+          ) : null}
           {activeTab === 'query' ? <QueryScreen info={info} /> : null}
           {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}

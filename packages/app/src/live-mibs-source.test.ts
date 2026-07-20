@@ -47,4 +47,57 @@ describe('Live MIB source guards', () => {
     expect(row).not.toContain('useState<LiveMibCellState>');
     expect(row).toContain("visible={cell.phase === 'awaiting-confirmation'}");
   });
+
+  it('keeps agent prerequisites actionable when no saved profiles exist', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    const agentStrip = liveMibs
+      .split('style={styles.agentStrip}')[1]
+      ?.split('</ScrollView>')[0];
+    expect(liveMibs).toContain("adHocHost ? (");
+    expect(liveMibs).toContain('No target configured. Create a saved agent here to start scanning.');
+    expect(liveMibs).toContain('title="New profile"');
+    expect(liveMibs).toContain('<AgentProfileDialog');
+    expect(liveMibs).toContain('style={[styles.agentBar');
+    expect(agentStrip).not.toContain('title="New profile"');
+  });
+
+  it('auto-selects newly created profiles without exposing saved credentials', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('engine.agents.create(agentDraftFromEditor(profileEditor))');
+    expect(liveMibs).toContain('selectAgentProfile(created)');
+    expect(liveMibs).toContain('info={info}');
+  });
+
+  it('detaches the previous scan before switching live targets', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    const targetReset = liveMibs
+      .split('const previousHandle = handleRef.current;')[1]
+      ?.split('}, [engine, scope?.oid, selectedAgentId]);')[0];
+    expect(targetReset).toContain('handleRef.current = null');
+    expect(targetReset).toContain('scanRequestSequence.current += 1');
+    expect(targetReset).toContain('engine.liveMibs.scan.cancel(previousHandle)');
+    expect(targetReset).toContain('setRows(new Map())');
+    expect(targetReset).toContain('setScan(null)');
+    expect(liveMibs).toContain('}, [engine, scope?.oid, selectedAgentId]);');
+  });
+
+  it('waits for the selected profile settings before restarting a scan', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('settingsAgentId !== selectedAgentId');
+    expect(liveMibs).toContain('setSettingsAgentId(selectedAgentId)');
+    expect(liveMibs).toContain("setError('Loading settings for the selected agent.');");
+    expect(liveMibs).toContain('disabled={scanStarting || settingsAgentId !== selectedAgentId}');
+  });
+
+  it('routes asynchronous scan starts through the latest-request guard', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('runLatestLiveMibScanRequest');
+    expect(liveMibs).toContain('currentHandle: () => handleRef.current');
+    expect(liveMibs).toContain('startingRequestRef.current');
+  });
+
+  it('consumes palette create requests so navigation does not reopen a dismissed dialog', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('onCreateProfileRequestHandled();');
+  });
 });

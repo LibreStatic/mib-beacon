@@ -39,6 +39,7 @@ describe('command palette inventory and filtering', () => {
       'preferences:color-theme',
       'preferences:browse-color-themes',
       'preferences:import-color-theme',
+      'agents:create-profile',
       'app:shortcuts',
       'window:new',
       'query:prepare-get',
@@ -100,6 +101,7 @@ describe('command palette inventory and filtering', () => {
       openThemePicker: () => calls.push('theme-picker'),
       openThemeCatalog: () => calls.push('theme-catalog'),
       importTheme: () => calls.push('import-theme'),
+      createAgentProfile: () => calls.push('create-agent-profile'),
       showShortcuts: () => calls.push('shortcuts'),
       newWindow: () => calls.push('new-window'),
       prepareQuery: (operation: string) => calls.push(`prepare:${operation}`),
@@ -110,6 +112,7 @@ describe('command palette inventory and filtering', () => {
     applyPaletteCommandEffect({ kind: 'open-theme-picker' }, context);
     applyPaletteCommandEffect({ kind: 'open-theme-catalog' }, context);
     applyPaletteCommandEffect({ kind: 'import-theme' }, context);
+    applyPaletteCommandEffect({ kind: 'create-agent-profile' }, context);
     expect(calls).toEqual([
       'prepare:walk',
       'navigate:query',
@@ -118,6 +121,8 @@ describe('command palette inventory and filtering', () => {
       'theme-picker',
       'theme-catalog',
       'import-theme',
+      'navigate:liveMibs',
+      'create-agent-profile',
     ]);
     expect(Object.keys(context)).not.toContain('runQuery');
     expect(Object.keys(context)).not.toContain('sendTrap');
