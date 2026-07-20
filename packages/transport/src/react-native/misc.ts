@@ -5,8 +5,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { File } from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import QuickCrypto from 'react-native-quick-crypto';
-import type { CryptoProvider, FileStore, SecretStore, HttpClient } from '../types';
+import type { CryptoProvider, FileStore, HttpClient } from '../types';
 import { nodeHttpClient } from '../node/http';
+import { createRnSecretStore } from './secure-store';
 
 export const rnCrypto: CryptoProvider = {
   randomBytes: (n) => new Uint8Array(QuickCrypto.randomBytes(n)),
@@ -67,20 +68,7 @@ export function createRnFileStore(): FileStore {
 }
 
 /** expo-secure-store encrypts at rest via the OS keystore. */
-export const rnSecretStore: SecretStore = {
-  async set(key, value) {
-    await SecureStore.setItemAsync(key, value);
-  },
-  async get(key) {
-    return SecureStore.getItemAsync(key);
-  },
-  async delete(key) {
-    await SecureStore.deleteItemAsync(key);
-  },
-  isEncrypted() {
-    return true;
-  },
-};
+export const rnSecretStore = createRnSecretStore(SecureStore);
 
 /** fetch() exists in the RN runtime; reuse the same capped client as Node. */
 export const rnHttpClient: HttpClient = nodeHttpClient;
