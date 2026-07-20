@@ -211,6 +211,7 @@ export function MibImportModal() {
       title="Import MIB"
       subtitle="Add files, fetch a URL, or paste SMI text."
       maxWidth={680}
+      animationType="none"
     >
       <FileImportFlow busy={busy} />
       <Field

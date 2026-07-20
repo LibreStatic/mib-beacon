@@ -20,7 +20,12 @@ import type {
   SourceConfig,
   SnmpVarbindInput,
 } from '@mibbeacon/core/client';
-import { useAppStore, type AgentForm, type QueryOperation } from './store';
+import {
+  useAppStore,
+  type AgentForm,
+  type FileImportDraft,
+  type QueryOperation,
+} from './store';
 import { replaceRouteForTab } from './routes';
 
 let notificationSeq = 0;
@@ -442,6 +447,54 @@ export async function refreshModules(engine: EngineAPI): Promise<void> {
   s.setModules(await engine.mibs.list());
 }
 
+function waitForImporterDismissal(): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+let fileImportReviewDismissal: Promise<void> | null = null;
+
+export function dismissFileImportReviewForOperation(
+  handleId: string,
+  waitForDismissal: () => Promise<void> = waitForImporterDismissal,
+): void {
+  const state = useAppStore.getState();
+  if (!state.fileImportDraft?.visible) {
+    state.acceptFileImportDraft(handleId);
+    return;
+  }
+  state.acceptFileImportDraft(handleId);
+  const dismissal = waitForDismissal().finally(() => {
+    if (fileImportReviewDismissal === dismissal) fileImportReviewDismissal = null;
+  });
+  fileImportReviewDismissal = dismissal;
+}
+
+async function waitForFileImportReviewDismissal(): Promise<void> {
+  await fileImportReviewDismissal;
+}
+
+async function dismissBrowserImporterBeforeStart(
+  waitForDismissal: () => Promise<void> = waitForImporterDismissal,
+): Promise<void> {
+  const state = useAppStore.getState();
+  const importerWasOpen = state.browserImportOpen;
+  state.setBrowserImportOpen(false);
+  if (importerWasOpen) await waitForDismissal();
+}
+
+export async function presentFileImportReview(
+  draft: FileImportDraft,
+  waitForDismissal: () => Promise<void> = waitForImporterDismissal,
+): Promise<void> {
+  await dismissBrowserImporterBeforeStart(waitForDismissal);
+  useAppStore.getState().setFileImportDraft(draft);
+}
+
 export async function importPastedText(
   engine: EngineAPI,
   name: string,
@@ -450,6 +503,7 @@ export async function importPastedText(
   const priorHandle = useAppStore.getState().importHandle;
   const priorStatusHandle = useAppStore.getState().importStatus?.handleId;
   try {
+    await dismissBrowserImporterBeforeStart();
     const { handleId } = await engine.mibs.startImport({
       files: [{ name: name || 'pasted.mib', content }],
     });
@@ -489,6 +543,7 @@ export async function importUrl(engine: EngineAPI, url: string): Promise<void> {
   const priorHandle = useAppStore.getState().importHandle;
   const priorStatusHandle = useAppStore.getState().importStatus?.handleId;
   try {
+    await dismissBrowserImporterBeforeStart();
     const { handleId } = await engine.mibs.startImport({ url: url.trim() });
     useAppStore.getState().beginImport(handleId);
     await syncImportOrCancel(engine, handleId, url);
@@ -537,6 +592,10 @@ async function syncResolverOperation(engine: EngineAPI, handleId: string): Promi
   if (!status) throw new Error(`Resolver operation status is unavailable: ${handleId}`);
   const s = useAppStore.getState();
   if (status.state === 'awaiting-consent') {
+    s.setBrowserImportOpen(false);
+    dismissFileImportReviewForOperation(handleId);
+    await waitForFileImportReviewDismissal();
+    if (useAppStore.getState().importHandle !== handleId) return;
     s.enqueueConsent({
       handleId,
       missingModules: status.missingModules,
@@ -619,6 +678,8 @@ async function handleStartImportFailure(
       },
       { loaded: [], errors: [{ name: requestName, message }] },
     );
+    await waitForFileImportReviewDismissal();
+    state.settleFileImportDraft(claimedHandle, 'error');
     state.dismissConsent(claimedHandle);
     try {
       await engine.resolver.cancel(claimedHandle);
@@ -642,6 +703,9 @@ async function handleStartImportFailure(
   if (claimedHandle === priorHandle && priorHandle) return;
   state.setImportBusy(false);
   state.setLastImport({ loaded: [], errors: [{ name: requestName, message }] });
+  state.updateFileImportDraft({
+    reopenMessage: `Import could not start — ${message}. Review your original selection and try again.`,
+  });
 }
 
 /** Route one resolver event to its owning operation. Events for stale handles are ignored. */
@@ -652,7 +716,11 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
   // In-process engines can emit `started` just before startImport's Promise resolves.
   if (event.kind === 'started' && event.handleId) {
     const request = payload.request as Record<string, unknown> | undefined;
-    if (request && ('files' in request || 'url' in request)) s.beginImport(event.handleId);
+    if (request && ('files' in request || 'url' in request)) {
+      if (s.importHandle && s.importHandle !== event.handleId) return;
+      s.beginImport(event.handleId);
+      if ('files' in request) dismissFileImportReviewForOperation(event.handleId);
+    }
   }
 
   const sourceId = Object.entries(s.sourceTestHandles).find(([, id]) => id === event.handleId)?.[0];
@@ -667,14 +735,20 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
     const active =
       isImport || Boolean(sourceId) || isSourcePreview || Boolean(lookupOid) || Boolean(vendorBrowseOid);
     if (active) {
-      s.enqueueConsent({
+      if (isImport) {
+        s.setBrowserImportOpen(false);
+        await waitForFileImportReviewDismissal();
+        if (useAppStore.getState().importHandle !== event.handleId) return;
+      }
+      const current = useAppStore.getState();
+      current.enqueueConsent({
         handleId: event.handleId,
         missingModules: stringArray(payload.missingModules),
         sourceHosts: stringArray(payload.sourceHosts),
         expiresAt: typeof payload.expiresAt === 'number' ? payload.expiresAt : undefined,
       });
       if (isImport) {
-        s.setImportStatus(
+        current.setImportStatus(
           operationStatusForEvent(
             useAppStore.getState().importStatus,
             event.handleId,
@@ -717,6 +791,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
   if (isImport) {
     const finalResult = extractImportResult(payload) ?? useAppStore.getState().lastImport;
     s.finishImport(status, finalResult);
+    if (status.state !== 'done') await waitForFileImportReviewDismissal();
     s.settleFileImportDraft(status.handleId, status.state);
     await Promise.all([refreshModules(engine), refreshResolverState(engine)]);
     await refreshLoadedOidLookups(engine);
@@ -826,6 +901,7 @@ export async function updateResolverSettings(
   engine: EngineAPI,
   patch: Partial<ResolverSettings>,
 ): Promise<void> {
+  useAppStore.getState().setResolverError(null);
   try {
     useAppStore.getState().setResolverSettings(await engine.resolver.settings.update(patch));
   } catch (e) {

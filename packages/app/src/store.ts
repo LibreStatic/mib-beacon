@@ -516,6 +516,19 @@ function clearToastTimer(id: string): void {
   }
 }
 
+function fileImportReopenMessage(
+  state: Pick<AppState, 'importStatus' | 'lastImport'>,
+  terminal: ResolverOperationState,
+): string {
+  const failure = state.importStatus?.failures[0];
+  const detail = failure
+    ? `${failure.module ? `${failure.module}: ` : ''}${failure.message}`
+    : state.lastImport?.errors[0]?.message;
+  return detail
+    ? `Import ${terminal} — ${detail}. Review your original selection and try again.`
+    : `Import ${terminal}. Review your original selection and try again.`;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   tab: 'browse',
   setTab: (tab) => set({ tab }),
@@ -884,7 +897,11 @@ export const useAppStore = create<AppState>((set) => ({
       // 'cancelled' is user-initiated; stay quiet.
     }
   },
-  setFileImportDraft: (fileImportDraft) => set({ fileImportDraft }),
+  setFileImportDraft: (fileImportDraft) =>
+    set({
+      fileImportDraft,
+      ...(fileImportDraft?.visible ? { browserImportOpen: false } : {}),
+    }),
   updateFileImportDraft: (patch) =>
     set((state) => ({
       fileImportDraft: state.fileImportDraft ? { ...state.fileImportDraft, ...patch } : null,
@@ -901,7 +918,7 @@ export const useAppStore = create<AppState>((set) => ({
             ...draft,
             handleId: null,
             visible: true,
-            reopenMessage: `Import ${terminal}. Review your original selection and try again.`,
+            reopenMessage: fileImportReopenMessage(state, terminal),
           },
         };
       }
@@ -918,7 +935,7 @@ export const useAppStore = create<AppState>((set) => ({
             ...draft,
             handleId: null,
             visible: true,
-            reopenMessage: `Import ${terminal}. Review your original selection and try again.`,
+            reopenMessage: fileImportReopenMessage(state, terminal),
           },
         };
       }

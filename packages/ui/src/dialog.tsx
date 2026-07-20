@@ -36,6 +36,8 @@ export interface DialogProps {
   /** When false, backdrop taps and Escape are ignored (busy states). */
   dismissable?: boolean;
   closeAccessibilityLabel?: string;
+  /** Override the responsive entrance/exit animation when modal sequencing must be immediate. */
+  animationType?: 'none' | 'slide' | 'fade';
 }
 
 type FocusTarget = { focus?: () => void; isConnected?: boolean } | null;
@@ -54,6 +56,7 @@ export function Dialog({
   fillHeight = false,
   dismissable = true,
   closeAccessibilityLabel,
+  animationType,
 }: DialogProps) {
   const { width, height } = useWindowDimensions();
   const safeAreaBottomInset = useSafeAreaBottomInset();
@@ -104,7 +107,7 @@ export function Dialog({
       transparent
       navigationBarTranslucent
       statusBarTranslucent
-      animationType={sheet ? 'slide' : 'fade'}
+      animationType={animationType ?? (sheet ? 'slide' : 'fade')}
       onShow={focusHeading}
       onRequestClose={requestClose}
     >

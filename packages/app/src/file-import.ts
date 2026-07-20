@@ -63,6 +63,31 @@ export interface PreparedFileImport {
 
 export interface FileReviewModuleInfo { name: string; objectCount: number; isBase: boolean }
 export interface LocalMibImport { module: string; symbols: string[]; external: boolean }
+
+export function dependencyResolverGate(
+  missingCount: number,
+  settings: { enabled: boolean; autoResolveImports: boolean } | null,
+): { blocked: boolean; message: string | null } {
+  if (missingCount === 0) return { blocked: false, message: null };
+  if (!settings) return { blocked: true, message: 'Checking dependency resolver settings…' };
+  if (!settings.enabled || !settings.autoResolveImports) {
+    return { blocked: true, message: 'Automatic dependency resolution is off.' };
+  }
+  return { blocked: false, message: null };
+}
+
+export function focusFileImportReviewHeading(
+  platform: string,
+  target: { focus?: () => void } | null,
+  focusNative: () => void,
+): void {
+  if (platform === 'web') {
+    target?.focus?.();
+    return;
+  }
+  focusNative();
+}
+
 export interface FileReviewCollision {
   module: string;
   kind: 'base' | 'loaded-user' | 'batch-duplicate';
@@ -81,6 +106,7 @@ export interface FileImportReviewFile {
 }
 export interface FileImportReview {
   files: FileImportReviewFile[];
+  loadedModules: string[];
   rejections: (FileImportRejection | FileAcquisitionRejection)[];
   totalBytes: number;
   /** Candidate IDs, never display paths. */
@@ -328,6 +354,7 @@ export function buildFileImportReview(
   ).values()];
   return {
     files,
+    loadedModules: [...loaded.keys()],
     rejections: [...prepared.rejections, ...acquisitionRejections],
     totalBytes: prepared.totalBytes,
     duplicateDefinitions: [...definitions]
@@ -357,6 +384,35 @@ export async function stageAcquiredFileImport(
     groups.set(module, await replacementGroup(module) ?? [module]);
   }));
   return buildFileImportReview(prepared, acquisition.rejections ?? [], loadedModules, groups, semanticErrors);
+}
+
+export function selectedExternalMissingImports(
+  review: FileImportReview,
+  selectedIds: ReadonlySet<string>,
+): { module: string; symbols: string[]; requestedBy: string[] }[] {
+  const selected = review.files.filter((file) => selectedIds.has(file.id));
+  const available = new Set([
+    ...review.loadedModules,
+    ...selected.flatMap((file) => file.modules),
+  ]);
+  const missing = new Map<string, { symbols: Set<string>; requestedBy: Set<string> }>();
+  for (const file of selected) {
+    for (const item of file.imports) {
+      if (available.has(item.module)) continue;
+      const value = missing.get(item.module) ?? {
+        symbols: new Set<string>(),
+        requestedBy: new Set<string>(),
+      };
+      item.symbols.forEach((symbol) => value.symbols.add(symbol));
+      value.requestedBy.add(file.id);
+      missing.set(item.module, value);
+    }
+  }
+  return [...missing].map(([module, value]) => ({
+    module,
+    symbols: [...value.symbols],
+    requestedBy: [...value.requestedBy],
+  }));
 }
 
 export function createInitialFileSelection(review: FileImportReview): Set<string> {

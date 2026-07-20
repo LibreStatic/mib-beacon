@@ -4,6 +4,7 @@ import {
   Button,
   CODE_OSS_DEFAULT_THEMES,
   Card,
+  Dialog,
   Label,
   SafeAreaBottomInsetProvider,
   SectionTitle,
@@ -1029,66 +1030,64 @@ function ResolverConsentModal({
     if (visible) setAskAgain(true);
   }, [visible]);
   return (
-    <Modal
+    <Dialog
       visible={visible}
-      transparent
-      animationType="fade"
       onRequestClose={() => onRespond(false, true)}
+      title="External MIB lookup"
+      subtitle="Review missing definitions and external hosts before continuing."
+      maxWidth={520}
+      footer={
+        <View style={styles.modalActions}>
+          <Button title="Cancel" variant="ghost" onPress={() => onRespond(false, askAgain)} />
+          <Button title="Continue" onPress={() => onRespond(true, askAgain)} />
+        </View>
+      }
     >
-      <View style={styles.modalBackdrop}>
-        <Card style={styles.modalCard}>
-          <SectionTitle>External MIB lookup</SectionTitle>
-          <Text style={[styles.modalTitle, { color: t.text }]}>
-            Search configured external sources?
-          </Text>
-          <Label tone="dim" size={12}>
-            Local parsing found missing definitions. MIB Beacon can contact the enabled hosts below.
-            Valid modules are cached on the engine host (the LAN server when using the web app).
-            These sources are configured for lookup; they are not inherently trusted or endorsed.
-          </Label>
-          {missingModules.length ? (
-            <ScrollView style={styles.modalList}>
-              {missingModules.map((module) => (
-                <Text key={module} style={[styles.modalCode, { color: t.mono }]}>
-                  • {module}
-                </Text>
-              ))}
-            </ScrollView>
-          ) : null}
-          {sourceHosts.length ? (
-            <Label tone="dim" size={11}>
-              Hosts: {sourceHosts.join(', ')}
-            </Label>
-          ) : null}
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityLabel="Ask me again before external MIB lookup"
-            accessibilityState={{ checked: askAgain }}
-            onPress={() => setAskAgain((value) => !value)}
-            style={styles.checkboxRow}
-          >
-            <View
-              style={[
-                styles.checkbox,
-                { borderColor: t.border, backgroundColor: askAgain ? t.accent : 'transparent' },
-              ]}
-            >
-              <Text style={{ color: t.accentText, fontWeight: '900' }}>{askAgain ? '✓' : ''}</Text>
-            </View>
-            <Text style={{ color: t.text, fontSize: 13 }}>Ask me again next time</Text>
-          </Pressable>
-          {!askAgain ? (
-            <Label tone="warn" size={11}>
-              External access will be remembered until revoked in Settings.
-            </Label>
-          ) : null}
-          <View style={styles.modalActions}>
-            <Button title="Cancel" variant="ghost" onPress={() => onRespond(false, askAgain)} />
-            <Button title="Continue" onPress={() => onRespond(true, askAgain)} />
-          </View>
-        </Card>
-      </View>
-    </Modal>
+      <Text style={[styles.modalTitle, { color: t.text }]}>
+        Search configured external sources?
+      </Text>
+      <Label tone="dim" size={12}>
+        Local parsing found missing definitions. MIB Beacon can contact the enabled hosts below.
+        Valid modules are cached on the engine host (the LAN server when using the web app). These
+        sources are configured for lookup; they are not inherently trusted or endorsed.
+      </Label>
+      {missingModules.length ? (
+        <View style={styles.modalList}>
+          {missingModules.map((module) => (
+            <Text key={module} style={[styles.modalCode, { color: t.mono }]}>
+              • {module}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {sourceHosts.length ? (
+        <Label tone="dim" size={11}>
+          Hosts: {sourceHosts.join(', ')}
+        </Label>
+      ) : null}
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityLabel="Ask me again before external MIB lookup"
+        accessibilityState={{ checked: askAgain }}
+        onPress={() => setAskAgain((value) => !value)}
+        style={styles.checkboxRow}
+      >
+        <View
+          style={[
+            styles.checkbox,
+            { borderColor: t.border, backgroundColor: askAgain ? t.accent : 'transparent' },
+          ]}
+        >
+          <Text style={{ color: t.accentText, fontWeight: '900' }}>{askAgain ? '✓' : ''}</Text>
+        </View>
+        <Text style={{ color: t.text, fontSize: 13 }}>Ask me again next time</Text>
+      </Pressable>
+      {!askAgain ? (
+        <Label tone="warn" size={11}>
+          External access will be remembered until revoked in Settings.
+        </Label>
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -1192,9 +1191,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 18,
   },
-  modalCard: { width: '100%', maxWidth: 520, maxHeight: '85%' },
   modalTitle: { fontSize: 19, fontWeight: '800' },
-  modalList: { maxHeight: 150 },
+  modalList: { gap: 2 },
   modalCode: { fontFamily: 'monospace', fontSize: 12, paddingVertical: 2 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 6 },
   checkbox: {

@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   findNodeHandle,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,10 +12,17 @@ import {
 import { Button, Card, Label, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
-import { importReviewedFiles } from '../actions';
+import {
+  importReviewedFiles,
+  presentFileImportReview,
+  updateResolverSettings,
+} from '../actions';
 import {
   createInitialFileSelection,
   acquireWithVisibleFailure,
+  dependencyResolverGate,
+  focusFileImportReviewHeading,
+  selectedExternalMissingImports,
   stageAcquiredFileImport,
   validateFileImportSelection,
   type AcquisitionResult,
@@ -49,7 +57,7 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
       const next = await stageAcquiredFileImport(result, modules, (module) =>
         engine.mibs.replacementGroup(module),
       );
-      useAppStore.getState().setFileImportDraft({
+      await presentFileImportReview({
         review: next,
         selected: [...createInitialFileSelection(next)],
         replacements: [],
@@ -138,8 +146,11 @@ export function FileImportReviewModal() {
   const setDraft = useAppStore((state) => state.setFileImportDraft);
   const updateDraft = useAppStore((state) => state.updateFileImportDraft);
   const acceptDraft = useAppStore((state) => state.acceptFileImportDraft);
+  const resolverSettings = useAppStore((state) => state.resolverSettings);
+  const resolverError = useAppStore((state) => state.resolverError);
   const t = useTheme();
   const [submitting, setSubmitting] = useState(false);
+  const [enablingResolver, setEnablingResolver] = useState(false);
   const reviewHeading = useRef<View>(null);
   const review = draft?.review ?? null;
   const selected = useMemo(() => new Set(draft?.selected ?? []), [draft?.selected]);
@@ -156,10 +167,24 @@ export function FileImportReviewModal() {
         .reduce((sum, file) => sum + file.candidate.size, 0) ?? 0,
     [review, selected],
   );
+  const selectedMissingImports = useMemo(
+    () => (review ? selectedExternalMissingImports(review, selected) : []),
+    [review, selected],
+  );
+  const resolverGate = dependencyResolverGate(
+    selectedMissingImports.length,
+    resolverSettings,
+  );
 
   const focusReviewHeading = () => {
-    const handle = findNodeHandle(reviewHeading.current);
-    if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+    focusFileImportReviewHeading(
+      Platform.OS,
+      reviewHeading.current as unknown as { focus?: () => void } | null,
+      () => {
+        const handle = findNodeHandle(reviewHeading.current);
+        if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+      },
+    );
   };
   const toggleFile = (id: string) => {
     const next = new Set(selected);
@@ -183,7 +208,7 @@ export function FileImportReviewModal() {
     updateDraft({ replacements: [...nextReplacements], selected: [...nextSelected] });
   };
   const confirm = async () => {
-    if (!review || !validation || validation.errors.length) return;
+    if (!review || !validation || validation.errors.length || resolverGate.blocked) return;
     setSubmitting(true);
     try {
       const handleId = await importReviewedFiles(
@@ -197,12 +222,20 @@ export function FileImportReviewModal() {
       setSubmitting(false);
     }
   };
+  const enableDependencyResolver = async () => {
+    setEnablingResolver(true);
+    try {
+      await updateResolverSettings(engine, { enabled: true, autoResolveImports: true });
+    } finally {
+      setEnablingResolver(false);
+    }
+  };
 
   return (
     <Modal
       visible={Boolean(review && draft?.visible)}
       transparent
-      animationType="slide"
+      animationType="none"
       onShow={focusReviewHeading}
       onRequestClose={() => !submitting && setDraft(null)}
     >
@@ -214,6 +247,7 @@ export function FileImportReviewModal() {
         <Card style={styles.sheet}>
           <View
             ref={reviewHeading}
+            tabIndex={-1}
             style={styles.heading}
             accessible
             accessibilityRole="header"
@@ -350,16 +384,37 @@ export function FileImportReviewModal() {
                 </View>
               );
             })}
-            {review?.externalMissingImports.length ? (
+            {selectedMissingImports.length ? (
               <View style={[styles.notice, { borderColor: t.border }]}>
                 <Label tone="dim" size={11}>
                   External dependencies (the resolver may search after confirmation):
                 </Label>
-                {review.externalMissingImports.map((dependency) => (
+                {selectedMissingImports.map((dependency) => (
                   <Mono key={dependency.module} dim size={10}>
                     {dependency.module} · {dependency.symbols.join(', ')}
                   </Mono>
                 ))}
+                {resolverGate.message ? (
+                  <View style={styles.resolverGate}>
+                    <Label tone="warn" size={11}>
+                      {resolverGate.message}
+                    </Label>
+                    {resolverSettings ? (
+                      <Button
+                        title="Enable dependency resolver"
+                        small
+                        loading={enablingResolver}
+                        loadingTitle="Enabling…"
+                        onPress={() => void enableDependencyResolver()}
+                      />
+                    ) : null}
+                    {resolverError ? (
+                      <Label tone="error" size={11}>
+                        {resolverError}
+                      </Label>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             ) : null}
             <Label tone="dim" size={10}>
@@ -395,7 +450,7 @@ export function FileImportReviewModal() {
               title={`Import ${validation?.files.length ?? 0} files`}
               loading={submitting}
               loadingTitle="Starting…"
-              disabled={Boolean(validation?.errors.length)}
+              disabled={Boolean(validation?.errors.length) || resolverGate.blocked}
               onPress={() => void confirm()}
             />
           </View>
@@ -437,6 +492,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   notice: { borderWidth: 1, borderRadius: 8, padding: 8, gap: 3 },
+  resolverGate: {
+    alignItems: 'flex-start',
+    gap: 6,
+    paddingTop: 4,
+  },
   rejection: { borderLeftWidth: 2, paddingLeft: 8, gap: 2 },
   replaceRow: {
     flexDirection: 'row',

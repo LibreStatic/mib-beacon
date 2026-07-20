@@ -195,6 +195,79 @@ describe('local file import review', () => {
       expect(retainedFileReviewAction('one', { handleId: 'one', state })).toBe('reopen');
     }
   });
+
+  it('blocks dependency imports until automatic resolution is available', async () => {
+    const fileImportModule = (await import('./file-import')) as unknown as Record<string, unknown>;
+    expect(fileImportModule.dependencyResolverGate).toBeTypeOf('function');
+    const dependencyResolverGate = fileImportModule.dependencyResolverGate as (
+      missingCount: number,
+      settings: { enabled: boolean; autoResolveImports: boolean } | null,
+    ) => { blocked: boolean; message: string | null };
+
+    expect(dependencyResolverGate(0, null)).toEqual({ blocked: false, message: null });
+    expect(dependencyResolverGate(1, null)).toEqual({
+      blocked: true,
+      message: 'Checking dependency resolver settings…',
+    });
+    expect(
+      dependencyResolverGate(1, { enabled: true, autoResolveImports: false }),
+    ).toEqual({
+      blocked: true,
+      message: 'Automatic dependency resolution is off.',
+    });
+    expect(
+      dependencyResolverGate(1, { enabled: true, autoResolveImports: true }),
+    ).toEqual({ blocked: false, message: null });
+  });
+
+  it('recomputes missing dependencies from the selected file subset', async () => {
+    const prepared = await prepareFileImport([
+      raw(
+        'child.mib',
+        document(
+          'CHILD-MIB',
+          'IMPORTS localRoot FROM PROVIDER-MIB, remoteRoot FROM REMOTE-MIB;\nchildRoot OBJECT IDENTIFIER ::= { localRoot 1 }',
+        ),
+      ),
+      raw('provider.mib', document('PROVIDER-MIB', 'localRoot OBJECT IDENTIFIER ::= { iso 3 }')),
+    ]);
+    const review = buildFileImportReview(prepared, [], [], new Map());
+    const fileImportModule = (await import('./file-import')) as unknown as Record<string, unknown>;
+    expect(fileImportModule.selectedExternalMissingImports).toBeTypeOf('function');
+    const selectedExternalMissingImports = fileImportModule.selectedExternalMissingImports as (
+      review: typeof review,
+      selected: ReadonlySet<string>,
+    ) => { module: string }[];
+    const child = review.files.find((file) => file.modules.includes('CHILD-MIB'))!;
+    const provider = review.files.find((file) => file.modules.includes('PROVIDER-MIB'))!;
+
+    expect(selectedExternalMissingImports(review, new Set([provider.id]))).toEqual([]);
+    expect(
+      selectedExternalMissingImports(review, new Set([child.id, provider.id])).map(
+        (item) => item.module,
+      ),
+    ).toEqual(['REMOTE-MIB']);
+    expect(
+      selectedExternalMissingImports(review, new Set([child.id])).map((item) => item.module),
+    ).toEqual(['PROVIDER-MIB', 'REMOTE-MIB']);
+  });
+
+  it('focuses the review heading without using native node handles on web', async () => {
+    const fileImportModule = (await import('./file-import')) as unknown as Record<string, unknown>;
+    expect(fileImportModule.focusFileImportReviewHeading).toBeTypeOf('function');
+    const focusFileImportReviewHeading = fileImportModule.focusFileImportReviewHeading as (
+      platform: string,
+      target: { focus(): void },
+      focusNative: () => void,
+    ) => void;
+    const focus = vi.fn();
+    const focusNative = vi.fn();
+
+    focusFileImportReviewHeading('web', { focus }, focusNative);
+
+    expect(focus).toHaveBeenCalledOnce();
+    expect(focusNative).not.toHaveBeenCalled();
+  });
 });
 
 describe('platform adapters', () => {

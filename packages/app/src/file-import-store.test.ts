@@ -17,6 +17,7 @@ describe('persisted file import review draft', () => {
   });
 
   it('survives consumer unmount/remount and reopens the same selection after failure', () => {
+    useAppStore.setState({ browserImportOpen: true });
     useAppStore.getState().setFileImportDraft({
       review,
       selected: ['one.mib'],
@@ -24,6 +25,7 @@ describe('persisted file import review draft', () => {
       handleId: null,
       visible: true,
     });
+    expect(useAppStore.getState().browserImportOpen).toBe(false);
 
     // The MIB screen is conditionally mounted by AppRoot. Reading through a new
     // consumer after its old owner disappears must return the store snapshot.
@@ -50,10 +52,15 @@ describe('persisted file import review draft', () => {
     useAppStore.getState().setFileImportDraft({ review, selected: ['one.mib'], replacements: [], handleId: null, visible: true });
     useAppStore.setState({ importStatus: {
       handleId: 'fast-1', state: 'error', startedAt: 1, updatedAt: 2,
-      missingModules: [], sourceHosts: [], loadedModules: [], failures: [],
+      missingModules: ['IF-MIB'], sourceHosts: [], loadedModules: [],
+      failures: [{ module: 'IF-MIB', message: 'not found in configured sources' }],
     } });
     useAppStore.getState().acceptFileImportDraft('fast-1');
-    expect(useAppStore.getState().fileImportDraft).toEqual(expect.objectContaining({ visible: true, handleId: null }));
+    expect(useAppStore.getState().fileImportDraft).toEqual(expect.objectContaining({
+      visible: true,
+      handleId: null,
+      reopenMessage: expect.stringContaining('IF-MIB: not found in configured sources'),
+    }));
 
     useAppStore.setState({ importStatus: null });
     useAppStore.getState().acceptFileImportDraft('retry-1');
