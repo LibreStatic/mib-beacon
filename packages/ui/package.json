@@ -7,6 +7,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./theme-values": "./src/theme-values.ts",
+    "./default-themes": "./src/default-themes.ts",
+    "./vscode-theme": "./src/vscode-theme.ts",
+    "./button-state": "./src/button-state.ts",
+    "./text-tone": "./src/text-tone.ts",
+    "./switch-colors": "./src/switch-colors.ts",
     "./breakpoints": "./src/breakpoints.ts"
   },
   "scripts": {
@@ -15,5 +20,8 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
   }
 }

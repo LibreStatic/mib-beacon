@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Button,
   Card,
@@ -21,6 +12,8 @@ import {
   Pill,
   Row,
   SectionTitle,
+  Text,
+  ThemedSwitch,
   useTheme,
 } from '@mibbeacon/ui';
 import { inferWireType, MibBeaconError, validateVarbindInput } from '@mibbeacon/core/client';
@@ -893,7 +886,7 @@ function LiveMibRow({
           </View>
         ) : presentedEditor === 'boolean' && row.metadata?.enumValues ? (
           <Row style={styles.booleanEditor}>
-            <Switch
+            <ThemedSwitch
               accessibilityLabel={`Edit ${row.metadata.name}`}
               value={booleanValues ? cell.draftValue === booleanValues.on : false}
               onValueChange={(enabled) => {
@@ -902,7 +895,6 @@ function LiveMibRow({
                 change(value);
               }}
               disabled={cell.phase === 'updating'}
-              trackColor={{ false: t.border, true: t.accent }}
             />
             <Label>{cell.draftValue}</Label>
           </Row>

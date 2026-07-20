@@ -179,9 +179,15 @@ export async function runSet(engine: EngineAPI): Promise<void> {
     s.setRunning(handleId, t0);
     s.setSetReview(false);
     s.clearSetStaging();
+    s.pushToast({
+      tone: 'success',
+      message: `Set request sent (${varbinds.length} varbind${varbinds.length === 1 ? '' : 's'})`,
+    });
   } catch (e) {
+    const error = describeError(e);
     s.setResults([]);
-    s.setQueryError(describeError(e));
+    s.setQueryError(error);
+    s.pushToast({ tone: 'error', message: error });
   }
 }
 
@@ -395,10 +401,12 @@ export async function sendNotification(engine: EngineAPI): Promise<void> {
   try {
     const result = await engine.traps.send(request);
     s.addSendHistory({ id, request, result });
+    s.pushToast({ tone: 'success', message: `${form.kind === 'inform' ? 'Inform' : 'Trap'} sent` });
   } catch (e) {
     const error = describeError(e);
     s.setSendError(error);
     s.addSendHistory({ id, request, error });
+    s.pushToast({ tone: 'error', message: error });
   } finally {
     s.setSendBusy(false);
   }
@@ -835,6 +843,7 @@ export async function saveResolverSource(
     if (existingId) await engine.resolver.sources.update(existingId, draft);
     else await engine.resolver.sources.create(draft);
     await refreshResolverState(engine);
+    s.pushToast({ tone: 'success', message: existingId ? 'Source updated' : 'Source added' });
   } catch (e) {
     s.setResolverError(describeError(e));
     throw e;

@@ -6,10 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
-import { Button, Card, Label, Mono, Pill, SectionTitle, useTheme } from '@mibbeacon/ui';
+import { Button, Card, Label, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { importReviewedFiles } from '../actions';
@@ -393,8 +392,10 @@ export function FileImportReviewModal() {
               onPress={() => setDraft(null)}
             />
             <Button
-              title={submitting ? 'Starting…' : `Import ${validation?.files.length ?? 0} files`}
-              disabled={submitting || Boolean(validation?.errors.length)}
+              title={`Import ${validation?.files.length ?? 0} files`}
+              loading={submitting}
+              loadingTitle="Starting…"
+              disabled={Boolean(validation?.errors.length)}
               onPress={() => void confirm()}
             />
           </View>

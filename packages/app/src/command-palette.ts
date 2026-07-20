@@ -8,6 +8,9 @@ export type PaletteCommandId =
   | `navigate:${Exclude<Tab, 'mibs'>}`
   | 'browse:focus-search'
   | 'browse:import'
+  | 'preferences:color-theme'
+  | 'preferences:browse-color-themes'
+  | 'preferences:import-color-theme'
   | 'app:shortcuts'
   | 'window:new'
   | 'query:prepare-get'
@@ -22,6 +25,9 @@ export type PaletteCommandEffect =
   | { kind: 'navigate'; tab: Tab }
   | { kind: 'focus-browse-search' }
   | { kind: 'import-mib' }
+  | { kind: 'open-theme-picker' }
+  | { kind: 'open-theme-catalog' }
+  | { kind: 'import-theme' }
   | { kind: 'show-shortcuts' }
   | { kind: 'new-window' }
   | { kind: 'prepare-query'; operation: QueryOperation }
@@ -30,7 +36,7 @@ export type PaletteCommandEffect =
 export interface PaletteCommand {
   id: PaletteCommandId;
   label: string;
-  group: 'Navigation' | 'Application' | 'Query' | 'Traps';
+  group: 'Navigation' | 'Preferences' | 'Application' | 'Query' | 'Traps';
   glyph: string;
   keywords: readonly string[];
   effect: PaletteCommandEffect;
@@ -56,6 +62,9 @@ export interface PaletteCommandContext {
   navigate(tab: Tab): void;
   focusBrowseSearch(): void;
   importMib(): void;
+  openThemePicker(): void;
+  openThemeCatalog(): void;
+  importTheme(): void;
   showShortcuts(): void;
   newWindow?(): void;
   prepareQuery(operation: QueryOperation): void;
@@ -73,7 +82,10 @@ export function applyPaletteCommandEffect(
   } else if (effect.kind === 'import-mib') {
     context.navigate('browse');
     context.importMib();
-  } else if (effect.kind === 'show-shortcuts') context.showShortcuts();
+  } else if (effect.kind === 'open-theme-picker') context.openThemePicker();
+  else if (effect.kind === 'open-theme-catalog') context.openThemeCatalog();
+  else if (effect.kind === 'import-theme') context.importTheme();
+  else if (effect.kind === 'show-shortcuts') context.showShortcuts();
   else if (effect.kind === 'new-window') context.newWindow?.();
   else if (effect.kind === 'prepare-query') {
     context.prepareQuery(effect.operation);
@@ -116,6 +128,30 @@ const STATIC_COMMANDS: readonly PaletteCommand[] = [
     glyph: '↑',
     keywords: ['file', 'load', 'catalog'],
     effect: { kind: 'import-mib' },
+  },
+  {
+    id: 'preferences:color-theme',
+    label: 'Preferences: Color Theme',
+    group: 'Preferences',
+    glyph: '◐',
+    keywords: ['appearance', 'color', 'theme', 'light', 'dark'],
+    effect: { kind: 'open-theme-picker' },
+  },
+  {
+    id: 'preferences:browse-color-themes',
+    label: 'Preferences: Browse Additional Color Themes',
+    group: 'Preferences',
+    glyph: '＋',
+    keywords: ['appearance', 'color', 'theme', 'open vsx', 'install', 'download'],
+    effect: { kind: 'open-theme-catalog' },
+  },
+  {
+    id: 'preferences:import-color-theme',
+    label: 'Preferences: Import Color Theme',
+    group: 'Preferences',
+    glyph: '⇧',
+    keywords: ['appearance', 'color', 'theme', 'json', 'jsonc', 'vsix', 'file'],
+    effect: { kind: 'import-theme' },
   },
   {
     id: 'app:shortcuts',

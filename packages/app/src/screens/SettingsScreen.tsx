@@ -8,8 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
-  Text,
   View,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -17,6 +15,7 @@ import {
 } from 'react-native';
 import {
   Button,
+  CODE_OSS_DEFAULT_THEMES,
   Card,
   Chip,
   Field,
@@ -25,6 +24,8 @@ import {
   Pill,
   Row,
   SectionTitle,
+  Text,
+  ThemedSwitch,
   useTheme,
 } from '@mibbeacon/ui';
 import type {
@@ -52,10 +53,7 @@ import { useResponsiveLayout } from '../responsive-context';
 import type { AppHostAdapter, HostUpdateStatus } from '../AppRoot';
 import { RELEASE_INFO } from '../generated/release-info';
 import licenseInventory from '../generated/third-party-licenses.json';
-import {
-  DEFAULT_PATTERN_TRACE_COLOR,
-  isPatternTraceColor,
-} from '../pattern-trace-settings';
+import { DEFAULT_PATTERN_TRACE_COLOR, isPatternTraceColor } from '../pattern-trace-settings';
 import {
   getActiveSettingsSection,
   SETTINGS_SECTIONS,
@@ -67,6 +65,8 @@ import {
   normalizeLiveMibSettings,
   resolveLiveMibSettings,
 } from '../live-mibs-model';
+import { acquireBrowserThemeFiles } from '../theme-file-picker';
+import { prepareThemeImports } from '../theme-import';
 
 const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'http-template', label: 'HTTP template' },
@@ -75,7 +75,13 @@ const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'github-tree', label: 'GitHub tree' },
 ];
 
-export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
+export function SettingsScreen({
+  host,
+  onBrowseThemes,
+}: {
+  host?: AppHostAdapter;
+  onBrowseThemes: () => void;
+}) {
   const engine = useEngine();
   const t = useTheme();
   const { mode, supportsSplitView } = useResponsiveLayout();
@@ -85,6 +91,10 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const history = useAppStore((s) => s.resolverHistory);
   const error = useAppStore((s) => s.resolverError);
   const themeMode = useAppStore((s) => s.themeMode);
+  const lightThemeId = useAppStore((s) => s.lightThemeId);
+  const darkThemeId = useAppStore((s) => s.darkThemeId);
+  const installedThemes = useAppStore((s) => s.installedThemes);
+  const openVsxThemeCatalogEnabled = useAppStore((s) => s.openVsxThemeCatalogEnabled);
   const densityMode = useAppStore((s) => s.densityMode);
   const patternTraceColor = useAppStore((s) => s.patternTraceColor);
   const packetStatus = useAppStore((s) => s.packetStatus);
@@ -105,9 +115,40 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
   const [liveOverrides, setLiveOverrides] = useState<Partial<LiveMibSettings> | null>(null);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
   const [liveBusy, setLiveBusy] = useState(false);
+  const [themeImportBusy, setThemeImportBusy] = useState(false);
+  const [themeImportMessage, setThemeImportMessage] = useState<{
+    tone: 'ok' | 'warn' | 'error';
+    text: string;
+  } | null>(null);
   const settingsScroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
+  const availableThemes = [...CODE_OSS_DEFAULT_THEMES, ...installedThemes];
+
+  const importThemes = async () => {
+    setThemeImportBusy(true);
+    setThemeImportMessage(null);
+    try {
+      const files = await (host?.pickThemeFiles?.() ?? acquireBrowserThemeFiles());
+      if (!files.length) return;
+      const imported = prepareThemeImports(files);
+      useAppStore.getState().installThemes(imported.themes);
+      setThemeImportMessage({
+        tone: imported.warnings.length ? 'warn' : 'ok',
+        text: `Installed ${imported.themes.length} theme${imported.themes.length === 1 ? '' : 's'}${
+          imported.warnings.length ? ` · ${imported.warnings[0]}` : ''
+        }`,
+      });
+    } catch (cause) {
+      setThemeImportMessage({
+        tone: 'error',
+        text: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setThemeImportBusy(false);
+    }
+  };
+
   const externalSources = sources.filter((source) => source.kind !== 'cache');
   useEffect(() => {
     if (!host?.updates) return;
@@ -180,7 +221,11 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
     try {
       const status = await engine.packets.updateSettings({ retentionMiB: value });
       useAppStore.getState().setPacketStatus(status);
-      setPacketMessage(value === 0 ? 'Disk persistence disabled; live RAM capture remains active.' : `Packet history retention set to ${value} MiB.`);
+      setPacketMessage(
+        value === 0
+          ? 'Disk persistence disabled; live RAM capture remains active.'
+          : `Packet history retention set to ${value} MiB.`,
+      );
     } catch (cause) {
       setPacketMessage(cause instanceof Error ? cause.message : String(cause));
     }
@@ -317,7 +362,7 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
                 System is the default. Auto density uses compact engineering rows at desktop widths
                 and 44-point touch controls on tablet and phone.
               </Label>
-              <Label size={11}>Theme</Label>
+              <Label size={11}>Color mode</Label>
               <Row style={styles.wrap}>
                 {(['system', 'light', 'dark'] as const).map((value) => (
                   <Chip
@@ -327,6 +372,111 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
                     onPress={() => useAppStore.getState().setThemeMode(value)}
                   />
                 ))}
+              </Row>
+              <Label size={11}>Dark theme</Label>
+              <Row style={styles.wrap}>
+                {availableThemes
+                  .filter(({ scheme }) => scheme === 'dark')
+                  .map((theme) => (
+                    <Chip
+                      key={theme.id}
+                      label={`${theme.label}${theme.highContrast ? ' · HC' : ''}`}
+                      active={darkThemeId === theme.id}
+                      onPress={() => useAppStore.getState().setThemeForScheme('dark', theme.id)}
+                    />
+                  ))}
+              </Row>
+              <Label size={11}>Light theme</Label>
+              <Row style={styles.wrap}>
+                {availableThemes
+                  .filter(({ scheme }) => scheme === 'light')
+                  .map((theme) => (
+                    <Chip
+                      key={theme.id}
+                      label={`${theme.label}${theme.highContrast ? ' · HC' : ''}`}
+                      active={lightThemeId === theme.id}
+                      onPress={() => useAppStore.getState().setThemeForScheme('light', theme.id)}
+                    />
+                  ))}
+              </Row>
+              <Label tone="dim" size={10}>
+                Code-OSS defaults are bundled from the MIT-licensed source. System mode uses the
+                selected light and dark pair.
+              </Label>
+              <Row style={styles.wrap}>
+                <Button
+                  title={themeImportBusy ? 'Importing…' : 'Import VS Code theme'}
+                  small
+                  variant="ghost"
+                  disabled={themeImportBusy}
+                  onPress={() => void importThemes()}
+                />
+                <Pill text="JSON / JSONC / VSIX" color={t.textDim} />
+              </Row>
+              {themeImportMessage ? (
+                <Label tone={themeImportMessage.tone} size={11}>
+                  {themeImportMessage.text}
+                </Label>
+              ) : null}
+              {installedThemes.length ? (
+                <View style={styles.themeInstallList}>
+                  <Label size={11}>Installed themes</Label>
+                  {installedThemes.map((theme) => (
+                    <View
+                      key={theme.id}
+                      style={[styles.themeInstallRow, { borderColor: t.border }]}
+                    >
+                      <View style={styles.themeInstallCopy}>
+                        <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>
+                          {theme.label}
+                        </Text>
+                        <Label tone="dim" size={10}>
+                          {theme.provenance?.extensionId ??
+                            theme.provenance?.fileName ??
+                            'Local file'}
+                          {theme.provenance?.version ? ` · ${theme.provenance.version}` : ''}
+                          {` · ${theme.provenance?.license ?? 'license not declared'}`}
+                        </Label>
+                      </View>
+                      <Button
+                        title="Remove"
+                        small
+                        variant="ghost"
+                        onPress={() => useAppStore.getState().removeTheme(theme.id)}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.settingRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }}>
+                    Open VSX theme catalog
+                  </Text>
+                  <Text style={{ color: t.textDim, fontSize: 11, lineHeight: 16 }}>
+                    Manual searches use the Eclipse-hosted registry. MIB Beacon never contacts
+                    Microsoft’s Visual Studio Marketplace.
+                  </Text>
+                </View>
+                <Chip
+                  label={openVsxThemeCatalogEnabled ? 'Enabled' : 'Disabled'}
+                  active={openVsxThemeCatalogEnabled}
+                  onPress={() => {
+                    const enabled = !openVsxThemeCatalogEnabled;
+                    useAppStore.getState().setOpenVsxThemeCatalogEnabled(enabled);
+                  }}
+                />
+              </View>
+              <Row style={styles.wrap}>
+                <Button
+                  title="Browse color themes in Command Palette"
+                  small
+                  variant="ghost"
+                  onPress={onBrowseThemes}
+                />
+                <Label tone="dim" size={10}>
+                  Hover, arrow, or tap once to preview; click, Enter, or tap again to apply.
+                </Label>
               </Row>
               <Label size={11}>Density</Label>
               <Row style={styles.wrap}>
@@ -888,7 +1038,11 @@ export function SettingsScreen({ host }: { host?: AppHostAdapter }) {
                   {((packetStatus?.persistedBytes ?? 0) / 1024 / 1024).toFixed(2)} MiB persisted
                 </Label>
               </Row>
-              {packetStatus?.warning ? <Label tone="error" size={11}>{packetStatus.warning}</Label> : null}
+              {packetStatus?.warning ? (
+                <Label tone="error" size={11}>
+                  {packetStatus.warning}
+                </Label>
+              ) : null}
               {packetMessage ? (
                 <Label tone={packetMessage.includes('Enter') ? 'error' : 'ok'} size={11}>
                   {packetMessage}
@@ -1011,17 +1165,16 @@ function SettingToggle({
 }) {
   const t = useTheme();
   return (
-    <View style={[styles.settingRow, { opacity: disabled ? 0.5 : 1 }]}>
+    <View style={styles.settingRow}>
       <View style={{ flex: 1 }}>
         <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }}>{label}</Text>
         <Text style={{ color: t.textDim, fontSize: 11, lineHeight: 16 }}>{hint}</Text>
       </View>
-      <Switch
+      <ThemedSwitch
         accessibilityLabel={label}
         value={value}
         disabled={disabled}
         onValueChange={onChange}
-        trackColor={{ true: t.accent }}
       />
     </View>
   );
@@ -1149,11 +1302,10 @@ function SourceRow({
       {fixedCache ? (
         <Pill text="ALWAYS FIRST" color={t.ok} />
       ) : (
-        <Switch
+        <ThemedSwitch
           accessibilityLabel={`Enable ${source.name}`}
           value={source.enabled}
           onValueChange={() => void toggleResolverSource(engine, source)}
-          trackColor={{ true: t.accent }}
         />
       )}
       <View style={styles.sourceActions}>
@@ -1891,6 +2043,30 @@ const styles = StyleSheet.create({
   },
   sectionHeadCopy: { flex: 1, minWidth: 180, flexShrink: 1 },
   wrap: { flexWrap: 'wrap' },
+  themeInstallList: { gap: 7 },
+  themeInstallRow: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  themeInstallCopy: { flex: 1, minWidth: 180, gap: 2 },
+  themeCatalog: { gap: 8 },
+  themeCatalogRow: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 10,
+  },
   sourcesCard: { paddingTop: 8 },
   sourceRow: {
     borderTopWidth: StyleSheet.hairlineWidth,

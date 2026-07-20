@@ -35,7 +35,21 @@ import type {
   PacketTraceServiceStatus,
 } from '@mibbeacon/core/client';
 import { upsertPacketTrace } from './packet-console';
+import { enqueueToast, toastDuration, type ToastInput, type ToastItem } from './toast-queue';
 import { normalizePatternTraceColor } from './pattern-trace-settings';
+import {
+  DEFAULT_DARK_THEME_ID,
+  DEFAULT_LIGHT_THEME_ID,
+  getCodeOssDefaultTheme,
+} from '@mibbeacon/ui/default-themes';
+import type { ThemeDescriptor } from '@mibbeacon/ui/theme-values';
+import {
+  THEME_STORAGE_KEYS,
+  browserThemeStorage,
+  isOpenVsxCatalogEnabled,
+  parseStoredThemes,
+  type ThemeStorageAdapter,
+} from './theme-storage';
 
 export type Tab =
   'browse' | 'liveMibs' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
@@ -129,8 +143,17 @@ export interface AppState {
   tab: Tab;
   setTab: (tab: Tab) => void;
   themeMode: AppThemeMode;
+  lightThemeId: string;
+  darkThemeId: string;
+  installedThemes: ThemeDescriptor[];
+  themesHydrated: boolean;
+  openVsxThemeCatalogEnabled: boolean;
   densityMode: AppDensityMode;
   setThemeMode: (mode: AppThemeMode) => void;
+  setThemeForScheme: (scheme: 'light' | 'dark', themeId: string) => void;
+  installThemes: (themes: ThemeDescriptor[]) => void;
+  removeTheme: (themeId: string) => void;
+  setOpenVsxThemeCatalogEnabled: (enabled: boolean) => void;
   setDensityMode: (mode: AppDensityMode) => void;
   patternTraceColor: string;
   setPatternTraceColor: (color: string) => void;
@@ -150,7 +173,6 @@ export interface AppState {
   expanded: Record<string, boolean>;
   childrenCache: Record<string, BrowseTreeNode[]>;
   moduleFocus: ModuleView | null;
-  liveMibScopeOid: string | null;
   selected: MibNodeDetail | null;
   search: string;
   hits: MibSearchHit[];
@@ -158,10 +180,10 @@ export interface AppState {
   searchError: string | null;
   browserConsoleOpen: boolean;
   browserImportOpen: boolean;
+  liveMibScopeOid: string | null;
   setExpanded: (oid: string, open: boolean) => void;
   setChildren: (oid: string, children: BrowseTreeNode[]) => void;
   setModuleFocus: (focus: ModuleView | null) => void;
-  setLiveMibScopeOid: (oid: string | null) => void;
   clearChildrenCache: () => void;
   setSelected: (node: MibNodeDetail | null) => void;
   setSearch: (q: string) => void;
@@ -170,6 +192,7 @@ export interface AppState {
   setSearchError: (error: string | null) => void;
   setBrowserConsoleOpen: (open: boolean) => void;
   setBrowserImportOpen: (open: boolean) => void;
+  setLiveMibScopeOid: (oid: string | null) => void;
 
   // --- query ---
   agent: AgentForm;
@@ -320,6 +343,11 @@ export interface AppState {
   clearSourcePreview: () => void;
   beginOidLookup: (oid: string, handleId: string) => void;
   finishOidLookup: (oid: string, state: OidLookupState) => void;
+  // --- toasts ---
+  toasts: ToastItem[];
+  /** Queue a transient toast; returns its id. Dedupes identical tone+message. */
+  pushToast: (input: ToastInput) => string;
+  dismissToast: (id: string) => void;
   beginVendorMibBrowse: (oid: string, handleId: string) => void;
   finishVendorMibBrowse: (oid: string, state: VendorMibBrowseState) => void;
 }
@@ -408,9 +436,13 @@ function readUiPreference<T extends string>(key: string, values: readonly T[], f
   return value && values.includes(value) ? value : fallback;
 }
 
+let configuredThemeStorage = browserThemeStorage();
+let themePreferenceRevision = 0;
+
 function readStoredPreference(key: string): string | null {
   try {
-    return (globalThis as { localStorage?: Storage }).localStorage?.getItem(key) ?? null;
+    const value = configuredThemeStorage?.getItem(key);
+    return typeof value === 'string' ? value : null;
   } catch {
     return null;
   }
@@ -418,9 +450,69 @@ function readStoredPreference(key: string): string | null {
 
 function writeUiPreference(key: string, value: string): void {
   try {
-    (globalThis as { localStorage?: Storage }).localStorage?.setItem(key, value);
+    const result = configuredThemeStorage?.setItem(key, value);
+    if (result && 'catch' in result) void result.catch(() => undefined);
   } catch {
     // Native hosts without localStorage retain the preference for this app session.
+  }
+}
+
+function persistInstalledThemes(themes: ThemeDescriptor[]): void {
+  writeUiPreference(THEME_STORAGE_KEYS.installed, JSON.stringify(themes));
+}
+
+async function storedValue(storage: ThemeStorageAdapter | undefined, key: string) {
+  try {
+    return (await storage?.getItem(key)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function configureThemeStorage(storage?: ThemeStorageAdapter): Promise<void> {
+  configuredThemeStorage = storage ?? browserThemeStorage();
+  const revision = themePreferenceRevision;
+  const [mode, light, dark, density, installed, openVsxEnabled] = await Promise.all([
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.mode),
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.light),
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.dark),
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.density),
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.installed),
+    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.openVsxEnabled),
+  ]);
+  const themes = parseStoredThemes(installed);
+  const installedIds = new Set(themes.map(({ id }) => id));
+  const validLight =
+    getCodeOssDefaultTheme(light ?? '')?.scheme === 'light' ||
+    (light != null && installedIds.has(light));
+  const validDark =
+    getCodeOssDefaultTheme(dark ?? '')?.scheme === 'dark' ||
+    (dark != null && installedIds.has(dark));
+  useAppStore.setState({
+    installedThemes: themes,
+    themesHydrated: true,
+    ...(revision === themePreferenceRevision
+      ? {
+          themeMode: mode === 'system' || mode === 'light' || mode === 'dark' ? mode : 'system',
+          densityMode:
+            density === 'auto' || density === 'compact' || density === 'comfortable'
+              ? density
+              : 'auto',
+          lightThemeId: validLight ? light! : DEFAULT_LIGHT_THEME_ID,
+          darkThemeId: validDark ? dark! : DEFAULT_DARK_THEME_ID,
+          openVsxThemeCatalogEnabled: isOpenVsxCatalogEnabled(openVsxEnabled),
+        }
+      : {}),
+  });
+}
+
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let toastSeq = 0;
+function clearToastTimer(id: string): void {
+  const handle = toastTimers.get(id);
+  if (handle != null) {
+    clearTimeout(handle);
+    toastTimers.delete(id);
   }
 }
 
@@ -428,15 +520,61 @@ export const useAppStore = create<AppState>((set) => ({
   tab: 'browse',
   setTab: (tab) => set({ tab }),
   themeMode: readUiPreference('mibbeacon:theme', ['system', 'light', 'dark'], 'system'),
+  lightThemeId: readStoredPreference(THEME_STORAGE_KEYS.light)?.trim() || DEFAULT_LIGHT_THEME_ID,
+  darkThemeId: readStoredPreference(THEME_STORAGE_KEYS.dark)?.trim() || DEFAULT_DARK_THEME_ID,
+  installedThemes: parseStoredThemes(readStoredPreference(THEME_STORAGE_KEYS.installed)),
+  themesHydrated: Boolean(configuredThemeStorage),
+  openVsxThemeCatalogEnabled: isOpenVsxCatalogEnabled(
+    readStoredPreference(THEME_STORAGE_KEYS.openVsxEnabled),
+  ),
   densityMode: readUiPreference('mibbeacon:density', ['auto', 'compact', 'comfortable'], 'auto'),
   patternTraceColor: normalizePatternTraceColor(
     readStoredPreference('mibbeacon:pattern-trace-color'),
   ),
   setThemeMode: (themeMode) => {
+    themePreferenceRevision += 1;
     writeUiPreference('mibbeacon:theme', themeMode);
     set({ themeMode });
   },
+  setThemeForScheme: (scheme, themeId) => {
+    themePreferenceRevision += 1;
+    writeUiPreference(`mibbeacon:theme-${scheme}`, themeId);
+    set(scheme === 'dark' ? { darkThemeId: themeId } : { lightThemeId: themeId });
+  },
+  installThemes: (themes) => {
+    themePreferenceRevision += 1;
+    return set((state) => {
+      const byId = new Map(state.installedThemes.map((theme) => [theme.id, theme]));
+      for (const theme of themes) if (theme.source === 'imported') byId.set(theme.id, theme);
+      const installedThemes = [...byId.values()].slice(-50);
+      persistInstalledThemes(installedThemes);
+      return { installedThemes };
+    });
+  },
+  removeTheme: (themeId) => {
+    themePreferenceRevision += 1;
+    return set((state) => {
+      const installedThemes = state.installedThemes.filter(({ id }) => id !== themeId);
+      persistInstalledThemes(installedThemes);
+      const patch: Partial<AppState> = { installedThemes };
+      if (state.lightThemeId === themeId) {
+        patch.lightThemeId = DEFAULT_LIGHT_THEME_ID;
+        writeUiPreference(THEME_STORAGE_KEYS.light, DEFAULT_LIGHT_THEME_ID);
+      }
+      if (state.darkThemeId === themeId) {
+        patch.darkThemeId = DEFAULT_DARK_THEME_ID;
+        writeUiPreference(THEME_STORAGE_KEYS.dark, DEFAULT_DARK_THEME_ID);
+      }
+      return patch;
+    });
+  },
+  setOpenVsxThemeCatalogEnabled: (openVsxThemeCatalogEnabled) => {
+    themePreferenceRevision += 1;
+    writeUiPreference(THEME_STORAGE_KEYS.openVsxEnabled, String(openVsxThemeCatalogEnabled));
+    set({ openVsxThemeCatalogEnabled });
+  },
   setDensityMode: (densityMode) => {
+    themePreferenceRevision += 1;
     writeUiPreference('mibbeacon:density', densityMode);
     set({ densityMode });
   },
@@ -462,7 +600,6 @@ export const useAppStore = create<AppState>((set) => ({
   expanded: {},
   childrenCache: {},
   moduleFocus: null,
-  liveMibScopeOid: null,
   selected: null,
   search: '',
   hits: [],
@@ -470,11 +607,11 @@ export const useAppStore = create<AppState>((set) => ({
   searchError: null,
   browserConsoleOpen: false,
   browserImportOpen: false,
+  liveMibScopeOid: null,
   setExpanded: (oid, open) => set((s) => ({ expanded: { ...s.expanded, [oid]: open } })),
   setChildren: (oid, children) =>
     set((s) => ({ childrenCache: { ...s.childrenCache, [oid]: children } })),
   setModuleFocus: (moduleFocus) => set({ moduleFocus }),
-  setLiveMibScopeOid: (liveMibScopeOid) => set({ liveMibScopeOid }),
   clearChildrenCache: () => set({ childrenCache: {}, expanded: {} }),
   setSelected: (selected) => set({ selected }),
   setSearch: (search) => set({ search }),
@@ -483,6 +620,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchError: (searchError) => set({ searchError }),
   setBrowserConsoleOpen: (browserConsoleOpen) => set({ browserConsoleOpen }),
   setBrowserImportOpen: (browserImportOpen) => set({ browserImportOpen }),
+  setLiveMibScopeOid: (liveMibScopeOid) => set({ liveMibScopeOid }),
 
   agent: defaultAgent,
   agentProfiles: [],
@@ -721,8 +859,31 @@ export const useAppStore = create<AppState>((set) => ({
   addImportProgress: (item) =>
     set((s) => ({ importProgress: [...s.importProgress, item].slice(-80) })),
   setImportCounts: (importCompleted, importTotal) => set({ importCompleted, importTotal }),
-  finishImport: (importStatus, lastImport) =>
-    set({ importStatus, lastImport, importBusy: false, importHandle: null }),
+  finishImport: (importStatus, lastImport) => {
+    set({ importStatus, lastImport, importBusy: false, importHandle: null });
+    const loaded = lastImport?.loaded.length ?? 0;
+    const failed = lastImport?.errors.length ?? 0;
+    const modules = (n: number) => `${n} module${n === 1 ? '' : 's'}`;
+    const toast = useAppStore.getState().pushToast;
+    switch (importStatus.state) {
+      case 'done':
+        toast({ tone: 'success', message: `Imported ${modules(loaded)}` });
+        break;
+      case 'partial':
+        toast({ tone: 'warn', message: `Imported ${modules(loaded)} · ${failed} failed` });
+        break;
+      case 'expired':
+        toast({ tone: 'warn', message: 'Import expired before completing' });
+        break;
+      case 'error':
+        toast({
+          tone: 'error',
+          message: lastImport?.errors[0]?.message ?? 'Import failed',
+        });
+        break;
+      // 'cancelled' is user-initiated; stay quiet.
+    }
+  },
   setFileImportDraft: (fileImportDraft) => set({ fileImportDraft }),
   updateFileImportDraft: (patch) =>
     set((state) => ({
@@ -828,6 +989,37 @@ export const useAppStore = create<AppState>((set) => ({
       delete handles[oid];
       return { lookupHandles: handles, oidLookups: { ...s.oidLookups, [oid]: state } };
     }),
+  toasts: [],
+  pushToast: (input) => {
+    const id = `toast-${++toastSeq}`;
+    const durationMs = toastDuration(input);
+    const item: ToastItem = {
+      id,
+      tone: input.tone,
+      message: input.message,
+      actionLabel: input.actionLabel,
+      onAction: input.onAction,
+      durationMs,
+    };
+    set((s) => {
+      const next = enqueueToast(s.toasts, item);
+      const kept = new Set(next.map((t) => t.id));
+      // Clear timers for toasts dropped by dedupe or the queue cap.
+      for (const t of s.toasts) if (!kept.has(t.id)) clearToastTimer(t.id);
+      return { toasts: next };
+    });
+    if (durationMs > 0) {
+      toastTimers.set(
+        id,
+        setTimeout(() => useAppStore.getState().dismissToast(id), durationMs),
+      );
+    }
+    return id;
+  },
+  dismissToast: (id) => {
+    clearToastTimer(id);
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
   beginVendorMibBrowse: (oid, handleId) =>
     set((s) => ({
       vendorMibBrowseHandles: { ...s.vendorMibBrowseHandles, [oid]: handleId },

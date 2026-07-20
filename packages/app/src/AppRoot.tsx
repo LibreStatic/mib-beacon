@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, Platform, View, Pressable, StyleSheet, Modal, ScrollView } from 'react-native';
 import {
-  Linking,
-  Platform,
-  View,
+  Button,
+  CODE_OSS_DEFAULT_THEMES,
+  Card,
+  Label,
+  SectionTitle,
   Text,
-  Pressable,
-  StyleSheet,
-  Modal,
-  ScrollView,
-} from 'react-native';
-import { Button, Card, Label, SectionTitle, ThemeProvider, useTheme } from '@mibbeacon/ui';
+  ThemeProvider,
+  getCodeOssDefaultTheme,
+  useTheme,
+} from '@mibbeacon/ui';
+import type { ThemeDescriptor } from '@mibbeacon/ui/theme-values';
 import type {
   DecodedVarbind,
   EngineEvent,
@@ -19,7 +21,9 @@ import type {
   TrapRecord,
 } from '@mibbeacon/core/client';
 import { useEngine } from './engine-context';
-import { useAppStore, type Tab } from './store';
+import { configureThemeStorage, useAppStore, type Tab } from './store';
+import type { RawThemeImportFile } from './theme-import';
+import type { ThemeStorageAdapter } from './theme-storage';
 import {
   handleResolverEvent,
   loadChildren,
@@ -44,6 +48,8 @@ import { routeForTab, tabFromUrl } from './routes';
 import { SHORTCUTS, subscribeCommandPaletteShortcut } from './browser-shortcuts';
 import { FileImportReviewModal } from './components/FileImportFlow';
 import { CommandPalette } from './components/CommandPalette';
+import type { CommandPaletteView } from './components/CommandPalette';
+import { ToastHost } from './components/ToastHost';
 import { MibBeaconMark } from './components/MibBeaconMark';
 import { PacketActivityLights, PacketConsole } from './components/PacketConsole';
 import { MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE } from './packet-console';
@@ -59,6 +65,8 @@ import {
   type PaletteCommand,
   type PaletteHistoryStorage,
 } from './command-palette';
+import { acquireBrowserThemeFiles } from './theme-file-picker';
+import { prepareThemeImports } from './theme-import';
 
 export interface HostUpdateStatus {
   phase:
@@ -92,6 +100,8 @@ export interface AppHostAdapter {
   updates?: HostUpdateAdapter;
   subscribeOpenFiles?: (listener: (files: RawSelectedFile[]) => void) => () => void;
   savePacketCapture?: (capture: PacketCaptureExportReader) => Promise<void>;
+  themeStorage?: ThemeStorageAdapter;
+  pickThemeFiles?: () => Promise<RawThemeImportFile[]>;
 }
 
 export interface PacketCaptureExportReader {
@@ -123,12 +133,37 @@ function ThemedAppRoot({
 }) {
   const { mode } = useResponsiveLayout();
   const themeMode = useAppStore((state) => state.themeMode);
+  const lightThemeId = useAppStore((state) => state.lightThemeId);
+  const darkThemeId = useAppStore((state) => state.darkThemeId);
+  const installedThemes = useAppStore((state) => state.installedThemes);
   const densityMode = useAppStore((state) => state.densityMode);
+  const [previewTheme, setPreviewTheme] = useState<ThemeDescriptor | null>(null);
+  useEffect(() => {
+    void configureThemeStorage(host?.themeStorage ?? paletteHistoryStorage);
+  }, [host?.themeStorage, paletteHistoryStorage]);
   const density =
     densityMode === 'auto' ? (mode === 'expanded' ? 'compact' : 'comfortable') : densityMode;
+  const lightTheme =
+    (previewTheme?.scheme === 'light' ? previewTheme : undefined) ??
+    getCodeOssDefaultTheme(lightThemeId) ??
+    installedThemes.find(({ id, scheme }) => id === lightThemeId && scheme === 'light');
+  const darkTheme =
+    (previewTheme?.scheme === 'dark' ? previewTheme : undefined) ??
+    getCodeOssDefaultTheme(darkThemeId) ??
+    installedThemes.find(({ id, scheme }) => id === darkThemeId && scheme === 'dark');
   return (
-    <ThemeProvider mode={themeMode} density={density}>
-      <ResponsiveAppRoot host={host} paletteHistoryStorage={paletteHistoryStorage} />
+    <ThemeProvider
+      mode={previewTheme?.scheme ?? themeMode}
+      density={density}
+      lightTheme={lightTheme}
+      darkTheme={darkTheme}
+    >
+      <ResponsiveAppRoot
+        host={host}
+        paletteHistoryStorage={paletteHistoryStorage}
+        onPreviewTheme={setPreviewTheme}
+        onClearThemePreview={() => setPreviewTheme(null)}
+      />
     </ThemeProvider>
   );
 }
@@ -136,9 +171,13 @@ function ThemedAppRoot({
 function ResponsiveAppRoot({
   host,
   paletteHistoryStorage,
+  onPreviewTheme,
+  onClearThemePreview,
 }: {
   host?: AppHostAdapter;
   paletteHistoryStorage?: PaletteHistoryStorage;
+  onPreviewTheme: (theme: ThemeDescriptor) => void;
+  onClearThemePreview: () => void;
 }) {
   const engine = useEngine();
   const t = useTheme();
@@ -152,6 +191,15 @@ function ResponsiveAppRoot({
   const [info, setInfo] = useState<EngineInfo | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteView, setPaletteView] = useState<CommandPaletteView>('commands');
+  const installedThemes = useAppStore((state) => state.installedThemes);
+  const lightThemeId = useAppStore((state) => state.lightThemeId);
+  const darkThemeId = useAppStore((state) => state.darkThemeId);
+  const openVsxThemeCatalogEnabled = useAppStore((state) => state.openVsxThemeCatalogEnabled);
+  const availableThemes = useMemo(
+    () => [...CODE_OSS_DEFAULT_THEMES, ...installedThemes],
+    [installedThemes],
+  );
   const [browseSearchFocusRequest, setBrowseSearchFocusRequest] = useState(0);
   const resolvedPaletteStorage = useMemo(
     () => paletteHistoryStorage ?? createBrowserPaletteHistoryStorage(),
@@ -227,9 +275,13 @@ function ResponsiveAppRoot({
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     return subscribeCommandPaletteShortcut(window, !host, () => {
       setShortcutsOpen(false);
-      setPaletteOpen((open) => !open);
+      setPaletteOpen((open) => {
+        if (!open) setPaletteView('commands');
+        else onClearThemePreview();
+        return !open;
+      });
     });
-  }, [host]);
+  }, [host, onClearThemePreview]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -250,18 +302,63 @@ function ResponsiveAppRoot({
   const executePaletteCommand = useCallback(
     (command: PaletteCommand) => {
       const state = useAppStore.getState();
+      let keepOpen = false;
       applyPaletteCommandEffect(command.effect, {
         navigate: selectTab,
         focusBrowseSearch: () => setBrowseSearchFocusRequest((request) => request + 1),
         importMib: () => state.setBrowserImportOpen(true),
+        openThemePicker: () => {
+          keepOpen = true;
+          setPaletteView('theme-picker');
+        },
+        openThemeCatalog: () => {
+          keepOpen = true;
+          setPaletteView('theme-catalog');
+        },
+        importTheme: () => {
+          void (async () => {
+            try {
+              const files = await (host?.pickThemeFiles?.() ?? acquireBrowserThemeFiles());
+              if (!files.length) return;
+              const imported = prepareThemeImports(files);
+              state.installThemes(imported.themes);
+              state.pushToast({
+                tone: imported.warnings.length ? 'warn' : 'success',
+                message: `Installed ${imported.themes.length} color theme${imported.themes.length === 1 ? '' : 's'}${imported.warnings[0] ? ` · ${imported.warnings[0]}` : ''}`,
+              });
+            } catch (cause) {
+              state.pushToast({
+                tone: 'error',
+                message: cause instanceof Error ? cause.message : String(cause),
+              });
+            }
+          })();
+        },
         showShortcuts: () => setShortcutsOpen(true),
         newWindow: host?.canOpenWindow ? host.newWindow : undefined,
         prepareQuery: state.setQueryOperation,
         openTraps: state.setTrapMode,
       });
+      return keepOpen ? false : undefined;
     },
     [host, selectTab],
   );
+
+  const commitTheme = useCallback(
+    (theme: ThemeDescriptor) => {
+      const state = useAppStore.getState();
+      state.setThemeForScheme(theme.scheme, theme.id);
+      state.setThemeMode(theme.scheme);
+      onClearThemePreview();
+    },
+    [onClearThemePreview],
+  );
+
+  const closePalette = useCallback(() => {
+    onClearThemePreview();
+    setPaletteOpen(false);
+    setPaletteView('commands');
+  }, [onClearThemePreview]);
 
   const openPaletteOid = useCallback(
     async (oid: string) => {
@@ -427,11 +524,21 @@ function ResponsiveAppRoot({
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       {mode === 'compact' ? (
-        <View style={[styles.header, { borderBottomColor: t.border }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: t.workbench.titleBarBackground,
+              borderBottomColor: t.workbench.panelBorder,
+            },
+          ]}
+        >
           <View style={styles.compactBrand}>
             <MibBeaconMark size={30} />
             <View style={styles.compactBrandCopy}>
-              <Text style={[styles.title, { color: t.text }]}>MIB Beacon</Text>
+              <Text style={[styles.title, { color: t.workbench.titleBarForeground }]}>
+                MIB Beacon
+              </Text>
               {info ? (
                 <Text style={[styles.sub, { color: t.textDim }]}>
                   {info.platform} · net-snmp {info.netSnmpVersion}
@@ -463,7 +570,10 @@ function ResponsiveAppRoot({
             info={info}
             onSelect={selectTab}
             onNewWindow={host?.canOpenWindow ? host.newWindow : undefined}
-            onCommands={() => setPaletteOpen(true)}
+            onCommands={() => {
+              setPaletteView('commands');
+              setPaletteOpen(true);
+            }}
             onShortcuts={() => setShortcutsOpen(true)}
           />
         ) : null}
@@ -477,7 +587,15 @@ function ResponsiveAppRoot({
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}
           {activeTab === 'tools' ? <ToolsScreen info={info} /> : null}
           {activeTab === 'mibs' ? <MibsScreen /> : null}
-          {activeTab === 'settings' ? <SettingsScreen host={host} /> : null}
+          {activeTab === 'settings' ? (
+            <SettingsScreen
+              host={host}
+              onBrowseThemes={() => {
+                setPaletteView('theme-catalog');
+                setPaletteOpen(true);
+              }}
+            />
+          ) : null}
           <PacketConsole host={host} />
         </View>
       </View>
@@ -498,14 +616,34 @@ function ResponsiveAppRoot({
         commands={paletteCommands}
         historyStorage={resolvedPaletteStorage}
         shortcutHint={host ? 'Ctrl/Cmd + Shift + P' : 'Ctrl/Cmd + Shift + Space'}
-        onClose={() => setPaletteOpen(false)}
+        view={paletteView}
+        themes={availableThemes}
+        currentThemeIds={{ light: lightThemeId, dark: darkThemeId }}
+        openVsxEnabled={openVsxThemeCatalogEnabled}
+        onClose={closePalette}
+        onViewChange={setPaletteView}
         onExecute={executePaletteCommand}
         onOpenOid={openPaletteOid}
+        onPreviewTheme={onPreviewTheme}
+        onClearThemePreview={onClearThemePreview}
+        onCommitTheme={commitTheme}
+        onInstallCatalogThemes={(themes, selected) => {
+          const state = useAppStore.getState();
+          state.installThemes(themes);
+          commitTheme(selected);
+          state.pushToast({
+            tone: 'success',
+            message: `Installed and applied ${selected.label}.`,
+          });
+        }}
+        onEnableOpenVsx={() => useAppStore.getState().setOpenVsxThemeCatalogEnabled(true)}
       />
 
       {mode === 'compact' ? (
         <BottomNavigation tabs={tabs} tab={activeTab} trapCount={trapCount} onSelect={selectTab} />
       ) : null}
+
+      <ToastHost />
     </View>
   );
 }
@@ -635,14 +773,21 @@ function AppNavigation({
       style={[
         styles.sidebar,
         expanded ? styles.sidebarExpanded : styles.sidebarRail,
-        { backgroundColor: t.surface, borderRightColor: t.border },
+        {
+          backgroundColor: expanded
+            ? t.workbench.sideBarBackground
+            : t.workbench.activityBarBackground,
+          borderRightColor: t.workbench.panelBorder,
+        },
       ]}
     >
       <View style={expanded ? styles.brandLockup : styles.brandRail}>
         <MibBeaconMark size={38} />
         {expanded ? (
           <View style={styles.brandCopy}>
-            <Text style={[styles.brandTitle, { color: t.text }]}>MIB Beacon</Text>
+            <Text style={[styles.brandTitle, { color: t.workbench.sideBarForeground }]}>
+              MIB Beacon
+            </Text>
             <Text style={[styles.brandKicker, { color: t.textDim }]}>Network workbench</Text>
           </View>
         ) : null}
@@ -790,7 +935,13 @@ function BottomNavigation({
   return (
     <View
       nativeID="app-bottom-navigation"
-      style={[styles.tabbar, { backgroundColor: t.surface, borderTopColor: t.border }]}
+      style={[
+        styles.tabbar,
+        {
+          backgroundColor: t.workbench.activityBarBackground,
+          borderTopColor: t.workbench.panelBorder,
+        },
+      ]}
     >
       {tabs.map((item) => {
         const active = item.key === tab;

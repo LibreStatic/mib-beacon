@@ -1,17 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  Button,
-  Card,
-  Chip,
-  Field,
-  Label,
-  Mono,
-  Pill,
-  Row,
-  SectionTitle,
-  useTheme,
-} from '@mibbeacon/ui';
+  Alert,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Button, Card, Chip, Field, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import type {
   AgentGroup,
   AgentProfile,
@@ -79,9 +73,15 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
       if (editingId) await engine.agents.update(editingId, draft);
       else await engine.agents.create(draft);
       await refreshAgentProfiles(engine);
+      useAppStore.getState().pushToast({
+        tone: 'success',
+        message: editingId ? 'Profile saved' : 'Profile created',
+      });
       closeEditor();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setError(message);
+      useAppStore.getState().pushToast({ tone: 'error', message });
     } finally {
       setBusy(false);
     }

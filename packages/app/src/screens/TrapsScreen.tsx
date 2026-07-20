@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, FlatList, StyleSheet, Share, ScrollView } from 'react-native';
 import {
-  Card,
-  SectionTitle,
-  Field,
-  Button,
-  Chip,
-  Label,
-  EmptyState,
-  Row,
-  Mono,
-  Pill,
-  useTheme,
-} from '@mibbeacon/ui';
+  View,
+  Pressable,
+  FlatList,
+  StyleSheet,
+  Share,
+  ScrollView,
+} from 'react-native';
+import { Button, Card, Chip, EmptyState, Field, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import type {
   AuthProtocol,
   EngineAPI,
@@ -1075,7 +1070,7 @@ function TrapRow({ rec }: { rec: TrapRecord }) {
           </Text>
         </Row>
         {open ? (
-          <View style={styles.vbs}>
+          <View style={[styles.vbs, { borderLeftColor: t.accent }]}>
             <Row style={styles.wrap}>
               <Button
                 title="Replay"
@@ -1178,7 +1173,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  vbs: { marginTop: 6, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: '#4f8ef7' },
+  vbs: { marginTop: 6, paddingLeft: 8, borderLeftWidth: 2 },
   capturePane: { flex: 1, minWidth: 0, minHeight: 0 },
   captureToolsScroll: { maxHeight: 440 },
   captureControls: { padding: 12, paddingBottom: 0 },

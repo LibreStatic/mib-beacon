@@ -1,6 +1,10 @@
-import { Linking, View, Text, StyleSheet } from 'react-native';
+import {
+  Linking,
+  View,
+  StyleSheet,
+} from 'react-native';
 import { useState } from 'react';
-import { Button, Card, Dialog, Label, Mono, Pill, Row, SectionTitle, useTheme } from '@mibbeacon/ui';
+import { Button, Card, Dialog, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { browseVendorMibs, loadLookupCandidate, lookupUnknownOid } from '../actions';
@@ -182,7 +186,7 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
 function Evidence({ title, value }: { title: string; value: string }) {
   const t = useTheme();
   return (
-    <View style={styles.evidence}>
+    <View style={[styles.evidence, { borderLeftColor: t.accent }]}>
       <Text style={{ color: t.textDim, fontSize: 10, fontWeight: '800' }}>{title}</Text>
       <Text style={{ color: t.text, fontSize: 11, lineHeight: 16 }} numberOfLines={3}>{value}</Text>
     </View>
@@ -197,6 +201,6 @@ const styles = StyleSheet.create({
   vendorPrompt: { gap: 2, paddingVertical: 2 },
   browserCandidate: { borderWidth: 1, borderRadius: 8, padding: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
   browserCandidateCopy: { flex: 1, minWidth: 0, gap: 3 },
-  evidence: { borderLeftWidth: 2, borderLeftColor: '#4f8ef7', paddingLeft: 7 },
+  evidence: { borderLeftWidth: 2, paddingLeft: 7 },
   candidate: { alignItems: 'center', gap: 6 },
 });

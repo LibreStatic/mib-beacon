@@ -29,6 +29,11 @@
       "@mibbeacon/core/client": ["packages/core/src/client.ts"],
       "@mibbeacon/core/bridge": ["packages/core/src/bridge.ts"],
       "@mibbeacon/ui": ["packages/ui/src/index.ts"],
+      "@mibbeacon/ui/default-themes": ["packages/ui/src/default-themes.ts"],
+      "@mibbeacon/ui/theme-values": ["packages/ui/src/theme-values.ts"],
+      "@mibbeacon/ui/vscode-theme": ["packages/ui/src/vscode-theme.ts"],
+      "@mibbeacon/ui/button-state": ["packages/ui/src/button-state.ts"],
+      "@mibbeacon/ui/text-tone": ["packages/ui/src/text-tone.ts"],
       "@mibbeacon/ui/breakpoints": ["packages/ui/src/breakpoints.ts"],
       "@mibbeacon/app": ["packages/app/src/index.ts"]
     }

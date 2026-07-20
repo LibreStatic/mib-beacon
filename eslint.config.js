@@ -101,6 +101,32 @@ export default tseslint.config(
     },
   },
   {
+    // App screens/components must import `Text` from @mibbeacon/ui (which applies
+    // the theme color + dynamic-type cap), never the raw react-native primitive.
+    // Redeclares no-restricted-imports so it must re-list the shared forbidden set.
+    files: ['packages/app/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            ...UI_APP_FORBIDDEN.map((name) => ({
+              name,
+              message:
+                'UI/app must not import Node builtins, native modules, node-net-snmp, or transport directly. Use the EngineAPI seam from @mibbeacon/core (types only).',
+            })),
+            {
+              name: 'react-native',
+              importNames: ['Text'],
+              message:
+                'Import Text from @mibbeacon/ui so it applies the theme color and the dynamic-type cap (maxFontSizeMultiplier).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // React components (UI + app).
     files: ['packages/ui/**/*.tsx', 'packages/app/**/*.tsx'],
     plugins: { 'react-hooks': reactHooks },
@@ -110,10 +136,12 @@ export default tseslint.config(
     },
   },
   {
-    // Tests may be looser.
+    // Tests may be looser. They run in Node, so the engine-seam import ban
+    // (which forbids node:fs etc.) does not apply — source-scan guards read files.
     files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/dev/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      'no-restricted-imports': 'off',
     },
   },
 );

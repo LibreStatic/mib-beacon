@@ -4,7 +4,6 @@ import {
   Pressable,
   Share,
   StyleSheet,
-  Text,
   View,
   type GestureResponderEvent,
 } from 'react-native';
@@ -14,7 +13,7 @@ import type {
   PatternTraceSession,
   PollSample,
 } from '@mibbeacon/core/client';
-import { Button, Label, Mono, Row, useTheme } from '@mibbeacon/ui';
+import { Button, Label, Mono, Row, Text, useTheme } from '@mibbeacon/ui';
 import {
   chartPoints,
   patternLatencyPoints,

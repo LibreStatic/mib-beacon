@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, ScrollView, StyleSheet } from 'react-native';
 import {
-  Card,
-  SectionTitle,
-  Field,
-  Button,
-  Pill,
-  Label,
-  EmptyState,
-  Mono,
-  useTheme,
-} from '@mibbeacon/ui';
+  View,
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import { Button, Card, EmptyState, Field, Label, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import type { ModuleInfo } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';

@@ -1,5 +1,4 @@
 // Test-only source inspection; application code still uses the EngineAPI seam.
-// eslint-disable-next-line no-restricted-imports
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';

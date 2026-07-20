@@ -1,21 +1,71 @@
 import { forwardRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
+  Platform,
   View,
   Text,
   TextInput,
   Pressable,
+  Switch,
   StyleSheet,
   type TextInputProps,
+  type SwitchProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { useTheme } from './theme';
+import { resolveButtonState } from './button-state';
+import { resolveSwitchColors } from './switch-colors';
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const t = useTheme();
   return (
     <View style={[styles.card, { backgroundColor: t.surface, borderColor: t.border }, style]}>
       {children}
+    </View>
+  );
+}
+
+export function ThemedSwitch(props: SwitchProps) {
+  const t = useTheme();
+  const off = resolveSwitchColors(t, false);
+  const on = resolveSwitchColors(t, true);
+  const current = props.value ? on : off;
+  if (Platform.OS === 'web') {
+    return (
+      <Pressable
+        {...{ 'aria-checked': Boolean(props.value) }}
+        accessibilityRole="switch"
+        accessibilityLabel={props.accessibilityLabel}
+        accessibilityState={{ checked: Boolean(props.value), disabled: props.disabled }}
+        disabled={props.disabled}
+        onPress={() => props.onValueChange?.(!props.value)}
+        style={[
+          styles.webSwitchTrack,
+          { backgroundColor: current.track, borderColor: current.outline },
+          props.style as StyleProp<ViewStyle>,
+        ]}
+      >
+        <View
+          style={[
+            styles.webSwitchThumb,
+            {
+              backgroundColor: current.thumb,
+              transform: [{ translateX: props.value ? 18 : 0 }],
+            },
+          ]}
+        />
+      </Pressable>
+    );
+  }
+  return (
+    <View style={[styles.nativeSwitchOutline, { borderColor: current.outline }]}>
+      <Switch
+        {...props}
+        trackColor={{ false: off.track, true: on.track }}
+        thumbColor={current.thumb}
+        ios_backgroundColor={off.track}
+      />
     </View>
   );
 }
@@ -45,7 +95,7 @@ export const Field = forwardRef<TextInput, { label?: string } & TextInputProps>(
       <TextInput
         {...props}
         ref={ref}
-        placeholderTextColor={t.textDim}
+        placeholderTextColor={t.workbench.inputForeground}
         autoCapitalize="none"
         autoCorrect={false}
         accessibilityLabel={accessibilityLabel ?? label}
@@ -62,9 +112,9 @@ export const Field = forwardRef<TextInput, { label?: string } & TextInputProps>(
         style={[
           styles.input,
           {
-            color: t.text,
+            color: t.workbench.inputForeground,
             borderColor: focused ? t.focus : t.border,
-            backgroundColor: t.surfaceAlt,
+            backgroundColor: t.workbench.inputBackground,
             minHeight: t.density.controlMinHeight,
           },
           multiline ? styles.inputMultiline : null,
@@ -79,26 +129,41 @@ export function Button({
   title,
   onPress,
   disabled,
+  loading,
+  loadingTitle,
   variant = 'primary',
   small,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  /** Shows a spinner, swaps to `loadingTitle`, and suppresses presses. */
+  loading?: boolean;
+  loadingTitle?: string;
   variant?: 'primary' | 'ghost' | 'danger';
   small?: boolean;
 }) {
   const t = useTheme();
   const [focused, setFocused] = useState(false);
+  const { isBusy, isDisabled, label } = resolveButtonState({
+    title,
+    loading,
+    loadingTitle,
+    disabled,
+  });
   const bg = variant === 'primary' ? t.accent : variant === 'danger' ? t.errorSoft : 'transparent';
   const fg = variant === 'primary' ? t.accentText : variant === 'danger' ? t.error : t.accent;
   const borderColor = variant === 'ghost' ? t.border : 'transparent';
   return (
     <Pressable
-      onPress={onPress}
-      disabled={disabled}
+      onPress={() => {
+        if (isBusy) return;
+        onPress();
+      }}
+      disabled={isDisabled}
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={label}
+      accessibilityState={{ busy: isBusy, disabled: isDisabled }}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       style={({ pressed }) => [
@@ -109,16 +174,19 @@ export function Button({
           borderColor: focused ? t.focus : borderColor,
           borderWidth: focused ? 2 : 1,
           minHeight: t.density.controlMinHeight,
-          opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
+          opacity: pressed ? 0.75 : 1,
         },
       ]}
     >
-      <Text
-        maxFontSizeMultiplier={1.3}
-        style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}
-      >
-        {title}
-      </Text>
+      <View style={styles.buttonContent}>
+        {isBusy ? <ActivityIndicator size="small" color={fg} /> : null}
+        <Text
+          maxFontSizeMultiplier={1.3}
+          style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}
+        >
+          {label}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -255,6 +323,24 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
 }
 
 const styles = StyleSheet.create({
+  webSwitchTrack: {
+    width: 40,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    padding: 1,
+    justifyContent: 'center',
+  },
+  nativeSwitchOutline: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+  webSwitchThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
   sectionTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   field: { gap: 4, flexGrow: 1, flexShrink: 1, flexBasis: 'auto', minWidth: 0 },
@@ -281,6 +367,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonSmall: { paddingVertical: 6, paddingHorizontal: 12 },
+  buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   buttonText: { fontWeight: '600', fontSize: 14 },
   buttonTextSmall: { fontSize: 12 },
   chip: {

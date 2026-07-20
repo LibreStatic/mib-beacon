@@ -36,6 +36,9 @@ describe('command palette inventory and filtering', () => {
       'navigate:settings',
       'browse:focus-search',
       'browse:import',
+      'preferences:color-theme',
+      'preferences:browse-color-themes',
+      'preferences:import-color-theme',
       'app:shortcuts',
       'window:new',
       'query:prepare-get',
@@ -94,6 +97,9 @@ describe('command palette inventory and filtering', () => {
       navigate: (tab: string) => calls.push(`navigate:${tab}`),
       focusBrowseSearch: () => calls.push('focus-search'),
       importMib: () => calls.push('import'),
+      openThemePicker: () => calls.push('theme-picker'),
+      openThemeCatalog: () => calls.push('theme-catalog'),
+      importTheme: () => calls.push('import-theme'),
       showShortcuts: () => calls.push('shortcuts'),
       newWindow: () => calls.push('new-window'),
       prepareQuery: (operation: string) => calls.push(`prepare:${operation}`),
@@ -101,7 +107,18 @@ describe('command palette inventory and filtering', () => {
     };
     applyPaletteCommandEffect({ kind: 'prepare-query', operation: 'walk' }, context);
     applyPaletteCommandEffect({ kind: 'open-traps', mode: 'send' }, context);
-    expect(calls).toEqual(['prepare:walk', 'navigate:query', 'traps:send', 'navigate:traps']);
+    applyPaletteCommandEffect({ kind: 'open-theme-picker' }, context);
+    applyPaletteCommandEffect({ kind: 'open-theme-catalog' }, context);
+    applyPaletteCommandEffect({ kind: 'import-theme' }, context);
+    expect(calls).toEqual([
+      'prepare:walk',
+      'navigate:query',
+      'traps:send',
+      'navigate:traps',
+      'theme-picker',
+      'theme-catalog',
+      'import-theme',
+    ]);
     expect(Object.keys(context)).not.toContain('runQuery');
     expect(Object.keys(context)).not.toContain('sendTrap');
   });

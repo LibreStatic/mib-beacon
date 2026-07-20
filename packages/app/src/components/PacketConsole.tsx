@@ -7,10 +7,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
-import { Button, Chip } from '@mibbeacon/ui';
+import { Button, Chip, consolePalette, Text } from '@mibbeacon/ui';
 import type { PacketTraceEvent } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useResponsiveLayout } from '../responsive-context';
@@ -22,13 +21,15 @@ import {
 } from '../packet-console';
 import type { AppHostAdapter, PacketCaptureExportReader } from '../AppRoot';
 
-const CONSOLE_BG = '#061014';
-const CONSOLE_PANEL = '#0a171c';
-const CONSOLE_LINE = '#18343d';
-const CONSOLE_TEXT = '#d4ece7';
-const CONSOLE_DIM = '#6f9995';
-const CONSOLE_OK = '#39e58c';
-const CONSOLE_ERROR = '#ff5c67';
+// The packet console is a fixed-dark terminal in both themes; colors come from
+// the shared, contrast-tested consolePalette rather than the app theme.
+const CONSOLE_BG = consolePalette.bg;
+const CONSOLE_PANEL = consolePalette.panel;
+const CONSOLE_LINE = consolePalette.line;
+const CONSOLE_TEXT = consolePalette.text;
+const CONSOLE_DIM = consolePalette.dim;
+const CONSOLE_OK = consolePalette.ok;
+const CONSOLE_ERROR = consolePalette.error;
 
 export function PacketActivityLights({ compact = false }: { compact?: boolean }) {
   const packets = useAppStore((state) => state.packetEvents);
@@ -76,7 +77,7 @@ function ActivityDot({ active, color, label }: { active: boolean; color: string;
       <Animated.View
         style={[
           styles.lightDot,
-          { backgroundColor: active ? color : '#365057', opacity, shadowColor: color },
+          { backgroundColor: active ? color : consolePalette.dotIdle, opacity, shadowColor: color },
         ]}
       />
       {label ? <Text style={styles.lightLabel}>{label}</Text> : null}
@@ -233,7 +234,7 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
                 <>
                   <View style={styles.hexHead}>
                     <Text style={styles.hexTitle}>{selected.direction.toUpperCase()} · {selected.operation.toUpperCase()} · {selected.byteLength} BYTES</Text>
-                    <Text style={[styles.hexStatus, { color: selected.status === 'invalid' ? CONSOLE_ERROR : selected.status === 'valid' ? CONSOLE_OK : '#f2c94c' }]}>{selected.status.toUpperCase()}</Text>
+                    <Text style={[styles.hexStatus, { color: selected.status === 'invalid' ? CONSOLE_ERROR : selected.status === 'valid' ? CONSOLE_OK : consolePalette.pending }]}>{selected.status.toUpperCase()}</Text>
                   </View>
                   <ScrollView style={styles.hexViewport} contentContainerStyle={styles.hexViewportContent} nestedScrollEnabled>
                     <ScrollView horizontal contentContainerStyle={styles.hexScroll} nestedScrollEnabled>
@@ -257,7 +258,7 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
 }
 
 function PacketRow({ packet, selected, onPress }: { packet: PacketTraceEvent; selected: boolean; onPress: () => void }) {
-  const color = packet.status === 'invalid' ? CONSOLE_ERROR : packet.status === 'pending' ? '#f2c94c' : CONSOLE_OK;
+  const color = packet.status === 'invalid' ? CONSOLE_ERROR : packet.status === 'pending' ? consolePalette.pending : CONSOLE_OK;
   return (
     <Pressable onPress={onPress} style={[styles.packetRow, selected ? styles.packetRowSelected : null]}>
       <Text style={[styles.direction, { color }]}>{packet.direction === 'tx' ? '→ TX' : '← RX'}</Text>
@@ -294,12 +295,12 @@ function decodeBase64(value: string): Uint8Array {
 
 const styles = StyleSheet.create({
   desktopShell: { flexShrink: 0, backgroundColor: CONSOLE_BG, borderTopWidth: 1, borderTopColor: CONSOLE_LINE, overflow: 'hidden' },
-  mobileShell: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 90, backgroundColor: CONSOLE_BG, borderBottomWidth: 1, borderBottomColor: CONSOLE_LINE, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 18 },
+  mobileShell: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 90, backgroundColor: CONSOLE_BG, borderBottomWidth: 1, borderBottomColor: CONSOLE_LINE, overflow: 'hidden', shadowColor: consolePalette.shadow, shadowOpacity: 0.45, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 18 },
   dragZone: { position: 'absolute', left: 0, right: 0, height: 24, zIndex: 3, alignItems: 'center' },
   dragTop: { top: 0 },
   dragBottom: { top: 0 },
   pullTab: { minWidth: 168, height: 24, paddingHorizontal: 10, backgroundColor: CONSOLE_PANEL, borderColor: CONSOLE_LINE, borderWidth: 1, borderTopWidth: 0, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  grip: { width: 18, height: 2, borderRadius: 1, backgroundColor: '#486870' },
+  grip: { width: 18, height: 2, borderRadius: 1, backgroundColor: consolePalette.grip },
   pullLabel: { color: CONSOLE_TEXT, fontFamily: 'monospace', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
   packetCount: { color: CONSOLE_DIM, fontFamily: 'monospace', fontSize: 9 },
   lights: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -324,14 +325,14 @@ const styles = StyleSheet.create({
   filters: { minHeight: 38, paddingHorizontal: 8, paddingVertical: 5, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 5, borderBottomWidth: 1, borderBottomColor: CONSOLE_LINE },
   filtersMobile: { alignItems: 'stretch', gap: 4 },
   filterGroup: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  paused: { color: '#f2c94c', fontFamily: 'monospace', fontSize: 9, fontWeight: '800' },
-  warning: { color: CONSOLE_ERROR, fontFamily: 'monospace', fontSize: 10, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#2a1115' },
+  paused: { color: consolePalette.pending, fontFamily: 'monospace', fontSize: 9, fontWeight: '800' },
+  warning: { color: CONSOLE_ERROR, fontFamily: 'monospace', fontSize: 10, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: consolePalette.warnBg },
   workspace: { flex: 1, minHeight: 0, flexDirection: 'row' },
   workspaceMobile: { flexDirection: 'column', minHeight: 0, overflow: 'hidden' },
   packetList: { flex: 0.42, minHeight: 80, borderRightWidth: 1, borderRightColor: CONSOLE_LINE },
   packetListMobile: { flex: 1, minHeight: 0, borderRightWidth: 0, overflow: 'hidden' },
   packetRow: { minHeight: 44, paddingHorizontal: 9, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: CONSOLE_LINE, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  packetRowSelected: { backgroundColor: '#10282f' },
+  packetRowSelected: { backgroundColor: consolePalette.rowSelected },
   direction: { width: 32, fontFamily: 'monospace', fontSize: 9, fontWeight: '900' },
   packetHeadline: { color: CONSOLE_TEXT, fontFamily: 'monospace', fontSize: 10, fontWeight: '700' },
   packetMeta: { color: CONSOLE_DIM, fontFamily: 'monospace', fontSize: 8, marginTop: 2 },

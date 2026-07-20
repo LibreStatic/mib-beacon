@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   View,
-  Text,
   Pressable,
   FlatList,
   Modal,
@@ -12,17 +11,7 @@ import {
   StyleSheet,
   type TextInput,
 } from 'react-native';
-import {
-  Card,
-  Field,
-  Button,
-  Pill,
-  Mono,
-  EmptyState,
-  KindGlyph,
-  SectionTitle,
-  useTheme,
-} from '@mibbeacon/ui';
+import { Button, Card, EmptyState, Field, KindGlyph, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import type { EngineInfo, MibNodeSummary, MibSearchHit } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';

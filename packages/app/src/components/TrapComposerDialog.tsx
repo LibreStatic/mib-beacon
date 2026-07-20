@@ -1,16 +1,9 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import {
-  Button,
-  Chip,
-  Dialog,
-  Field,
-  Label,
-  Pill,
-  Row,
-  SectionTitle,
-  useTheme,
-} from '@mibbeacon/ui';
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Button, Chip, Dialog, Field, Label, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import type {
   AuthProtocol,
   EngineInfo,
@@ -123,10 +116,12 @@ export function TrapComposerDialog({ info }: { info: EngineInfo | null }) {
               {formValidationError ? <Label tone="error">{formValidationError}</Label> : null}
             </View>
           ) : null}
-          <Button title="Cancel" variant="ghost" onPress={close} />
+          <Button title="Cancel" variant="ghost" disabled={busy} onPress={close} />
           <Button
-            title={busy ? 'Transmitting…' : `Send ${form.kind}`}
-            disabled={busy || !!formValidationError}
+            title={`Send ${form.kind}`}
+            loading={busy}
+            loadingTitle="Transmitting…"
+            disabled={!!formValidationError}
             onPress={() => void send()}
           />
         </>

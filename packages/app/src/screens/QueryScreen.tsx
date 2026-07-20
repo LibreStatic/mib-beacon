@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, FlatList, Pressable, ScrollView, Share, StyleSheet } from 'react-native';
 import {
-  Card,
-  SectionTitle,
-  Dialog,
-  Field,
-  Button,
-  Chip,
-  Pill,
-  Mono,
-  Label,
-  EmptyState,
-  Row,
-  useTheme,
-} from '@mibbeacon/ui';
+  View,
+  FlatList,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+} from 'react-native';
+import { Button, Card, Chip, Dialog, EmptyState, Field, Label, Mono, Pill, Row, SectionTitle, Skeleton, Text, useTheme } from '@mibbeacon/ui';
 import { inferWireType, validateVarbindInput } from '@mibbeacon/core/client';
 import type {
   AuthProtocol,
@@ -111,6 +105,15 @@ export function QueryScreen({
   const [snapshots, setSnapshots] = useState<WalkSnapshotSummary[]>([]);
   const [bookmarkName, setBookmarkName] = useState('');
   const [snapshotName, setSnapshotName] = useState('');
+  const [sending, setSending] = useState(false);
+  const submitSet = async () => {
+    setSending(true);
+    try {
+      await runSet(engine);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const refreshArtifacts = useCallback(async () => {
     const [nextBookmarks, nextSnapshots] = await Promise.all([
@@ -283,9 +286,16 @@ export function QueryScreen({
               title="Cancel"
               small
               variant="ghost"
+              disabled={sending}
               onPress={() => useAppStore.getState().setSetReview(false)}
             />
-            <Button title="Send Set" small onPress={() => void runSet(engine)} />
+            <Button
+              title="Send Set"
+              small
+              loading={sending}
+              loadingTitle="Sending…"
+              onPress={() => void submitSet()}
+            />
           </>
         }
       >
@@ -570,7 +580,18 @@ export function QueryScreen({
         </View>
       ) : null}
       {results.length === 0 && !error ? (
-        <EmptyState title="No results yet" hint="Choose an operation, agent, and OID." />
+        running ? (
+          <View style={styles.resultSkeleton} accessibilityLabel="Waiting for results">
+            {[0, 1, 2, 3].map((row) => (
+              <View key={row} style={styles.resultSkeletonRow}>
+                <Skeleton width="55%" height={12} />
+                <Skeleton width="30%" height={12} />
+              </View>
+            ))}
+          </View>
+        ) : (
+          <EmptyState title="No results yet" hint="Choose an operation, agent, and OID." />
+        )
       ) : null}
     </>
   );
@@ -1378,6 +1399,8 @@ const styles = StyleSheet.create({
   resultsToolbar: { paddingHorizontal: 16, paddingVertical: 11, borderBottomWidth: 1 },
   resultList: { flex: 1 },
   resultListContent: { paddingHorizontal: 16, paddingBottom: 24 },
+  resultSkeleton: { paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+  resultSkeletonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   list: { flex: 1 },
   content: { padding: 12 },
   card: { marginBottom: 12 },

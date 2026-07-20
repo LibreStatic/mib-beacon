@@ -48,10 +48,11 @@ export function AgentProfileDialog({
               <Label tone="error">{error}</Label>
             </View>
           ) : null}
-          <Button title="Cancel" variant="ghost" onPress={onClose} />
+          <Button title="Cancel" variant="ghost" disabled={busy} onPress={onClose} />
           <Button
             title={submitTitle ?? (editing ? 'Save changes' : 'Create profile')}
-            disabled={busy}
+            loading={busy}
+            loadingTitle={editing ? 'Saving…' : 'Creating…'}
             onPress={onSubmit}
           />
         </>

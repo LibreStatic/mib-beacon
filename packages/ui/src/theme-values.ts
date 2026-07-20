@@ -1,48 +1,17 @@
-export type ThemeMode = 'system' | 'light' | 'dark';
-export type DensityMode = 'compact' | 'comfortable';
+import type { DensityMode, Theme, ThemeDescriptor, ThemePalette } from './theme-types';
+import { colorContrast, opaqueColor, relativeLuminance } from './vscode-theme';
 
-export interface Theme {
-  scheme: 'light' | 'dark';
-  bg: string;
-  surface: string;
-  surfaceAlt: string;
-  border: string;
-  text: string;
-  textDim: string;
-  accent: string;
-  accentText: string;
-  accentSoft: string;
-  ok: string;
-  warn: string;
-  error: string;
-  errorSoft: string;
-  mono: string;
-  focus: string;
-  density: {
-    mode: DensityMode;
-    controlMinHeight: number;
-    rowMinHeight: number;
-    gap: number;
-    fontScale: number;
-  };
-  semantic: {
-    status: { up: string; down: string; unknown: string };
-    diff: { added: string; removed: string; changed: string; equal: string };
-    severity: { info: string; warning: string; error: string; critical: string };
-  };
-  kind: {
-    table: string;
-    entry: string;
-    column: string;
-    scalar: string;
-    notification: string;
-    subtree: string;
-    module: string;
-  };
-}
+export type {
+  DensityMode,
+  Theme,
+  ThemeDescriptor,
+  ThemeMode,
+  ThemePalette,
+  ThemeScheme,
+  ThemeSource,
+} from './theme-types';
 
-type Palette = Omit<Theme, 'density'>;
-const dark: Palette = {
+const dark: ThemePalette = {
   scheme: 'dark',
   bg: '#0b0e13',
   surface: '#141924',
@@ -73,8 +42,36 @@ const dark: Palette = {
     subtree: '#b7c0cf',
     module: '#67e8f9',
   },
+  chart: {
+    series: [
+      '#5aa9ff',
+      '#4ade80',
+      '#fbbf24',
+      '#f87171',
+      '#c084fc',
+      '#38bdf8',
+      '#f472b6',
+      '#a3e635',
+    ],
+  },
+  workbench: {
+    activityBarBackground: '#181818',
+    activityBarForeground: '#d7d7d7',
+    sideBarBackground: '#181818',
+    sideBarForeground: '#cccccc',
+    panelBackground: '#1f1f1f',
+    panelBorder: '#2b2b2b',
+    titleBarBackground: '#181818',
+    titleBarForeground: '#cccccc',
+    statusBarBackground: '#181818',
+    statusBarForeground: '#cccccc',
+    inputBackground: '#313131',
+    inputForeground: '#cccccc',
+    selectionBackground: '#04395e',
+    hoverBackground: '#2a2d2e',
+  },
 };
-const light: Palette = {
+const light: ThemePalette = {
   scheme: 'light',
   bg: '#f4f6f9',
   surface: '#ffffff',
@@ -105,29 +102,291 @@ const light: Palette = {
     subtree: '#4b5565',
     module: '#0e7490',
   },
+  chart: {
+    series: [
+      '#1d4ed8',
+      '#047857',
+      '#b45309',
+      '#b91c1c',
+      '#7c3aed',
+      '#0e7490',
+      '#be185d',
+      '#4d7c0f',
+    ],
+  },
+  workbench: {
+    activityBarBackground: '#f8f8f8',
+    activityBarForeground: '#1f1f1f',
+    sideBarBackground: '#f8f8f8',
+    sideBarForeground: '#3b3b3b',
+    panelBackground: '#ffffff',
+    panelBorder: '#e5e5e5',
+    titleBarBackground: '#f8f8f8',
+    titleBarForeground: '#3b3b3b',
+    statusBarBackground: '#f8f8f8',
+    statusBarForeground: '#3b3b3b',
+    inputBackground: '#ffffff',
+    inputForeground: '#3b3b3b',
+    selectionBackground: '#0060c0',
+    hoverBackground: '#e8e8e8',
+  },
 };
 
+/**
+ * Fixed-dark palette for the packet console / terminal surfaces. Intentionally
+ * theme-independent — the console reads as a hardware terminal in both light
+ * and dark app themes. Centralized here so the literals stay contrast-tested.
+ */
+export const consolePalette = {
+  bg: '#061014',
+  panel: '#0a171c',
+  line: '#18343d',
+  text: '#d4ece7',
+  dim: '#6f9995',
+  ok: '#39e58c',
+  error: '#ff5c67',
+  pending: '#f2c94c',
+  dotIdle: '#365057',
+  grip: '#486870',
+  shadow: '#000000',
+  warnBg: '#2a1115',
+  rowSelected: '#10282f',
+} as const;
+
 export const THEME_PALETTES = { light, dark } as const;
-export function createTheme(scheme: 'light' | 'dark', density: DensityMode): Theme {
+
+const SPACE = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 } as const;
+const TYPE = { caption: 11, label: 12, body: 13, base: 14, title: 16 } as const;
+
+function readableOn(
+  candidate: string,
+  backgrounds: readonly string[],
+  fallback: string,
+  minimum: number,
+): string {
+  const candidates = [candidate, fallback, '#ffffff', '#000000'];
+  for (const color of candidates) {
+    if (backgrounds.every((background) => colorContrast(color, background) >= minimum)) {
+      return color;
+    }
+  }
+  return candidates
+    .map((color) => ({
+      color,
+      score: Math.min(...backgrounds.map((background) => colorContrast(color, background))),
+    }))
+    .sort((left, right) => right.score - left.score)[0]!.color;
+}
+
+function backgroundBehind(
+  candidate: string,
+  foreground: string,
+  fallback: string,
+  minimum: number,
+): string {
+  for (const color of [candidate, fallback, '#000000', '#ffffff']) {
+    if (colorContrast(foreground, color) >= minimum) return color;
+  }
+  return fallback;
+}
+
+export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalette {
+  const input = palette;
+  const fallback = THEME_PALETTES[palette.scheme];
+  const coherentBackground = (color: string, fallbackColor: string) => {
+    const opaque = opaqueColor(color, fallbackColor);
+    const light = relativeLuminance(opaque) > 0.45;
+    return palette.scheme === 'dark'
+      ? light
+        ? fallbackColor
+        : opaque
+      : light
+        ? opaque
+        : fallbackColor;
+  };
+  const bg = coherentBackground(input.bg, fallback.bg);
+  const surface = coherentBackground(input.surface, fallback.surface);
+  const surfaceAlt = coherentBackground(input.surfaceAlt, fallback.surfaceAlt);
+  palette = {
+    ...input,
+    bg,
+    surface,
+    surfaceAlt,
+    workbench: {
+      ...input.workbench,
+      activityBarBackground: coherentBackground(
+        input.workbench.activityBarBackground,
+        fallback.workbench.activityBarBackground,
+      ),
+      sideBarBackground: coherentBackground(
+        input.workbench.sideBarBackground,
+        fallback.workbench.sideBarBackground,
+      ),
+      panelBackground: coherentBackground(
+        input.workbench.panelBackground,
+        fallback.workbench.panelBackground,
+      ),
+      titleBarBackground: coherentBackground(
+        input.workbench.titleBarBackground,
+        fallback.workbench.titleBarBackground,
+      ),
+      statusBarBackground: coherentBackground(
+        input.workbench.statusBarBackground,
+        fallback.workbench.statusBarBackground,
+      ),
+      inputBackground: coherentBackground(
+        input.workbench.inputBackground,
+        fallback.workbench.inputBackground,
+      ),
+    },
+  };
+  const accentSoftBackground = opaqueColor(palette.accentSoft, palette.surfaceAlt);
+  const errorSoftBackground = opaqueColor(palette.errorSoft, palette.surfaceAlt);
+  const contentBackgrounds = [
+    palette.bg,
+    palette.surface,
+    palette.surfaceAlt,
+    palette.workbench.inputBackground,
+  ];
+  const text = readableOn(palette.text, contentBackgrounds, fallback.text, 4.5);
+  const textDim = readableOn(palette.textDim, contentBackgrounds, fallback.textDim, 4.5);
+  const mono = readableOn(palette.mono, contentBackgrounds, fallback.mono, 4.5);
+  const accent = readableOn(
+    palette.accent,
+    [...contentBackgrounds, accentSoftBackground],
+    fallback.accent,
+    4.5,
+  );
+  const error = readableOn(
+    palette.error,
+    [...contentBackgrounds, errorSoftBackground],
+    fallback.error,
+    4.5,
+  );
+  const normalizeSemantic = (values: Record<string, string>, defaults: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [
+        key,
+        readableOn(value, contentBackgrounds, defaults[key] ?? text, 4.5),
+      ]),
+    );
   return {
-    ...THEME_PALETTES[scheme],
+    ...palette,
+    border: readableOn(palette.border, contentBackgrounds, fallback.border, 3),
+    text,
+    textDim,
+    accent,
+    accentText: readableOn(palette.accentText, [accent], fallback.accentText, 4.5),
+    ok: readableOn(palette.ok, contentBackgrounds, fallback.ok, 4.5),
+    warn: readableOn(palette.warn, contentBackgrounds, fallback.warn, 4.5),
+    error,
+    mono,
+    focus: readableOn(
+      palette.focus,
+      [palette.bg, palette.surface, palette.surfaceAlt],
+      fallback.focus,
+      3,
+    ),
+    semantic: {
+      status: normalizeSemantic(
+        palette.semantic.status,
+        fallback.semantic.status,
+      ) as ThemePalette['semantic']['status'],
+      diff: normalizeSemantic(
+        palette.semantic.diff,
+        fallback.semantic.diff,
+      ) as ThemePalette['semantic']['diff'],
+      severity: normalizeSemantic(
+        palette.semantic.severity,
+        fallback.semantic.severity,
+      ) as ThemePalette['semantic']['severity'],
+    },
+    kind: normalizeSemantic(palette.kind, fallback.kind) as ThemePalette['kind'],
+    chart: {
+      series: palette.chart.series.map((color, index) =>
+        readableOn(
+          color,
+          [palette.bg, palette.surface],
+          fallback.chart.series[index % fallback.chart.series.length]!,
+          3,
+        ),
+      ),
+    },
+    workbench: {
+      ...palette.workbench,
+      activityBarForeground: readableOn(
+        palette.workbench.activityBarForeground,
+        [palette.workbench.activityBarBackground],
+        fallback.workbench.activityBarForeground,
+        4.5,
+      ),
+      sideBarForeground: readableOn(
+        palette.workbench.sideBarForeground,
+        [palette.workbench.sideBarBackground],
+        fallback.workbench.sideBarForeground,
+        4.5,
+      ),
+      panelBorder: readableOn(
+        palette.workbench.panelBorder,
+        [palette.workbench.panelBackground],
+        fallback.workbench.panelBorder,
+        3,
+      ),
+      titleBarForeground: readableOn(
+        palette.workbench.titleBarForeground,
+        [palette.workbench.titleBarBackground],
+        fallback.workbench.titleBarForeground,
+        4.5,
+      ),
+      statusBarForeground: readableOn(
+        palette.workbench.statusBarForeground,
+        [palette.workbench.statusBarBackground],
+        fallback.workbench.statusBarForeground,
+        4.5,
+      ),
+      inputForeground: readableOn(
+        palette.workbench.inputForeground,
+        [palette.workbench.inputBackground],
+        fallback.workbench.inputForeground,
+        4.5,
+      ),
+      selectionBackground: backgroundBehind(
+        palette.workbench.selectionBackground,
+        text,
+        fallback.workbench.selectionBackground,
+        4.5,
+      ),
+      hoverBackground: backgroundBehind(
+        palette.workbench.hoverBackground,
+        text,
+        fallback.workbench.hoverBackground,
+        4.5,
+      ),
+    },
+  };
+}
+
+export function createTheme(
+  scheme: 'light' | 'dark',
+  density: DensityMode,
+  descriptor?: ThemeDescriptor,
+): Theme {
+  const selected = descriptor?.scheme === scheme ? descriptor : undefined;
+  const palette = normalizeThemePaletteContrast(selected?.palette ?? THEME_PALETTES[scheme]);
+  return {
+    ...palette,
+    id: selected?.id ?? `mibbeacon-${scheme}`,
+    label: selected?.label ?? `MIB Beacon ${scheme === 'dark' ? 'Dark' : 'Light'}`,
+    source: selected?.source ?? 'mibbeacon',
+    highContrast: selected?.highContrast ?? false,
     density:
       density === 'compact'
         ? { mode: density, controlMinHeight: 36, rowMinHeight: 36, gap: 6, fontScale: 0.92 }
         : { mode: density, controlMinHeight: 44, rowMinHeight: 44, gap: 8, fontScale: 1 },
+    space: { ...SPACE },
+    type: { ...TYPE },
   };
 }
 export function contrastRatio(foreground: string, background: string): number {
-  const luminance = (hex: string) => {
-    const channels = [1, 3, 5].map(
-      (index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255,
-    );
-    const [r, g, b] = channels.map((channel) =>
-      channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
-    );
-    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-  };
-  const a = luminance(foreground);
-  const b = luminance(background);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  return colorContrast(foreground, background);
 }

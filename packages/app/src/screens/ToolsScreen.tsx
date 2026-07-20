@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import {
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+} from 'react-native';
 import type {
   AgentProfile,
   DiscoveryResult,
@@ -14,18 +20,7 @@ import type {
   WalkDiffRow,
   WalkSnapshotSummary,
 } from '@mibbeacon/core/client';
-import {
-  Button,
-  Card,
-  Chip,
-  Field,
-  Label,
-  Mono,
-  Pill,
-  Row,
-  SectionTitle,
-  useTheme,
-} from '@mibbeacon/ui';
+import { Button, Card, Chip, Field, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { refreshAgentProfiles } from '../actions';
@@ -57,16 +52,6 @@ const SECTIONS: { key: ToolSection; label: string }[] = [
   { key: 'compare', label: 'Compare' },
   { key: 'ports', label: 'Ports' },
   { key: 'reachability', label: 'Ping / trace' },
-];
-const COLORS = [
-  '#4f8ef7',
-  '#25b99a',
-  '#f59e0b',
-  '#e35d6a',
-  '#9b6cff',
-  '#22a6d5',
-  '#d96bc0',
-  '#8fa63f',
 ];
 export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
@@ -166,9 +151,12 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
         if (!compareA) setCompareA(created.id);
         else setCompareB(created.id);
       }
+      useAppStore.getState().pushToast({ tone: 'success', message: 'Target added' });
       cancelTargetSetup();
     } catch (caught) {
-      setTargetError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setTargetError(message);
+      useAppStore.getState().pushToast({ tone: 'error', message });
     } finally {
       setTargetBusy(false);
     }
@@ -269,13 +257,13 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               {
                 id,
                 name: item.name,
-                color: COLORS[index % COLORS.length]!,
+                color: t.chart.series[index % t.chart.series.length]!,
                 samples: samples[id] ?? [],
               },
             ]
           : [];
       }),
-    [samples, selectedSeries, series],
+    [samples, selectedSeries, series, t.chart.series],
   );
   const chartPatterns = useMemo(
     () =>
@@ -1152,7 +1140,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                           </Label>
                           <ToolSparkline
                             samples={samples[item.id] ?? []}
-                            color={COLORS[index % COLORS.length]!}
+                            color={t.chart.series[index % t.chart.series.length]!}
                           />
                         </View>
                       ))}

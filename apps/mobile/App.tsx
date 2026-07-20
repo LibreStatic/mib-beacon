@@ -11,11 +11,13 @@ import {
   EngineProvider,
   AppRoot,
   FileImportProvider,
+  useAppStore,
   type FileImportAdapter,
   type AppHostAdapter,
   type PaletteHistoryStorage,
 } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
+import { acquireNativeThemeFiles } from './src/theme-import';
 import { getMobileSafeAreaPaddingTop } from './src/safe-area';
 
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
@@ -73,7 +75,9 @@ export default function App() {
     })();
   }, [engine]);
 
-  const isDark = useColorScheme() === 'dark';
+  const systemScheme = useColorScheme();
+  const themeMode = useAppStore((state) => state.themeMode);
+  const isDark = themeMode === 'system' ? systemScheme === 'dark' : themeMode === 'dark';
   const fileImportAdapter = useMemo<FileImportAdapter>(
     () => ({
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
@@ -87,6 +91,12 @@ export default function App() {
     () => ({
       canOpenWindow: false,
       newWindow: () => undefined,
+      themeStorage: {
+        getItem: (key) => Storage.getItem(key),
+        setItem: (key, value) => Storage.setItem(key, value),
+        removeItem: (key) => Storage.removeItem(key),
+      },
+      pickThemeFiles: acquireNativeThemeFiles,
       async savePacketCapture(capture) {
         if (!(await Sharing.isAvailableAsync())) throw new Error('File sharing is unavailable.');
         const file = new File(Paths.cache, capture.fileName);
@@ -126,7 +136,7 @@ export default function App() {
       style={{
         flex: 1,
         paddingTop: safeAreaPaddingTop,
-        backgroundColor: isDark ? '#0e1116' : '#f6f7f9',
+        backgroundColor: isDark ? '#1f1f1f' : '#f8f8f8',
       }}
     >
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />

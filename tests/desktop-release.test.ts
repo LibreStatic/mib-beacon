@@ -182,7 +182,7 @@ describe('desktop Linux packaging', () => {
     );
     expect(settings).toContain('accessibilityLabel={label}');
     expect(settings).toContain('accessibilityLabel={`Enable ${source.name}`}');
-    expect(settings.match(/<Switch/g)).toHaveLength(2);
+    expect(settings.match(/<ThemedSwitch/g)).toHaveLength(2);
     expect(settings.match(/accessibilityLabel=/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });

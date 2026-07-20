@@ -1,6 +1,11 @@
 import { useMemo, useRef, type ReactNode } from 'react';
-import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
-import { useTheme } from '@mibbeacon/ui';
+import {
+  Animated,
+  PanResponder,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text, useTheme } from '@mibbeacon/ui';
 
 export function SwipeActionRow({
   children,
