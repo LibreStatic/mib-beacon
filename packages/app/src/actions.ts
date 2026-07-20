@@ -1,7 +1,10 @@
 import { inferWireType, normalizeNumericOid, validateVarbindInput } from '@mibbeacon/core/client';
 import type {
+  AgentCreateDraft,
+  AgentProfile,
   AgentSpec,
   AgentTarget,
+  AgentTestResult,
   OperationTarget,
   EngineAPI,
   EngineEvent,
@@ -288,12 +291,110 @@ export async function runTableView(engine: EngineAPI): Promise<void> {
   state.setRunning(handleId, Date.now());
 }
 
+const agentProfileRefreshGenerations = new WeakMap<EngineAPI, number>();
+const agentGroupRefreshGenerations = new WeakMap<EngineAPI, number>();
+
 export async function refreshAgentProfiles(engine: EngineAPI): Promise<void> {
-  useAppStore.getState().setAgentProfiles(await engine.agents.list());
+  const generation = (agentProfileRefreshGenerations.get(engine) ?? 0) + 1;
+  agentProfileRefreshGenerations.set(engine, generation);
+  const profiles = await engine.agents.list();
+  if (agentProfileRefreshGenerations.get(engine) !== generation) return;
+  const state = useAppStore.getState();
+  state.setAgentProfiles(profiles);
+  if (state.selectedAgentId && !profiles.some(({ id }) => id === state.selectedAgentId)) {
+    state.selectAgentProfile(null);
+  }
 }
 
 export async function refreshAgentGroups(engine: EngineAPI): Promise<void> {
-  useAppStore.getState().setAgentGroups(await engine.agents.groups.list());
+  const generation = (agentGroupRefreshGenerations.get(engine) ?? 0) + 1;
+  agentGroupRefreshGenerations.set(engine, generation);
+  const groups = await engine.agents.groups.list();
+  if (agentGroupRefreshGenerations.get(engine) !== generation) return;
+  const state = useAppStore.getState();
+  state.setAgentGroups(groups);
+  if (state.selectedAgentGroupId && !groups.some(({ id }) => id === state.selectedAgentGroupId)) {
+    state.selectAgentGroup(null);
+  }
+}
+
+export interface AgentProfileSaveOutcome {
+  profile: AgentProfile;
+  refreshError: unknown | null;
+}
+
+/** Keep an acknowledged profile mutation authoritative even if list reconciliation fails. */
+export async function saveAgentProfile(
+  engine: EngineAPI,
+  editingId: string | null,
+  draft: AgentCreateDraft,
+): Promise<AgentProfileSaveOutcome> {
+  const profile = editingId
+    ? await engine.agents.update(editingId, draft)
+    : await engine.agents.create(draft);
+  const state = useAppStore.getState();
+  const exists = state.agentProfiles.some(({ id }) => id === profile.id);
+  state.setAgentProfiles(
+    exists
+      ? state.agentProfiles.map((candidate) => (candidate.id === profile.id ? profile : candidate))
+      : [...state.agentProfiles, profile],
+  );
+  if (state.selectedAgentId === profile.id) state.selectAgentProfile(profile);
+  try {
+    await refreshAgentProfiles(engine);
+    return { profile, refreshError: null };
+  } catch (refreshError) {
+    return { profile, refreshError };
+  }
+}
+
+export interface AgentProfileTestOutcome {
+  result: AgentTestResult;
+  refreshError: unknown | null;
+}
+
+/** Preserve a successful connectivity result even if metadata reconciliation fails. */
+export async function testAgentProfile(
+  engine: EngineAPI,
+  id: string,
+): Promise<AgentProfileTestOutcome> {
+  const result = await engine.agents.test(id);
+  try {
+    await refreshAgentProfiles(engine);
+    return { result, refreshError: null };
+  } catch (refreshError) {
+    return { result, refreshError };
+  }
+}
+
+export interface AgentProfileDeleteOutcome {
+  refreshErrors: unknown[];
+}
+
+/** Keep an acknowledged deletion authoritative while both dependent lists reconcile. */
+export async function deleteAgentProfile(
+  engine: EngineAPI,
+  id: string,
+): Promise<AgentProfileDeleteOutcome> {
+  await engine.agents.delete(id);
+  const state = useAppStore.getState();
+  state.setAgentProfiles(state.agentProfiles.filter((profile) => profile.id !== id));
+  state.setAgentGroups(
+    state.agentGroups.map((group) => ({
+      ...group,
+      agentIds: group.agentIds.filter((agentId) => agentId !== id),
+    })),
+  );
+  if (state.selectedAgentId === id) state.selectAgentProfile(null);
+  const refreshes = await Promise.allSettled([
+    refreshAgentProfiles(engine),
+    refreshAgentGroups(engine),
+  ]);
+  return {
+    refreshErrors: refreshes.flatMap((refresh) =>
+      refresh.status === 'rejected' ? [refresh.reason] : [],
+    ),
+  };
 }
 
 /** Live OID → name hint for the query field. */

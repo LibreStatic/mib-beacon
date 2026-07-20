@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EngineAPI, MibNodeDetail } from '@omc/core/client';
-import { BROWSE_TITLE, getNavigationTabs } from './navigation';
+import {
+  BROWSE_TITLE,
+  getCompactBottomNavigationItems,
+  getCompactOverflowTabs,
+  getNavigationTabs,
+  isCompactOverflowTab,
+} from './navigation';
 import {
   getNodeOperationPlan,
   openLiveMibScope,
@@ -50,17 +56,38 @@ beforeEach(() => {
 });
 
 describe('responsive application navigation', () => {
-  it('uses the five focused phone destinations from the responsive plan', () => {
+  it('keeps every phone workspace discoverable while preserving five bottom items', () => {
     expect(getNavigationTabs('compact').map((item) => item.key)).toEqual([
+      'browse',
+      'liveMibs',
+      'query',
+      'agents',
+      'traps',
+      'tools',
+      'settings',
+    ]);
+    expect(getCompactBottomNavigationItems().map((item) => item.key)).toEqual([
       'browse',
       'query',
       'traps',
       'tools',
+      'more',
+    ]);
+    expect(getCompactOverflowTabs().map((item) => item.key)).toEqual([
+      'liveMibs',
+      'agents',
       'settings',
     ]);
     expect(getNavigationTabs('compact').find((item) => item.key === 'query')?.label).toBe(
       'Results',
     );
+  });
+
+  it('marks More selected for every compact overflow workspace', () => {
+    expect(isCompactOverflowTab('liveMibs')).toBe(true);
+    expect(isCompactOverflowTab('agents')).toBe(true);
+    expect(isCompactOverflowTab('settings')).toBe(true);
+    expect(isCompactOverflowTab('tools')).toBe(false);
   });
 
   it('adds Live MIBs as a dedicated larger-layout workspace', () => {
@@ -94,12 +121,19 @@ describe('selection-driven operation targets', () => {
 
   it('routes legacy table opens into Live MIBs', async () => {
     const table = { ...scalar, kind: 'table', name: 'ifTable' } as MibNodeDetail;
-    const entry = { ...scalar, kind: 'entry', name: 'ifEntry', oid: `${table.oid}.1` } as MibNodeDetail;
+    const entry = {
+      ...scalar,
+      kind: 'entry',
+      name: 'ifEntry',
+      oid: `${table.oid}.1`,
+    } as MibNodeDetail;
     const engine = {
       mibs: {
-        tree: vi.fn().mockResolvedValue([
-          { oid: entry.oid, name: entry.name, kind: 'entry', hasChildren: true, childCount: 1 },
-        ]),
+        tree: vi
+          .fn()
+          .mockResolvedValue([
+            { oid: entry.oid, name: entry.name, kind: 'entry', hasChildren: true, childCount: 1 },
+          ]),
         node: vi.fn().mockResolvedValue(entry),
       },
     } as unknown as EngineAPI;

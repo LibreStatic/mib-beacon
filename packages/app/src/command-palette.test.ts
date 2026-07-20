@@ -17,6 +17,7 @@ import {
 
 const tabs: NavigationTab[] = [
   { key: 'browse', glyph: '⌬', label: 'Browse' },
+  { key: 'liveMibs', glyph: '▦', label: 'Live MIBs' },
   { key: 'query', glyph: '⇄', label: 'Query' },
   { key: 'agents', glyph: '◎', label: 'Agents' },
   { key: 'traps', glyph: '⚑', label: 'Traps' },
@@ -29,6 +30,7 @@ describe('command palette inventory and filtering', () => {
     const commands = getPaletteCommands(tabs, true);
     expect(commands.map(({ id }) => id)).toEqual([
       'navigate:browse',
+      'navigate:liveMibs',
       'navigate:query',
       'navigate:agents',
       'navigate:traps',
@@ -162,13 +164,18 @@ describe('command palette recents', () => {
         version: 1,
         items: [
           command('navigate:browse'),
+          { kind: 'command', commandId: 'navigate:liveMibs' },
           { kind: 'command', commandId: 'removed:command' },
           oid('1.3.6.1'),
           { kind: 'oid', oid: 'not-an-oid', name: 'broken' },
         ],
       }),
     );
-    expect(parsed).toEqual([command('navigate:browse'), oid('1.3.6.1')]);
+    expect(parsed).toEqual([
+      command('navigate:browse'),
+      { kind: 'command', commandId: 'navigate:liveMibs' },
+      oid('1.3.6.1'),
+    ]);
     expect(parsePaletteHistory('{broken')).toEqual([]);
     expect(parsePaletteHistory(JSON.stringify({ version: 2, items: [] }))).toEqual([]);
     expect(parsePaletteHistory('x'.repeat(100_001))).toEqual([]);

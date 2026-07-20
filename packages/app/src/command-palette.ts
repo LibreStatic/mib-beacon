@@ -219,7 +219,15 @@ const STATIC_COMMANDS: readonly PaletteCommand[] = [
 ];
 
 const KNOWN_STATIC_IDS = new Set(STATIC_COMMANDS.map(({ id }) => id));
-const NAVIGATION_TABS = new Set<Tab>(['browse', 'query', 'agents', 'traps', 'tools', 'settings']);
+const NAVIGATION_TABS = new Set<Tab>([
+  'browse',
+  'liveMibs',
+  'query',
+  'agents',
+  'traps',
+  'tools',
+  'settings',
+]);
 
 export function getPaletteCommands(
   tabs: readonly NavigationTab[],

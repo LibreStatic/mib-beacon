@@ -45,7 +45,14 @@ import { AgentsScreen } from './screens/AgentsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { LiveMibsScreen } from './screens/LiveMibsScreen';
 import { ResponsiveLayoutProvider, useResponsiveLayout } from './responsive-context';
-import { getNavigationTabs, type NavigationTab } from './navigation';
+import {
+  getCompactBottomNavigationItems,
+  getCompactOverflowTabs,
+  getNavigationTabs,
+  isCompactOverflowTab,
+  type CompactNavigationItem,
+  type NavigationTab,
+} from './navigation';
 import { routeForTab, tabFromUrl } from './routes';
 import { SHORTCUTS, subscribeCommandPaletteShortcut } from './browser-shortcuts';
 import { FileImportReviewModal } from './components/FileImportFlow';
@@ -208,6 +215,7 @@ function ResponsiveAppRoot({
   const [info, setInfo] = useState<EngineInfo | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [paletteView, setPaletteView] = useState<CommandPaletteView>('commands');
   const installedThemes = useAppStore((state) => state.installedThemes);
   const lightThemeId = useAppStore((state) => state.lightThemeId);
@@ -240,6 +248,10 @@ function ResponsiveAppRoot({
     },
     [setTab],
   );
+
+  useEffect(() => {
+    if (mode !== 'compact') setMoreOpen(false);
+  }, [mode]);
 
   useEffect(() => {
     const apply = (url: string | null) => {
@@ -669,13 +681,24 @@ function ResponsiveAppRoot({
         onEnableOpenVsx={() => useAppStore.getState().setOpenVsxThemeCatalogEnabled(true)}
       />
 
+      <CompactMoreDialog
+        visible={mode === 'compact' && moreOpen}
+        destinations={getCompactOverflowTabs()}
+        onClose={() => setMoreOpen(false)}
+        onSelect={(next) => {
+          setMoreOpen(false);
+          selectTab(next);
+        }}
+      />
+
       {mode === 'compact' ? (
         <BottomNavigation
-          tabs={tabs}
+          items={getCompactBottomNavigationItems()}
           tab={activeTab}
           trapCount={trapCount}
           safeAreaBottomInset={safeAreaBottomInset}
           onSelect={selectTab}
+          onMore={() => setMoreOpen(true)}
         />
       ) : null}
 
@@ -957,22 +980,25 @@ function ShortcutOverlay({ visible, onClose }: { visible: boolean; onClose: () =
 }
 
 function BottomNavigation({
-  tabs,
+  items,
   tab,
   trapCount,
   safeAreaBottomInset,
   onSelect,
+  onMore,
 }: {
-  tabs: NavigationTab[];
+  items: CompactNavigationItem[];
   tab: Tab;
   trapCount: number;
   safeAreaBottomInset: number;
   onSelect: (tab: Tab) => void;
+  onMore: () => void;
 }) {
   const t = useTheme();
   return (
     <View
       nativeID="app-bottom-navigation"
+      accessibilityRole="tablist"
       style={[
         styles.tabbar,
         {
@@ -982,15 +1008,17 @@ function BottomNavigation({
         },
       ]}
     >
-      {tabs.map((item) => {
-        const active = item.key === tab;
+      {items.map((item) => {
+        const destination = item.key === 'more' ? null : item.key;
+        const active = item.key === 'more' ? isCompactOverflowTab(tab) : item.key === tab;
         return (
           <Pressable
             key={item.key}
-            onPress={() => onSelect(item.key)}
-            accessibilityRole="button"
+            onPress={destination ? () => onSelect(destination) : onMore}
+            accessibilityRole="tab"
             accessibilityLabel={item.label}
             accessibilityState={{ selected: active }}
+            aria-selected={active}
             style={styles.tab}
           >
             <View>
@@ -1010,6 +1038,62 @@ function BottomNavigation({
         );
       })}
     </View>
+  );
+}
+
+function CompactMoreDialog({
+  visible,
+  destinations,
+  onClose,
+  onSelect,
+}: {
+  visible: boolean;
+  destinations: NavigationTab[];
+  onClose: () => void;
+  onSelect: (tab: Tab) => void;
+}) {
+  const t = useTheme();
+  return (
+    <Dialog
+      visible={visible}
+      presentation="sheet"
+      title="More"
+      subtitle="Additional workspaces and preferences"
+      scrollable={false}
+      onRequestClose={onClose}
+    >
+      <View accessibilityRole="menu" style={styles.moreMenu}>
+        {destinations.map((item) => (
+          <Pressable
+            key={item.key}
+            accessibilityRole="menuitem"
+            accessibilityLabel={item.label}
+            accessibilityHint={item.description}
+            onPress={() => onSelect(item.key)}
+            style={({ pressed }) => [
+              styles.moreMenuItem,
+              {
+                backgroundColor: pressed ? t.accentSoft : t.surfaceAlt,
+                borderColor: t.border,
+              },
+            ]}
+          >
+            <View
+              style={[styles.moreMenuGlyph, { backgroundColor: t.surface, borderColor: t.border }]}
+            >
+              <Text style={[styles.moreMenuGlyphText, { color: t.accent }]}>{item.glyph}</Text>
+            </View>
+            <View style={styles.moreMenuCopy}>
+              <Text style={[styles.moreMenuTitle, { color: t.text }]}>{item.label}</Text>
+              <Label tone="dim" size={11}>
+                {item.description}
+              </Label>
+            </View>
+            <Text style={[styles.moreMenuArrow, { color: t.textDim }]}>›</Text>
+          </Pressable>
+        ))}
+      </View>
+    </Dialog>
   );
 }
 
@@ -1172,6 +1256,29 @@ const styles = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
   tabGlyph: { fontSize: 20, lineHeight: 24 },
   tabLabel: { fontSize: 11, fontWeight: '600' },
+  moreMenu: { gap: 8 },
+  moreMenuItem: {
+    minHeight: 58,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  moreMenuGlyph: {
+    width: 38,
+    height: 38,
+    borderWidth: 1,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreMenuGlyphText: { fontSize: 20, fontWeight: '800' },
+  moreMenuCopy: { flex: 1, minWidth: 0, gap: 2 },
+  moreMenuTitle: { fontSize: 14, fontWeight: '800' },
+  moreMenuArrow: { fontSize: 24, lineHeight: 26 },
   badge: {
     position: 'absolute',
     top: -4,
