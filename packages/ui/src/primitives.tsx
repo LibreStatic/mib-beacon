@@ -31,37 +31,13 @@ export function ThemedSwitch(props: SwitchProps) {
   const off = resolveSwitchColors(t, false);
   const on = resolveSwitchColors(t, true);
   const current = props.value ? on : off;
-  if (Platform.OS === 'web') {
-    return (
-      <Pressable
-        {...{ 'aria-checked': Boolean(props.value) }}
-        accessibilityRole="switch"
-        accessibilityLabel={props.accessibilityLabel}
-        accessibilityState={{ checked: Boolean(props.value), disabled: props.disabled }}
-        disabled={props.disabled}
-        onPress={() => props.onValueChange?.(!props.value)}
-        style={[
-          styles.webSwitchTrack,
-          { backgroundColor: current.track, borderColor: current.outline },
-          props.style as StyleProp<ViewStyle>,
-        ]}
-      >
-        <View
-          style={[
-            styles.webSwitchThumb,
-            {
-              backgroundColor: current.thumb,
-              transform: [{ translateX: props.value ? 18 : 0 }],
-            },
-          ]}
-        />
-      </Pressable>
-    );
-  }
+  const webColorProps = Platform.OS === 'web' ? { activeThumbColor: current.thumb } : {};
   return (
     <View style={[styles.nativeSwitchOutline, { borderColor: current.outline }]}>
       <Switch
         {...props}
+        {...webColorProps}
+        style={[Platform.OS === 'web' ? styles.webSwitch : null, props.style]}
         trackColor={{ false: off.track, true: on.track }}
         thumbColor={current.thumb}
         ios_backgroundColor={off.track}
@@ -323,23 +299,14 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
 }
 
 const styles = StyleSheet.create({
-  webSwitchTrack: {
+  webSwitch: {
     width: 40,
     height: 22,
-    borderRadius: 11,
-    borderWidth: 1,
-    padding: 1,
-    justifyContent: 'center',
   },
   nativeSwitchOutline: {
     alignSelf: 'flex-start',
     borderWidth: 1,
     borderRadius: 999,
-  },
-  webSwitchThumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
   },
   card: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 8 },
   sectionTitle: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },

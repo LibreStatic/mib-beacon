@@ -17,6 +17,10 @@ function walk(dir: string): string[] {
 const files = walk(SRC);
 const uiVscodeThemeSource = readFileSync(join(SRC, '../../ui/src/vscode-theme.ts'), 'utf-8');
 const uiPrimitivesSource = readFileSync(join(SRC, '../../ui/src/primitives.tsx'), 'utf-8');
+const themedSwitchSource = uiPrimitivesSource.slice(
+  uiPrimitivesSource.indexOf('export function ThemedSwitch'),
+  uiPrimitivesSource.indexOf('export function SectionTitle'),
+);
 const commandPaletteSource = readFileSync(join(SRC, 'components/CommandPalette.tsx'), 'utf-8');
 
 describe('source guards', () => {
@@ -45,13 +49,13 @@ describe('source guards', () => {
     expect(commandPaletteSource).not.toContain("backgroundColor: 'transparent'");
   });
 
-  it('routes every app switch through the theme-aware primitive', () => {
+  it('routes every app switch through the native-control-backed theme primitive', () => {
     const offenders = files
       .filter((file) => readFileSync(file, 'utf-8').includes('<Switch'))
       .map((file) => file.replace(SRC, 'src'));
     expect(offenders).toEqual([]);
-    expect(uiPrimitivesSource).toContain('styles.webSwitchTrack');
-    expect(uiPrimitivesSource).toContain('accessibilityRole="switch"');
-    expect(uiPrimitivesSource).toContain("'aria-checked': Boolean(props.value)");
+    expect(themedSwitchSource).toContain('<Switch');
+    expect(themedSwitchSource).toContain('activeThumbColor: current.thumb');
+    expect(themedSwitchSource).not.toContain('<Pressable');
   });
 });
