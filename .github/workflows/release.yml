@@ -121,6 +121,25 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm verify:release-metadata
+      - name: Install browser validation runtime
+        run: |
+          python3 -m pip install playwright
+          python3 -m playwright install --with-deps chromium
+      - name: Validate rendered release commit
+        env:
+          MIB_BEACON_AUDIT_COMMIT: ${{ github.sha }}
+          MIB_BEACON_SERVER_SECRET_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          pnpm --filter @mibbeacon/server build
+          pnpm --filter @mibbeacon/server start > /tmp/mibbeacon-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:8899/ >/dev/null && break
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:8899/
+          python3 dev/audit/validation-matrix.py
 
   desktop:
     needs: verify
@@ -832,6 +851,23 @@ jobs:
         run: >-
           node dev/verify-android-permissions.mjs
           apps/mobile/android/app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
+      - name: Launch signed APK in Android emulator
+        if: needs.verify.outputs.apk == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+            test -n "$apk"
+            adb install -r "$apk"
+            adb shell pm grant com.librestatic.mibbeacon android.permission.POST_NOTIFICATIONS
+            adb shell monkey -p com.librestatic.mibbeacon -c android.intent.category.LAUNCHER 1
+            sleep 8
+            adb shell pidof com.librestatic.mibbeacon
+            adb logcat -d '*:E' | tee android-emulator-errors.log
       - name: Scan Android application payloads
         shell: bash
         env:

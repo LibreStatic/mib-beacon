@@ -50,11 +50,11 @@ describe('Live MIB source guards', () => {
 
   it('keeps agent prerequisites actionable when no saved profiles exist', () => {
     const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
-    const agentStrip = liveMibs
-      .split('style={styles.agentStrip}')[1]
-      ?.split('</ScrollView>')[0];
-    expect(liveMibs).toContain("adHocHost ? (");
-    expect(liveMibs).toContain('No target configured. Create a saved agent here to start scanning.');
+    const agentStrip = liveMibs.split('style={styles.agentStrip}')[1]?.split('</ScrollView>')[0];
+    expect(liveMibs).toContain('adHocHost ? (');
+    expect(liveMibs).toContain(
+      'No target configured. Create a saved agent here to start scanning.',
+    );
     expect(liveMibs).toContain('title="New profile"');
     expect(liveMibs).toContain('<AgentProfileDialog');
     expect(liveMibs).toContain('style={[styles.agentBar');
@@ -63,7 +63,9 @@ describe('Live MIB source guards', () => {
 
   it('auto-selects newly created profiles without exposing saved credentials', () => {
     const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
-    expect(liveMibs).toContain('engine.agents.create(agentDraftFromEditor(profileEditor))');
+    expect(liveMibs).toMatch(
+      /saveAgentProfile\(\s*engine,\s*null,\s*agentDraftFromEditor\(profileEditor\)/,
+    );
     expect(liveMibs).toContain('selectAgentProfile(created)');
     expect(liveMibs).toContain('info={info}');
   });

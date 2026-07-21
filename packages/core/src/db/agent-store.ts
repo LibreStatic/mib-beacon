@@ -90,15 +90,12 @@ export class AgentStore {
       privKey: secrets.privKey ? refs.privKey : null,
     };
     validateCredentialConfiguration(profile, nextRefs, this.transport);
-    const stored: string[] = [];
+    const touched = new Map<string, string | null>();
     try {
-      for (const [key, value] of Object.entries(secrets) as [
-        keyof AgentSecretsInput,
-        string,
-      ][]) {
+      for (const [key, value] of Object.entries(secrets) as [keyof AgentSecretsInput, string][]) {
         if (!value) continue;
+        touched.set(refs[key], await this.transport.secrets.get(refs[key]));
         await this.transport.secrets.set(refs[key], value);
-        stored.push(refs[key]);
       }
       this.db.run(
         `INSERT INTO agents
@@ -116,10 +113,10 @@ export class AgentStore {
         ],
       );
     } catch (error) {
-      await Promise.all(stored.map((reference) => this.transport.secrets.delete(reference)));
+      await this.rollbackSecrets(touched, error, 'create');
       throw error;
     }
-    return this.get(id)!;
+    return this.publicProfileValue(id, profile, nextRefs, timestamp, timestamp, null);
   }
 
   private async update(id: string, draft: AgentUpdateDraft): Promise<AgentProfile> {
@@ -150,58 +147,90 @@ export class AgentStore {
       if (value !== undefined) plannedRefs[key] = value ? refs[key] : null;
     }
     validateCredentialConfiguration(profile, plannedRefs, this.transport);
-    for (const key of ['community', 'authKey', 'privKey'] as const) {
-      if (clear.has(key) && nextRefs[key]) {
-        await this.transport.secrets.delete(nextRefs[key]!);
-        nextRefs[key] = null;
-      }
-      const value = secrets[key];
-      if (value !== undefined) {
-        if (value) {
-          await this.transport.secrets.set(refs[key], value);
-          nextRefs[key] = refs[key];
-        } else if (nextRefs[key]) {
+    const timestamp = this.now();
+    const touched = new Map<string, string | null>();
+    const remember = async (reference: string) => {
+      if (!touched.has(reference))
+        touched.set(reference, await this.transport.secrets.get(reference));
+    };
+    try {
+      for (const key of ['community', 'authKey', 'privKey'] as const) {
+        if (clear.has(key) && nextRefs[key]) {
+          await remember(nextRefs[key]!);
           await this.transport.secrets.delete(nextRefs[key]!);
           nextRefs[key] = null;
         }
+        const value = secrets[key];
+        if (value !== undefined) {
+          if (value) {
+            await remember(refs[key]);
+            await this.transport.secrets.set(refs[key], value);
+            nextRefs[key] = refs[key];
+          } else if (nextRefs[key]) {
+            await remember(nextRefs[key]!);
+            await this.transport.secrets.delete(nextRefs[key]!);
+            nextRefs[key] = null;
+          }
+        }
       }
+      this.db.run(
+        `UPDATE agents SET name = ?, profile_json = ?, community_ref = ?, auth_ref = ?, priv_ref = ?, updated_at = ? WHERE id = ?`,
+        [
+          profile.name,
+          JSON.stringify(profile),
+          nextRefs.community,
+          nextRefs.authKey,
+          nextRefs.privKey,
+          timestamp,
+          id,
+        ],
+      );
+    } catch (cause) {
+      await this.rollbackSecrets(touched, cause, 'update');
+      throw cause;
     }
-    this.db.run(
-      `UPDATE agents SET name = ?, profile_json = ?, community_ref = ?, auth_ref = ?, priv_ref = ?, updated_at = ? WHERE id = ?`,
-      [
-        profile.name,
-        JSON.stringify(profile),
-        nextRefs.community,
-        nextRefs.authKey,
-        nextRefs.privKey,
-        this.now(),
-        id,
-      ],
+    return this.publicProfileValue(
+      id,
+      profile,
+      nextRefs,
+      current.created_at,
+      timestamp,
+      current.last_used_at,
     );
-    return this.get(id)!;
   }
 
   private async delete(id: string): Promise<void> {
     const row = this.row(id);
     if (!row) return;
-    await Promise.all(
-      [row.community_ref, row.auth_ref, row.priv_ref]
-        .filter((reference): reference is string => !!reference)
-        .map((reference) => this.transport.secrets.delete(reference)),
-    );
-    this.db.transaction(() => {
-      this.db.run('DELETE FROM agents WHERE id = ?', [id]);
-      for (const group of this.db.all<GroupRow>('SELECT * FROM agent_groups')) {
-        const agentIds = (JSON.parse(group.agent_ids_json) as string[]).filter(
-          (agentId) => agentId !== id,
-        );
-        this.db.run('UPDATE agent_groups SET agent_ids_json = ?, updated_at = ? WHERE id = ?', [
-          JSON.stringify(agentIds),
-          this.now(),
-          group.id,
-        ]);
+    this.assertNoDeleteDependencies(id);
+    const previous = new Map<string, string | null>();
+    try {
+      for (const reference of [row.community_ref, row.auth_ref, row.priv_ref].filter(
+        (value): value is string => !!value,
+      )) {
+        previous.set(reference, await this.transport.secrets.get(reference));
+        await this.transport.secrets.delete(reference);
       }
-    });
+      this.db.transaction(() => {
+        // Close the race between the preflight and awaited secret-store I/O.
+        this.assertNoDeleteDependencies(id);
+        this.db.run('DELETE FROM agents WHERE id = ?', [id]);
+        this.db.run('DELETE FROM settings WHERE key = ?', [`live-mibs.agent.${id}`]);
+        for (const group of this.db.all<GroupRow>('SELECT * FROM agent_groups')) {
+          const agentIds = (JSON.parse(group.agent_ids_json) as string[]).filter(
+            (agentId) => agentId !== id,
+          );
+          this.db.run('UPDATE agent_groups SET agent_ids_json = ?, updated_at = ? WHERE id = ?', [
+            JSON.stringify(agentIds),
+            this.now(),
+            group.id,
+          ]);
+        }
+      });
+    } catch (cause) {
+      await this.rollbackSecrets(previous, cause, 'delete');
+      throw cause;
+    }
   }
 
   async resolve(id: string): Promise<AgentSpec> {
@@ -260,7 +289,7 @@ export class AgentStore {
       'INSERT INTO agent_groups (id, name, agent_ids_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
       [id, name, JSON.stringify(agentIds), timestamp, timestamp],
     );
-    return this.getGroup(id)!;
+    return { id, name, agentIds, createdAt: timestamp, updatedAt: timestamp };
   }
 
   private updateGroup(id: string, input: { name?: string; agentIds?: string[] }): AgentGroup {
@@ -271,11 +300,18 @@ export class AgentStore {
       input.agentIds === undefined
         ? (JSON.parse(current.agent_ids_json) as string[])
         : this.validateAgentIds(input.agentIds);
+    const timestamp = this.now();
     this.db.run(
       'UPDATE agent_groups SET name = ?, agent_ids_json = ?, updated_at = ? WHERE id = ?',
-      [name, JSON.stringify(agentIds), this.now(), id],
+      [name, JSON.stringify(agentIds), timestamp, id],
     );
-    return this.getGroup(id)!;
+    return {
+      id,
+      name,
+      agentIds,
+      createdAt: current.created_at,
+      updatedAt: timestamp,
+    };
   }
 
   private deleteGroup(id: string): void {
@@ -302,6 +338,26 @@ export class AgentStore {
     };
   }
 
+  private publicProfileValue(
+    id: string,
+    profile: StoredProfile,
+    refs: SecretReferenceSet,
+    createdAt: number,
+    updatedAt: number,
+    lastUsedAt: number | null,
+  ): AgentProfile {
+    return {
+      id,
+      ...profile,
+      hasCommunity: !!refs.community,
+      hasAuthKey: !!refs.authKey,
+      hasPrivKey: !!refs.privKey,
+      createdAt,
+      updatedAt,
+      ...(lastUsedAt === null ? {} : { lastUsedAt }),
+    };
+  }
+
   private row(id: string): AgentRow | undefined {
     return this.db.get<AgentRow>('SELECT * FROM agents WHERE id = ?', [id]);
   }
@@ -318,6 +374,57 @@ export class AgentStore {
         'SECRET_STORAGE_UNAVAILABLE',
         'Encrypted credential storage is unavailable on this engine host',
         { hint: 'Enable the OS keychain/secure store before saving an agent credential.' },
+      );
+    }
+  }
+
+  private assertNoDeleteDependencies(id: string): void {
+    const dependencies = {
+      bookmarks:
+        this.db.get<{ count: number }>(
+          'SELECT COUNT(*) AS count FROM operation_bookmarks WHERE agent_id = ?',
+          [id],
+        )?.count ?? 0,
+      pollSeries:
+        this.db.get<{ count: number }>(
+          'SELECT COUNT(*) AS count FROM poll_series WHERE agent_id = ?',
+          [id],
+        )?.count ?? 0,
+      trapPresets:
+        this.db.get<{ count: number }>(
+          'SELECT COUNT(*) AS count FROM trap_send_presets WHERE agent_id = ?',
+          [id],
+        )?.count ?? 0,
+    };
+    const blocked = Object.entries(dependencies).filter(([, count]) => count > 0);
+    if (!blocked.length) return;
+    throw new MibBeaconError(
+      'INTERNAL',
+      `Agent is still used by ${blocked.map(([kind, count]) => `${kind} (${count})`).join(', ')}`,
+      {
+        hint: 'Remove or retarget those saved items before deleting the agent.',
+        details: dependencies,
+      },
+    );
+  }
+
+  private async rollbackSecrets(
+    previous: Map<string, string | null>,
+    cause: unknown,
+    operation: 'create' | 'update' | 'delete',
+  ): Promise<void> {
+    const results = await Promise.allSettled(
+      [...previous].map(([reference, value]) =>
+        value === null
+          ? this.transport.secrets.delete(reference)
+          : this.transport.secrets.set(reference, value),
+      ),
+    );
+    if (results.some((result) => result.status === 'rejected')) {
+      throw new MibBeaconError(
+        'INTERNAL',
+        `Secret rollback outcome unknown after agent ${operation} failure`,
+        { cause },
       );
     }
   }
@@ -399,10 +506,7 @@ function activeSecretKeys(profile: StoredProfile): (keyof AgentSecretsInput)[] {
   return ['authKey', 'privKey'];
 }
 
-function relevantSecrets(
-  profile: StoredProfile,
-  secrets?: AgentSecretsInput,
-): AgentSecretsInput {
+function relevantSecrets(profile: StoredProfile, secrets?: AgentSecretsInput): AgentSecretsInput {
   const relevant: AgentSecretsInput = {};
   for (const key of activeSecretKeys(profile)) {
     if (secrets?.[key] !== undefined) relevant[key] = secrets[key];

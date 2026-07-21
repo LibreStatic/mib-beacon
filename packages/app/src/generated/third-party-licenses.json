@@ -1132,6 +1132,15 @@
       ]
     },
     {
+      "name": "@ide/backoff",
+      "version": "1.0.0",
+      "license": "MIT",
+      "homepage": "https://github.com/ide/backoff#readme",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
       "name": "@isaacs/fs-minipass",
       "version": "4.0.1",
       "license": "ISC",
@@ -1939,6 +1948,15 @@
       "version": "29.6.3",
       "license": "MIT",
       "homepage": "https://github.com/jestjs/jest#readme",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
+      "name": "badgin",
+      "version": "1.2.3",
+      "license": "MIT",
+      "homepage": "https://github.com/jaulz/badgin",
       "targets": [
         "mobile"
       ]
@@ -2764,6 +2782,15 @@
       ]
     },
     {
+      "name": "expo-application",
+      "version": "7.0.8",
+      "license": "MIT",
+      "homepage": "https://docs.expo.dev/versions/latest/sdk/application/",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
       "name": "expo-asset",
       "version": "12.0.13",
       "license": "MIT",
@@ -2894,6 +2921,15 @@
       "version": "3.0.30",
       "license": "MIT",
       "homepage": "https://github.com/expo/expo/tree/main/packages/expo-modules-core",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
+      "name": "expo-notifications",
+      "version": "0.32.17",
+      "license": "MIT",
+      "homepage": "https://docs.expo.dev/versions/latest/sdk/notifications/",
       "targets": [
         "mobile"
       ]
@@ -4963,6 +4999,15 @@
       "version": "0.7.17",
       "license": "MIT",
       "homepage": "https://github.com/margelo/react-native-quick-crypto#readme",
+      "targets": [
+        "mobile"
+      ]
+    },
+    {
+      "name": "react-native-safe-area-context",
+      "version": "5.6.2",
+      "license": "MIT",
+      "homepage": "https://github.com/AppAndFlow/react-native-safe-area-context#readme",
       "targets": [
         "mobile"
       ]

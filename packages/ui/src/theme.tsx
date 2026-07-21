@@ -1,7 +1,13 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import { getDefaultThemeForScheme } from './default-themes';
-import { createTheme, type DensityMode, type Theme, type ThemeMode } from './theme-values';
+import {
+  createTheme,
+  resolveThemeProviderTheme,
+  type DensityMode,
+  type Theme,
+  type ThemeMode,
+} from './theme-values';
 import type { ThemeDescriptor } from './theme-types';
 
 export * from './theme-values';
@@ -22,13 +28,17 @@ export function ThemeProvider({
   children: ReactNode;
 }) {
   const system = useColorScheme();
-  const scheme = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
-  const descriptor =
-    scheme === 'dark'
-      ? (darkTheme ?? getDefaultThemeForScheme('dark'))
-      : (lightTheme ?? getDefaultThemeForScheme('light'));
+  const systemScheme = system === 'dark' ? 'dark' : 'light';
   return (
-    <ThemeContext.Provider value={createTheme(scheme, density, descriptor)}>
+    <ThemeContext.Provider
+      value={resolveThemeProviderTheme({
+        mode,
+        systemScheme,
+        density,
+        lightTheme: lightTheme ?? getDefaultThemeForScheme('light'),
+        darkTheme: darkTheme ?? getDefaultThemeForScheme('dark'),
+      })}
+    >
       {children}
     </ThemeContext.Provider>
   );

@@ -31,6 +31,7 @@ __pycache__/
 !docs/audits/flatpak-update-smoke.log
 !docs/audits/nsis-build-smoke.log
 !docs/audits/ubuntu-vm-appimage-smoke.log
+/docs/audits/validation-matrix-v1.json
 
 # corpus downloads/reports are local; harness source and revision lock are committed
 dev/corpus/*

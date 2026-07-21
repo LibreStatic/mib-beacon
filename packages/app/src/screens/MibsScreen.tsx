@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
+import { View, FlatList, Pressable, ScrollView, StyleSheet } from 'react-native';
 import {
-  View,
-  FlatList,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-} from 'react-native';
-import { Button, Card, EmptyState, Field, Label, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Label,
+  Mono,
+  Pill,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import type { ModuleInfo } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import { focusModule, importPastedText, importUrl, unloadModule } from '../actions';
 import { FileImportFlow } from '../components/FileImportFlow';
@@ -20,6 +25,7 @@ import { useResponsiveLayout } from '../responsive-context';
 
 export function MibsScreen() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const modules = useAppStore((s) => s.modules);
@@ -59,7 +65,7 @@ export function MibsScreen() {
         title={busy ? 'Working…' : 'Fetch & import'}
         small
         disabled={busy || !url.trim()}
-        onPress={() => void importUrl(engine, url)}
+        onPress={() => void importUrl(engine, url, ownsEngine)}
       />
       <Label tone="dim" size={11}>
         Pasted text is sent only to the connected engine for parsing. URL imports and enabled
@@ -73,7 +79,7 @@ export function MibsScreen() {
         disabled={busy || !paste.trim()}
         onPress={() => {
           submittedPaste.current = true;
-          void importPastedText(engine, 'pasted.mib', paste);
+          void importPastedText(engine, 'pasted.mib', paste, ownsEngine);
         }}
       />
       <ImportProgressPanel />
@@ -141,14 +147,20 @@ export function MibsScreen() {
                     <Button
                       title="Open focused tree"
                       small
-                      onPress={() => void focusModule(engine, selected.name)}
+                      onPress={() =>
+                        void focusModule(engine, selected.name, ownsEngine).catch(() => undefined)
+                      }
                     />
                     {!selected.isBase ? (
                       <Button
                         title="Unload"
                         small
                         variant="danger"
-                        onPress={() => void unloadModule(engine, selected.name)}
+                        onPress={() =>
+                          void unloadModule(engine, selected.name, ownsEngine).catch(
+                            () => undefined,
+                          )
+                        }
                       />
                     ) : null}
                   </View>
@@ -230,6 +242,7 @@ function ModuleRow({
   onSelect?: () => void;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   return (
     <View style={[styles.modRow, { borderBottomColor: t.border }]}>
@@ -237,7 +250,9 @@ function ModuleRow({
         accessibilityRole="button"
         accessibilityLabel={`Open ${mod.name} tree`}
         accessibilityState={{ selected: Boolean(selected) }}
-        onPress={onSelect ?? (() => void focusModule(engine, mod.name))}
+        onPress={
+          onSelect ?? (() => void focusModule(engine, mod.name, ownsEngine).catch(() => undefined))
+        }
         style={({ pressed }) => [
           styles.openArea,
           { backgroundColor: selected || pressed ? t.accentSoft : 'transparent' },
@@ -269,7 +284,7 @@ function ModuleRow({
           title="Unload"
           small
           variant="danger"
-          onPress={() => void unloadModule(engine, mod.name)}
+          onPress={() => void unloadModule(engine, mod.name, ownsEngine).catch(() => undefined)}
         />
       )}
     </View>

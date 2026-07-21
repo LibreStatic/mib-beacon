@@ -190,13 +190,16 @@ export class ResolverService {
       },
       cache: {
         stats: async () => this.cache.stats(),
-        clear: () => this.cache.clear(),
+        clear: () => this.mutationQueue.run(() => this.cache.clear()),
       },
       history: {
         list: async (limit = 50) => this.listHistory(limit),
       },
       resolveModules: async (modules, options: ResolverResolveOptions = {}) => {
-        const operation = this.createOperation({ modules, preferredSourceId: options.preferredSourceId });
+        const operation = this.createOperation({
+          modules,
+          preferredSourceId: options.preferredSourceId,
+        });
         void this.mutationQueue
           .run(() => this.runExplicitResolution(operation, modules, options.preferredSourceId))
           .catch((error) => this.failUnexpected(operation, error));
@@ -221,7 +224,11 @@ export class ResolverService {
       },
       browseVendorMibs: async (request) => {
         const operation = this.createOperation({
-          vendorBrowse: { oid: request.oid, vendor: request.vendor, network: request.network ?? true },
+          vendorBrowse: {
+            oid: request.oid,
+            vendor: request.vendor,
+            network: request.network ?? true,
+          },
         });
         void this.runVendorBrowse(operation, request).catch((error) =>
           this.failUnexpected(operation, error),
@@ -309,10 +316,7 @@ export class ResolverService {
     );
   }
 
-  private async runCachedResolution(
-    operation: ImportOperation,
-    modules: string[],
-  ): Promise<void> {
+  private async runCachedResolution(operation: ImportOperation, modules: string[]): Promise<void> {
     operation.stagedStore = this.mibStore.fork();
     operation.stagedCache = new StagedMibCache(this.cache);
     this.transition(operation, 'resolving-cache');
@@ -454,12 +458,7 @@ export class ResolverService {
     this.emit(operation, 'source-progress', progress);
   }
 
-  private recordSourceTest(
-    sourceId: string,
-    module: string,
-    ok: boolean,
-    message?: string,
-  ): void {
+  private recordSourceTest(sourceId: string, module: string, ok: boolean, message?: string): void {
     const result = ok ? `Found ${module}` : `Test failed: ${message ?? module}`;
     this.db.run(
       `INSERT INTO resolver_source_stats (source_id, last_used_at, last_result, cache_hits)
@@ -709,10 +708,7 @@ export class ResolverService {
     await previous;
     try {
       throwIfAborted(signal);
-      const waitMs = Math.max(
-        0,
-        this.oidBaseLastRequestAt + this.oidBaseIntervalMs - this.now(),
-      );
+      const waitMs = Math.max(0, this.oidBaseLastRequestAt + this.oidBaseIntervalMs - this.now());
       await abortableDelay(waitMs, signal);
       this.oidBaseLastRequestAt = this.now();
       return await new OidBaseClient(this.transport.http).lookup(oid, signal);
@@ -901,17 +897,18 @@ export class ResolverService {
     }
 
     const indexed = network
-      ? await this.sourceStore.discoverCandidates([request.vendor], this.transport, operation.controller.signal)
+      ? await this.sourceStore.discoverCandidates(
+          [request.vendor],
+          this.transport,
+          operation.controller.signal,
+        )
       : this.sourceStore.candidates([request.vendor]).map((candidate) => ({
           ...candidate,
           sourceName: this.sourceStore.get(candidate.sourceId)?.name ?? candidate.sourceId,
         }));
     const candidates = indexed.slice(0, 12);
-    const verified = await mapConcurrent(
-      candidates,
-      2,
-      (candidate) =>
-        this.verifyVendorCandidate(oid, candidate, sources, operation.controller.signal),
+    const verified = await mapConcurrent(candidates, 2, (candidate) =>
+      this.verifyVendorCandidate(oid, candidate, sources, operation.controller.signal),
     );
     throwIfAborted(operation.controller.signal);
     verified.sort((left, right) => Number(right.verified) - Number(left.verified));
@@ -953,7 +950,9 @@ export class ResolverService {
       verified,
       ...(match?.name && verified ? { matchName: match.name } : {}),
       ...(match?.definitionOid && verified ? { matchOid: match.definitionOid } : {}),
-      ...(verified ? {} : { reason: resolution.failed[0]?.reason ?? 'Candidate does not own this OID' }),
+      ...(verified
+        ? {}
+        : { reason: resolution.failed[0]?.reason ?? 'Candidate does not own this OID' }),
     };
   }
 

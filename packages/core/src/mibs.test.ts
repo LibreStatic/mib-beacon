@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { createNodeTransport, nodeStorageFactory } from '@mibbeacon/transport/node';
+import type { HttpClient, StorageAdapter, Transport } from '@mibbeacon/transport';
 import { createEngine } from './engine';
 
 const TOY_MIB = `
@@ -28,7 +29,85 @@ function makeEngine(dbPath: string) {
   return createEngine(createNodeTransport({ dataDir: tmpdir() }), { dbPath });
 }
 
+function persistenceFailingEngine(http?: HttpClient) {
+  const base = createNodeTransport({ dataDir: tmpdir() });
+  let rejectCatalogWrite = false;
+  const transport = {
+    ...base,
+    ...(http ? { http } : {}),
+    storage: {
+      open(path: string): StorageAdapter {
+        const db = base.storage.open(path);
+        return {
+          exec: db.exec.bind(db),
+          get: db.get.bind(db),
+          all: db.all.bind(db),
+          transaction: db.transaction.bind(db),
+          close: db.close.bind(db),
+          run: (sql, params) => {
+            if (rejectCatalogWrite && /DELETE FROM mib_modules/.test(sql)) {
+              throw new Error('catalog persistence failed');
+            }
+            return db.run(sql, params);
+          },
+        };
+      },
+    },
+  } satisfies Transport;
+  const engine = createEngine(transport, { dbPath: ':memory:' });
+  return {
+    engine,
+    rejectCatalogWrites: () => {
+      rejectCatalogWrite = true;
+    },
+  };
+}
+
 describe('engine mibs domain', () => {
+  it('does not expose an imported catalog candidate when persistence fails', async () => {
+    const { engine, rejectCatalogWrites } = persistenceFailingEngine();
+    rejectCatalogWrites();
+
+    await expect(engine.mibs.importTexts([{ name: 'TOY-MIB', content: TOY_MIB }])).rejects.toThrow(
+      'catalog persistence failed',
+    );
+
+    expect(await engine.mibs.node('toyValue')).toBeNull();
+    expect((await engine.mibs.list()).some((module) => module.name === 'TOY-MIB')).toBe(false);
+  });
+
+  it('does not expose an unloaded catalog candidate when persistence fails', async () => {
+    const { engine, rejectCatalogWrites } = persistenceFailingEngine();
+    await engine.mibs.importTexts([{ name: 'TOY-MIB', content: TOY_MIB }]);
+    rejectCatalogWrites();
+
+    await expect(engine.mibs.unload('TOY-MIB')).rejects.toThrow('catalog persistence failed');
+
+    expect((await engine.mibs.node('toyValue'))?.oid).toBe('1.3.6.1.4.1.99999.1');
+    expect((await engine.mibs.list()).some((module) => module.name === 'TOY-MIB')).toBe(true);
+  });
+
+  it('does not expose a URL-imported catalog candidate when persistence fails', async () => {
+    const http: HttpClient = {
+      fetch: async () => ({
+        status: 200,
+        ok: true,
+        headers: {},
+        text: TOY_MIB,
+        bytes: new TextEncoder().encode(TOY_MIB).byteLength,
+      }),
+    };
+    const { engine, rejectCatalogWrites } = persistenceFailingEngine(http);
+    rejectCatalogWrites();
+
+    await expect(engine.mibs.importUrl('https://example.test/TOY-MIB')).rejects.toThrow(
+      'catalog persistence failed',
+    );
+
+    expect(await engine.mibs.node('toyValue')).toBeNull();
+    expect((await engine.mibs.list()).some((module) => module.name === 'TOY-MIB')).toBe(false);
+  });
+
   it('rejects oversized and over-count file batches before inspection or import', async () => {
     const engine = makeEngine(':memory:');
     const tooMany = Array.from({ length: 1_001 }, (_, index) => ({

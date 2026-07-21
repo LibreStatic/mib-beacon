@@ -1,9 +1,9 @@
 {
   "name": "@mibbeacon/mobile",
-  "version": "0.1.0-beta.1",
+  "version": "0.6.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "MIB Beacon — SNMP toolkit for mobile (Expo, Android/iOS)",
+  "description": "MIB Beacon \u2014 SNMP toolkit for mobile (Expo, Android/iOS)",
   "main": "index.js",
   "scripts": {
     "android": "expo run:android",
@@ -25,6 +25,7 @@
     "expo-dev-client": "~6.0.0",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.0",
+    "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.0",
     "expo-sharing": "~14.0.8",
     "expo-sqlite": "~16.0.0",

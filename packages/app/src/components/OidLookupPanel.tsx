@@ -1,12 +1,19 @@
-import {
-  Linking,
-  View,
-  StyleSheet,
-} from 'react-native';
+import { Linking, View, StyleSheet } from 'react-native';
 import { useState } from 'react';
-import { Button, Card, Dialog, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+import {
+  Button,
+  Card,
+  Dialog,
+  Label,
+  Mono,
+  Pill,
+  Row,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import { normalizeNumericOid } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import { browseVendorMibs, loadLookupCandidate, lookupUnknownOid } from '../actions';
 import { observiumSearchUrl } from '../oid-lookup';
@@ -15,6 +22,7 @@ import { shouldOfferVendorMibBrowse, vendorMibImportAction } from '../vendor-mib
 /** Explicit, one-OID-at-a-time external lookup. It never starts without a user press. */
 export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?: boolean }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const normalized = normalizeNumericOid(oid) ?? '';
   const lookup = useAppStore((s) => s.oidLookups[normalized]);
@@ -27,61 +35,91 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
   const [startingCandidate, setStartingCandidate] = useState<string | null>(null);
   const valid = Boolean(normalized);
   if (!valid) return null;
-  const vendorPrompt = lookup?.result
-    ? shouldOfferVendorMibBrowse(lookup.result)
-    : null;
+  const vendorPrompt = lookup?.result ? shouldOfferVendorMibBrowse(lookup.result) : null;
   const openVendorBrowser = () => {
     if (!vendorPrompt || !lookup?.result?.enterprise || vendorBrowseStarting) return;
     setVendorBrowserOpen(true);
     setVendorBrowseStarting(true);
-    void browseVendorMibs(engine, normalized, vendorPrompt.vendor).finally(() =>
-      setVendorBrowseStarting(false),
-    );
+    void browseVendorMibs(engine, normalized, vendorPrompt.vendor, ownsEngine).finally(() => {
+      if (ownsEngine()) setVendorBrowseStarting(false);
+    });
   };
   const content = (
     <>
       <View style={styles.head}>
         <View style={{ flex: 1 }}>
           <SectionTitle>External OID evidence</SectionTitle>
-          <Mono dim size={10} numberOfLines={1}>{normalized}</Mono>
+          <Mono dim size={10} numberOfLines={1}>
+            {normalized}
+          </Mono>
         </View>
         <Button
           title={running ? 'Looking up…' : lookup?.result ? 'Refresh' : 'Resolve'}
           small
           variant="ghost"
           disabled={running}
-          onPress={() => void lookupUnknownOid(engine, normalized)}
+          onPress={() => void lookupUnknownOid(engine, normalized, ownsEngine)}
         />
       </View>
-      {running ? <Label tone="dim" size={11}>Checking loaded MIBs and waiting for permitted external sources…</Label> : null}
-      {lookup?.error ? <Label tone="error" size={11}>{lookup.error}</Label> : null}
+      {running ? (
+        <Label tone="dim" size={11}>
+          Checking loaded MIBs and waiting for permitted external sources…
+        </Label>
+      ) : null}
+      {lookup?.error ? (
+        <Label tone="error" size={11}>
+          {lookup.error}
+        </Label>
+      ) : null}
       {lookup?.result ? (
         <View style={styles.results}>
           <Row style={styles.wrap}>
-            <Pill text={lookup.result.fromCache ? 'cached lookup' : 'fresh lookup'} color={lookup.result.fromCache ? t.warn : t.ok} />
-            {lookup.result.loaded ? <Pill text={`loaded · ${lookup.result.loaded.name}`} color={t.ok} /> : null}
-            {lookup.result.cached ? <Pill text={`cached · ${lookup.result.cached.name}`} color={t.warn} /> : null}
+            <Pill
+              text={lookup.result.fromCache ? 'cached lookup' : 'fresh lookup'}
+              color={lookup.result.fromCache ? t.warn : t.ok}
+            />
+            {lookup.result.loaded ? (
+              <Pill text={`loaded · ${lookup.result.loaded.name}`} color={t.ok} />
+            ) : null}
+            {lookup.result.cached ? (
+              <Pill text={`cached · ${lookup.result.cached.name}`} color={t.warn} />
+            ) : null}
           </Row>
           {lookup.result.cached?.module ? (
             <Row>
               <View style={{ flex: 1 }}>
-                <Label tone="dim" size={10}>Cached but not loaded</Label>
+                <Label tone="dim" size={10}>
+                  Cached but not loaded
+                </Label>
                 <Mono size={10}>{lookup.result.cached.module}</Mono>
               </View>
               <Button
                 title="Load cached"
                 small
                 disabled={importing}
-                onPress={() => void loadLookupCandidate(engine, lookup.result!.cached!.module!, true)}
+                onPress={() =>
+                  void loadLookupCandidate(
+                    engine,
+                    lookup.result!.cached!.module!,
+                    true,
+                    undefined,
+                    ownsEngine,
+                  )
+                }
               />
             </Row>
           ) : null}
           {lookup.result.enterprise ? (
-            <Evidence title={`IANA enterprise ${lookup.result.enterprise.number}`} value={lookup.result.enterprise.organization} />
+            <Evidence
+              title={`IANA enterprise ${lookup.result.enterprise.number}`}
+              value={lookup.result.enterprise.organization}
+            />
           ) : null}
           {vendorPrompt ? (
             <View style={styles.vendorPrompt}>
-              <Label tone="dim" size={11}>No such OID in our MIB database.</Label>
+              <Label tone="dim" size={11}>
+                No such OID in our MIB database.
+              </Label>
               <Button
                 title={vendorPrompt.label}
                 small
@@ -91,25 +129,51 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
             </View>
           ) : null}
           {lookup.result.oidBase ? (
-            <Evidence title="OID-base" value={lookup.result.oidBase.asn1Notation ?? lookup.result.oidBase.description ?? 'Registry match'} />
+            <Evidence
+              title="OID-base"
+              value={
+                lookup.result.oidBase.asn1Notation ??
+                lookup.result.oidBase.description ??
+                'Registry match'
+              }
+            />
           ) : null}
           {lookup.result.oidRef ? (
-            <Evidence title="OIDref" value={lookup.result.oidRef.title ?? lookup.result.oidRef.description ?? 'Reference match'} />
+            <Evidence
+              title="OIDref"
+              value={
+                lookup.result.oidRef.title ?? lookup.result.oidRef.description ?? 'Reference match'
+              }
+            />
           ) : null}
           {lookup.result.candidates.length ? (
             <View>
-              <Label tone="dim" size={10}>Candidate indexed MIBs</Label>
+              <Label tone="dim" size={10}>
+                Candidate indexed MIBs
+              </Label>
               {lookup.result.candidates.slice(0, 12).map((candidate, index) => (
-                <Row key={`${candidate.sourceId}-${candidate.module}-${index}`} style={styles.candidate}>
+                <Row
+                  key={`${candidate.sourceId}-${candidate.module}-${index}`}
+                  style={styles.candidate}
+                >
                   <Text style={{ color: t.text, fontSize: 11, flex: 1 }}>
-                    {candidate.module} · {candidate.sourceId}{candidate.location ? ` · ${candidate.location}` : ''}
+                    {candidate.module} · {candidate.sourceId}
+                    {candidate.location ? ` · ${candidate.location}` : ''}
                   </Text>
                   <Button
                     title="Fetch"
                     small
                     variant="ghost"
                     disabled={importing}
-                    onPress={() => void loadLookupCandidate(engine, candidate.module)}
+                    onPress={() =>
+                      void loadLookupCandidate(
+                        engine,
+                        candidate.module,
+                        false,
+                        undefined,
+                        ownsEngine,
+                      )
+                    }
                   />
                 </Row>
               ))}
@@ -121,8 +185,14 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
             variant="ghost"
             onPress={() => void Linking.openURL(observiumSearchUrl(normalized))}
           />
-          {!lookup.result.loaded && !lookup.result.enterprise && !lookup.result.oidBase && !lookup.result.oidRef && !lookup.result.candidates.length ? (
-            <Label tone="dim" size={11}>No matching loaded definition or external registry evidence was found.</Label>
+          {!lookup.result.loaded &&
+          !lookup.result.enterprise &&
+          !lookup.result.oidBase &&
+          !lookup.result.oidRef &&
+          !lookup.result.candidates.length ? (
+            <Label tone="dim" size={11}>
+              No matching loaded definition or external registry evidence was found.
+            </Label>
           ) : null}
         </View>
       ) : null}
@@ -130,7 +200,11 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
   );
   return (
     <>
-      {compact ? <View style={[styles.compact, { borderColor: t.border }]}>{content}</View> : <Card>{content}</Card>}
+      {compact ? (
+        <View style={[styles.compact, { borderColor: t.border }]}>{content}</View>
+      ) : (
+        <Card>{content}</Card>
+      )}
       <Dialog
         visible={vendorBrowserOpen}
         onRequestClose={() => setVendorBrowserOpen(false)}
@@ -138,9 +212,19 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
         subtitle={`Explore sources for ${normalized}`}
         maxWidth={680}
       >
-        {vendorBrowseRunning || vendorBrowseStarting ? <Label tone="dim" size={11}>Searching configured MIB sources and verifying OID ownership…</Label> : null}
-        {vendorBrowse?.error ? <Label tone="error" size={11}>{vendorBrowse.error}</Label> : null}
-        {vendorBrowse?.result?.fromCache ? <Pill text="cached-only results" color={t.warn} /> : null}
+        {vendorBrowseRunning || vendorBrowseStarting ? (
+          <Label tone="dim" size={11}>
+            Searching configured MIB sources and verifying OID ownership…
+          </Label>
+        ) : null}
+        {vendorBrowse?.error ? (
+          <Label tone="error" size={11}>
+            {vendorBrowse.error}
+          </Label>
+        ) : null}
+        {vendorBrowse?.result?.fromCache ? (
+          <Pill text="cached-only results" color={t.warn} />
+        ) : null}
         {vendorBrowse?.result?.candidates.map((candidate) => {
           const action = vendorMibImportAction(vendorBrowse.result!.fromCache, candidate);
           const candidateKey = `${candidate.sourceId}-${candidate.module}`;
@@ -154,9 +238,20 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
                     color={candidate.verified ? t.ok : t.warn}
                   />
                 </Row>
-                <Label tone="dim" size={10}>{candidate.sourceName}</Label>
-                {candidate.matchName ? <Label tone="dim" size={10}>{candidate.matchName}{candidate.matchOid ? ` · ${candidate.matchOid}` : ''}</Label> : null}
-                {candidate.reason && !candidate.verified ? <Label tone="dim" size={10}>{candidate.reason}</Label> : null}
+                <Label tone="dim" size={10}>
+                  {candidate.sourceName}
+                </Label>
+                {candidate.matchName ? (
+                  <Label tone="dim" size={10}>
+                    {candidate.matchName}
+                    {candidate.matchOid ? ` · ${candidate.matchOid}` : ''}
+                  </Label>
+                ) : null}
+                {candidate.reason && !candidate.verified ? (
+                  <Label tone="dim" size={10}>
+                    {candidate.reason}
+                  </Label>
+                ) : null}
               </View>
               <Button
                 title={action.label}
@@ -170,14 +265,22 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
                     candidate.module,
                     action.mode === 'cached',
                     action.mode === 'download' ? candidate.sourceId : undefined,
-                  ).finally(() => setStartingCandidate(null));
+                    ownsEngine,
+                  ).finally(() => {
+                    if (ownsEngine()) setStartingCandidate(null);
+                  });
                 }}
               />
             </View>
           );
         })}
-        {vendorBrowse?.result && vendorBrowse.result.candidates.length === 0 && !vendorBrowseRunning && !vendorBrowseStarting ? (
-          <Label tone="dim" size={11}>No matching MIB candidates were found in the available sources.</Label>
+        {vendorBrowse?.result &&
+        vendorBrowse.result.candidates.length === 0 &&
+        !vendorBrowseRunning &&
+        !vendorBrowseStarting ? (
+          <Label tone="dim" size={11}>
+            No matching MIB candidates were found in the available sources.
+          </Label>
         ) : null}
       </Dialog>
     </>
@@ -189,7 +292,9 @@ function Evidence({ title, value }: { title: string; value: string }) {
   return (
     <View style={[styles.evidence, { borderLeftColor: t.accent }]}>
       <Text style={{ color: t.textDim, fontSize: 10, fontWeight: '800' }}>{title}</Text>
-      <Text style={{ color: t.text, fontSize: 11, lineHeight: 16 }} numberOfLines={3}>{value}</Text>
+      <Text style={{ color: t.text, fontSize: 11, lineHeight: 16 }} numberOfLines={3}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -200,7 +305,14 @@ const styles = StyleSheet.create({
   results: { gap: 6 },
   wrap: { flexWrap: 'wrap' },
   vendorPrompt: { gap: 2, paddingVertical: 2 },
-  browserCandidate: { borderWidth: 1, borderRadius: 8, padding: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  browserCandidate: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   browserCandidateCopy: { flex: 1, minWidth: 0, gap: 3 },
   evidence: { borderLeftWidth: 2, paddingLeft: 7 },
   candidate: { alignItems: 'center', gap: 6 },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Button,
@@ -28,10 +28,13 @@ import type {
   MibNodeDetail,
   MibNodeSummary,
 } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import { useResponsiveLayout } from '../responsive-context';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { AgentCollectionRecovery } from '../components/AgentCollectionRecovery';
+import { FileImportFlow } from '../components/FileImportFlow';
+import { agentPersistentCollectionsController } from '../agent-persistent-collections';
 import {
   beginLiveCellWrite,
   DEFAULT_LIVE_MIB_SETTINGS,
@@ -54,7 +57,7 @@ import {
 } from '../live-mibs-grid';
 import { useFileImportAdapter } from '../file-import-context';
 import { bitIsSelected, mibRangeError, mibSizeError, toggleBitHex } from '../mib-set-editor';
-import { refreshAgentProfiles } from '../actions';
+import { refreshAgentProfiles, saveAgentProfile } from '../actions';
 import { AgentProfileDialog } from '../components/AgentProfileDialog';
 import {
   agentDraftFromEditor,
@@ -62,6 +65,7 @@ import {
   type AgentEditorState,
 } from '../agent-profile-form';
 import { runLatestLiveMibScanRequest } from '../live-mibs-scan-request';
+import { loadOwnedLiveMibTreeNode } from '../live-mib-tree-node';
 
 type TreeCache = Record<string, MibNodeSummary[]>;
 
@@ -126,18 +130,32 @@ export function LiveMibsScreen({
   onCreateProfileRequestHandled: () => void;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { mode } = useResponsiveLayout();
   const profiles = useAppStore((state) => state.agentProfiles);
   const selectedAgentId = useAppStore((state) => state.selectedAgentId);
   const adHocHost = useAppStore((state) => state.agent.host.trim());
   const requestedScopeOid = useAppStore((state) => state.liveMibScopeOid);
+  const importBusy = useAppStore((state) => state.importBusy);
   const [settings, setSettings] = useState<LiveMibSettings>(DEFAULT_LIVE_MIB_SETTINGS);
   const [settingsAgentId, setSettingsAgentId] = useState<string | null | undefined>(undefined);
   const [profileEditor, setProfileEditor] = useState<AgentEditorState>(EMPTY_AGENT_EDITOR);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const agentCollections = useMemo(
+    () => agentPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const agentCollectionSnapshot = useSyncExternalStore(
+    agentCollections.subscribe,
+    agentCollections.snapshot,
+    agentCollections.snapshot,
+  );
+  const agentCollectionsBlocked = ['error-reverted', 'uncertain', 'conflict'].includes(
+    agentCollectionSnapshot.phase,
+  );
   const [treeCache, setTreeCache] = useState<TreeCache>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [scope, setScope] = useState<MibNodeDetail | null>(null);
@@ -179,22 +197,39 @@ export function LiveMibsScreen({
   }, [createProfileRequest, onCreateProfileRequestHandled, openProfileEditor]);
 
   const createProfile = async () => {
-    if (profileBusy) return;
+    if (!ownsEngine()) return;
+    if (profileBusy || agentCollectionsBlocked) return;
     setProfileBusy(true);
     setProfileError(null);
     try {
-      const created = await engine.agents.create(agentDraftFromEditor(profileEditor));
-      await refreshAgentProfiles(engine);
+      const { profile: created } = await saveAgentProfile(
+        engine,
+        null,
+        agentDraftFromEditor(profileEditor),
+        ownsEngine,
+      );
+      if (!ownsEngine()) return;
+      await refreshAgentProfiles(engine, ownsEngine);
+      if (!ownsEngine()) return;
       useAppStore.getState().selectAgentProfile(created);
-      useAppStore.getState().pushToast({ tone: 'success', message: 'Profile created and selected' });
+      useAppStore
+        .getState()
+        .pushToast({ tone: 'success', message: 'Profile created and selected' });
       setProfileEditorOpen(false);
       setProfileEditor(EMPTY_AGENT_EDITOR);
     } catch (caught) {
+      if (!ownsEngine()) return;
+      setProfileEditor((current) => ({
+        ...current,
+        community: '',
+        authKey: '',
+        privKey: '',
+      }));
       const message = caught instanceof Error ? caught.message : String(caught);
       setProfileError(message);
       useAppStore.getState().pushToast({ tone: 'error', message });
     } finally {
-      setProfileBusy(false);
+      if (ownsEngine()) setProfileBusy(false);
     }
   };
 
@@ -204,19 +239,27 @@ export function LiveMibsScreen({
   }, []);
 
   useEffect(() => {
-    void engine.mibs.tree().then((root) => setTreeCache({ '': root }));
-  }, [engine]);
+    void engine.mibs
+      .tree()
+      .then((root) => {
+        if (ownsEngine()) setTreeCache({ '': root });
+      })
+      .catch(() => undefined);
+  }, [engine, ownsEngine]);
 
   useEffect(() => {
     if (!requestedScopeOid) return;
     let active = true;
-    void engine.mibs.node(requestedScopeOid).then((detail) => {
-      if (active && detail) setScope(detail);
-    });
+    void engine.mibs
+      .node(requestedScopeOid)
+      .then((detail) => {
+        if (active && ownsEngine() && detail) setScope(detail);
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [engine, requestedScopeOid]);
+  }, [engine, ownsEngine, requestedScopeOid]);
 
   useEffect(() => {
     const previousHandle = handleRef.current;
@@ -224,7 +267,7 @@ export function LiveMibsScreen({
     scanRequestSequence.current += 1;
     startingRequestRef.current = null;
     setScanStarting(false);
-    if (previousHandle) void engine.liveMibs.scan.cancel(previousHandle);
+    if (previousHandle) void engine.liveMibs.scan.cancel(previousHandle).catch(() => undefined);
     setRows(new Map());
     setScan(null);
     setError(null);
@@ -257,30 +300,32 @@ export function LiveMibsScreen({
       await Promise.all(
         batch.map(async ({ oid }) => {
           const resolved = await engine.mibs.resolve(oid);
-          if (!resolved) return;
+          if (!ownsEngine() || !resolved) return;
           const detail = await engine.mibs.node(resolved.definitionOid, resolved.module);
-          if (detail) setRows((current) => attachLiveMibMetadata(current, oid, detail));
+          if (ownsEngine() && detail)
+            setRows((current) => attachLiveMibMetadata(current, oid, detail));
         }),
       );
     },
-    [engine],
+    [engine, ownsEngine],
   );
 
   useEffect(
     () =>
       engine.events.subscribe('live-mibs', (event) => {
+        if (!ownsEngine()) return;
         if (!handleRef.current || event.handleId !== handleRef.current) return;
         if (event.kind === 'batch') {
           const batch = event.payload as DecodedVarbind[];
           setRows((current) => mergeLiveMibRows(current, batch));
-          void hydrateMetadata(batch);
+          void hydrateMetadata(batch).catch(() => undefined);
         } else if (
           ['started', 'progress', 'done', 'partial', 'error', 'cancelled'].includes(event.kind)
         ) {
           setScan(event.payload as LiveMibScanStatus);
         }
       }),
-    [engine, hydrateMetadata],
+    [engine, hydrateMetadata, ownsEngine],
   );
 
   // Reconcile authoritative terminal state if a reconnect drops a progress or
@@ -290,15 +335,25 @@ export function LiveMibsScreen({
     const timer = setInterval(() => {
       const handleId = handleRef.current;
       if (!handleId) return;
-      void engine.liveMibs.scan.status(handleId).then((status) => {
-        if (!status || status.handleId !== handleId || handleRef.current !== handleId) return;
-        setScan(status);
-      });
+      void engine.liveMibs.scan
+        .status(handleId)
+        .then((status) => {
+          if (
+            !ownsEngine() ||
+            !status ||
+            status.handleId !== handleId ||
+            handleRef.current !== handleId
+          )
+            return;
+          setScan(status);
+        })
+        .catch(() => undefined);
     }, 500);
     return () => clearInterval(timer);
-  }, [engine, scan]);
+  }, [engine, ownsEngine, scan]);
 
   const startScan = useCallback(async () => {
+    if (!ownsEngine()) return;
     if (startingRequestRef.current !== null) return;
     if (settingsAgentId !== selectedAgentId) {
       setError('Loading settings for the selected agent.');
@@ -322,10 +377,10 @@ export function LiveMibsScreen({
     setError(null);
     try {
       if (previousHandle) await engine.liveMibs.scan.cancel(previousHandle);
-      if (scanRequestSequence.current !== requestId) return;
+      if (!ownsEngine() || scanRequestSequence.current !== requestId) return;
       await runLatestLiveMibScanRequest<LiveMibScanStatus>({
         requestId,
-        isCurrent: (candidate) => scanRequestSequence.current === candidate,
+        isCurrent: (candidate) => ownsEngine() && scanRequestSequence.current === candidate,
         currentHandle: () => handleRef.current,
         start: () =>
           engine.liveMibs.scan.start({
@@ -334,26 +389,25 @@ export function LiveMibsScreen({
             concurrency: settings.scanConcurrency,
             includeReadOnly: settings.showReadOnly,
             maxInstances: settings.maxInstances,
-            preferredOids:
-              settings.refreshMode === 'adaptive' ? visibleOidsRef.current : undefined,
+            preferredOids: settings.refreshMode === 'adaptive' ? visibleOidsRef.current : undefined,
           }),
         status: (handleId) => engine.liveMibs.scan.status(handleId),
         cancel: (handleId) => engine.liveMibs.scan.cancel(handleId),
         acceptHandle: (handleId) => {
-          handleRef.current = handleId;
+          if (ownsEngine()) handleRef.current = handleId;
         },
-        acceptStatus: setScan,
+        acceptStatus: (status) => ownsEngine() && setScan(status),
       });
     } catch (cause) {
-      if (scanRequestSequence.current === requestId)
+      if (ownsEngine() && scanRequestSequence.current === requestId)
         setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      if (startingRequestRef.current === requestId) {
+      if (ownsEngine() && startingRequestRef.current === requestId) {
         startingRequestRef.current = null;
         setScanStarting(false);
       }
     }
-  }, [engine, scope, selectedAgentId, settings, settingsAgentId]);
+  }, [engine, ownsEngine, scope, selectedAgentId, settings, settingsAgentId]);
 
   useEffect(() => {
     if (!scope || settingsAgentId !== selectedAgentId || settings.refreshMode === 'manual') return;
@@ -382,7 +436,8 @@ export function LiveMibsScreen({
 
   useEffect(
     () => () => {
-      if (handleRef.current) void engine.liveMibs.scan.cancel(handleRef.current);
+      if (handleRef.current)
+        void engine.liveMibs.scan.cancel(handleRef.current).catch(() => undefined);
     },
     [engine],
   );
@@ -405,21 +460,20 @@ export function LiveMibsScreen({
   );
   const busy = scan?.state === 'started' || scan?.state === 'running';
   const resultsIncomplete =
-    !!scan &&
-    ['done', 'partial'].includes(scan.state) &&
-    scan.count > dataRows.length;
+    !!scan && ['done', 'partial'].includes(scan.state) && scan.count > dataRows.length;
 
   const toggleTreeNode = async (node: MibNodeSummary) => {
+    if (!ownsEngine()) return;
+    let loadChildren = false;
     if (node.hasChildren) {
       const opening = !expanded[node.oid];
       setExpanded((current) => ({ ...current, [node.oid]: opening }));
-      if (opening && !treeCache[node.oid]) {
-        const children = await engine.mibs.tree(node.oid);
-        setTreeCache((current) => ({ ...current, [node.oid]: children }));
-      }
+      loadChildren = opening && !treeCache[node.oid];
     }
-    const detail = await engine.mibs.node(node.oid, node.module);
-    if (detail) setScope(detail);
+    const loaded = await loadOwnedLiveMibTreeNode(engine, node, loadChildren, ownsEngine);
+    if (!loaded || !ownsEngine()) return;
+    if (loaded.children) setTreeCache((current) => ({ ...current, [node.oid]: loaded.children! }));
+    if (loaded.detail) setScope(loaded.detail);
   };
 
   const treePane = (
@@ -450,7 +504,12 @@ export function LiveMibsScreen({
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: scope?.oid === node.oid }}
-            onPress={() => void toggleTreeNode(node)}
+            onPress={() =>
+              void toggleTreeNode(node).catch((caught) => {
+                if (ownsEngine())
+                  setError(caught instanceof Error ? caught.message : String(caught));
+              })
+            }
             style={({ pressed }) => [
               styles.treeRow,
               {
@@ -472,7 +531,10 @@ export function LiveMibsScreen({
           </Pressable>
         )}
         ListEmptyComponent={
-          <EmptyState title="No MIB nodes" hint="Import or load a MIB in Browse." />
+          <View style={styles.liveMibImportEmpty}>
+            <EmptyState title="No MIB nodes" hint="Import MIBs here to populate Live MIB nodes." />
+            <FileImportFlow busy={importBusy} />
+          </View>
         }
       />
     </View>
@@ -504,10 +566,10 @@ export function LiveMibsScreen({
                 : resultsIncomplete
                   ? t.warn
                   : scan?.state === 'done'
-                  ? t.ok
-                  : busy
-                    ? t.warn
-                    : t.textDim
+                    ? t.ok
+                    : busy
+                      ? t.warn
+                      : t.textDim
             }
           />
           <Button
@@ -516,7 +578,10 @@ export function LiveMibsScreen({
             disabled={scanStarting || settingsAgentId !== selectedAgentId}
             onPress={() =>
               busy && handleRef.current
-                ? void engine.liveMibs.scan.cancel(handleRef.current)
+                ? void engine.liveMibs.scan.cancel(handleRef.current).catch((caught) => {
+                    if (ownsEngine())
+                      setError(caught instanceof Error ? caught.message : String(caught));
+                  })
                 : void startScan()
             }
           />
@@ -577,6 +642,7 @@ export function LiveMibsScreen({
           />
         }
       />
+      <AgentCollectionRecovery engine={engine} owns={ownsEngine} />
       <View style={[styles.agentBar, { borderBottomColor: t.border }]}>
         <ScrollView
           horizontal
@@ -616,7 +682,7 @@ export function LiveMibsScreen({
         editor={profileEditor}
         error={profileError}
         info={info}
-        busy={profileBusy}
+        busy={profileBusy || agentCollectionsBlocked}
         title="Create Live MIB agent"
         subtitle="Save the target once, then switch agents from the Live MIB bar."
         submitTitle="Create and select"
@@ -656,11 +722,7 @@ function LiveMibDocumentTree({
   const [cellStates, setCellStates] = useState<Map<string, LiveMibCellState>>(() => new Map());
   const requestSequences = useRef<Map<string, number>>(new Map());
   const updateCell = useCallback(
-    (
-      oid: string,
-      initialValue: string,
-      updater: (current: LiveMibCellState) => LiveMibCellState,
-    ) =>
+    (oid: string, initialValue: string, updater: (current: LiveMibCellState) => LiveMibCellState) =>
       setCellStates((current) => {
         const next = new Map(current);
         const previous = next.get(oid) ?? {
@@ -681,8 +743,7 @@ function LiveMibDocumentTree({
   }, []);
   const isCollapsed = useCallback(
     (id: string, depth: number, count: number) =>
-      branchOverrides.get(id) ??
-      (depth === 1 && count > settings.documentAutoCollapseThreshold),
+      branchOverrides.get(id) ?? (depth === 1 && count > settings.documentAutoCollapseThreshold),
     [branchOverrides, settings.documentAutoCollapseThreshold],
   );
   const items = useMemo(() => {
@@ -750,7 +811,10 @@ function LiveMibDocumentTree({
               onPress={() => toggle(item)}
               style={({ pressed }) => [
                 styles.documentBranch,
-                { marginLeft: item.depth * 18, backgroundColor: pressed ? t.surfaceAlt : undefined },
+                {
+                  marginLeft: item.depth * 18,
+                  backgroundColor: pressed ? t.surfaceAlt : undefined,
+                },
               ]}
             >
               <Text style={{ color: t.accent }}>{branchIsCollapsed ? '›' : '⌄'}</Text>
@@ -767,10 +831,7 @@ function LiveMibDocumentTree({
         if (item.kind === 'close')
           return (
             <Text
-              style={[
-                styles.documentSyntax,
-                { marginLeft: item.depth * 18, color: t.textDim },
-              ]}
+              style={[styles.documentSyntax, { marginLeft: item.depth * 18, color: t.textDim }]}
             >
               {'}'}
             </Text>
@@ -838,6 +899,7 @@ function LiveMibRow({
   stale?: boolean;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const adapter = useFileImportAdapter();
   const t = useTheme();
   const confirmed = String(row.value.value);
@@ -847,10 +909,7 @@ function LiveMibRow({
       updateCell(row.oid, confirmed, updater),
     [confirmed, row.oid, updateCell],
   );
-  const nextRequestId = useCallback(
-    () => allocateRequestId(row.oid),
-    [allocateRequestId, row.oid],
-  );
+  const nextRequestId = useCallback(() => allocateRequestId(row.oid), [allocateRequestId, row.oid]);
   const [workflow, setWorkflow] = useState<LiveMibWorkflowStatus | null>(null);
   const [workflowCandidates, setWorkflowCandidates] = useState<LiveMibWorkflowCandidate[]>([]);
   const [workflowSetupOpen, setWorkflowSetupOpen] = useState(false);
@@ -888,14 +947,15 @@ function LiveMibRow({
         name: row.metadata?.name ?? row.value.name ?? row.oid,
       })
       .then((candidates) => {
-        if (!active) return;
+        if (!active || !ownsEngine()) return;
         setWorkflowCandidates(candidates);
         if (candidates[0]) setWorkflowAdapter(candidates[0].id);
-      });
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [engine, row.metadata, row.oid, row.value.name]);
+  }, [engine, ownsEngine, row.metadata, row.oid, row.value.name]);
 
   useEffect(() => {
     setCell((current) => mergeLiveCellRemote(current, confirmed));
@@ -929,9 +989,7 @@ function LiveMibRow({
           },
           verify: settings.verifyWrites,
         });
-        setCell((current) =>
-          succeedLiveCellWrite(current, requestId, String(result.value.value)),
-        );
+        setCell((current) => succeedLiveCellWrite(current, requestId, String(result.value.value)));
       } catch (cause) {
         if (cause instanceof MibBeaconError && cause.code === 'TIMEOUT') {
           setCell((current) => markLiveCellUncertain(current, requestId, cause.message));
@@ -1354,6 +1412,7 @@ const styles = StyleSheet.create({
   treePane: { width: 300, minHeight: 180, borderWidth: 1, borderRadius: 10, padding: 8, gap: 8 },
   compactTreePane: { width: '100%', height: 180, minHeight: 0, flexShrink: 0 },
   paneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  liveMibImportEmpty: { gap: 10, padding: 12 },
   treeRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 6 },
   gridPane: {
     flex: 1,

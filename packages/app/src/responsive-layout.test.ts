@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import * as responsiveLayout from './responsive-layout';
 import {
   adjustSplitRatio,
+  BROWSE_CATALOG_SPLIT_MINIMUMS,
+  BROWSE_NAVIGATOR_SPLIT_MINIMUMS,
+  canFitSplit,
   clampSplitRatio,
   getResponsiveMode,
+  getSplitPaneSizes,
+  splitAccessibilityDelta,
   shouldUseEmbeddedQuerySplit,
   getWindowScopedStorageKey,
   getWorkspaceDefaultRatio,
@@ -36,6 +41,49 @@ describe('embedded query layout', () => {
 });
 
 describe('split workspace sizing', () => {
+  it('maps only supported accessibility actions to resize deltas', () => {
+    expect(splitAccessibilityDelta('increment')).toBe(24);
+    expect(splitAccessibilityDelta('decrement')).toBe(-24);
+    expect(splitAccessibilityDelta('activate')).toBeNull();
+    expect(splitAccessibilityDelta('escape')).toBeNull();
+  });
+
+  it('includes the divider when deciding whether declared pane minimums fit', () => {
+    expect(canFitSplit(768, { minPrimary: 340, minSecondary: 420 })).toBe(false);
+    expect(canFitSplit(769, { minPrimary: 340, minSecondary: 420 })).toBe(true);
+  });
+
+  it('subtracts the divider before assigning exact pane sizes', () => {
+    expect(getSplitPaneSizes(769, 0.5, { minPrimary: 340, minSecondary: 420 })).toEqual({
+      primary: 340,
+      secondary: 420,
+      ratio: 340 / 760,
+    });
+  });
+
+  it('uses measured post-chrome width rather than the viewport breakpoint', () => {
+    expect(getResponsiveMode(640)).toBe('medium');
+    expect(canFitSplit(576, { minPrimary: 340, minSecondary: 420 })).toBe(false);
+    expect(getResponsiveMode(1023)).toBe('medium');
+    expect(canFitSplit(747, { minPrimary: 340, minSecondary: 420 })).toBe(false);
+    expect(getResponsiveMode(1024)).toBe('expanded');
+    expect(canFitSplit(804, { minPrimary: 340, minSecondary: 420 })).toBe(true);
+  });
+
+  it('re-evaluates viability when an expanded desktop window is resized', () => {
+    expect(canFitSplit(900, { minPrimary: 340, minSecondary: 420 })).toBe(true);
+    expect(canFitSplit(720, { minPrimary: 340, minSecondary: 420 })).toBe(false);
+  });
+
+  it('accounts for the complete nested Browse split in the outer secondary minimum', () => {
+    expect(BROWSE_NAVIGATOR_SPLIT_MINIMUMS).toEqual({ minPrimary: 300, minSecondary: 380 });
+    expect(BROWSE_CATALOG_SPLIT_MINIMUMS.minSecondary).toBe(689);
+    expect(canFitSplit(857, BROWSE_CATALOG_SPLIT_MINIMUMS)).toBe(false);
+    expect(canFitSplit(858, BROWSE_CATALOG_SPLIT_MINIMUMS)).toBe(true);
+    expect(canFitSplit(688, BROWSE_NAVIGATOR_SPLIT_MINIMUMS)).toBe(false);
+    expect(canFitSplit(689, BROWSE_NAVIGATOR_SPLIT_MINIMUMS)).toBe(true);
+  });
+
   it('clamps the primary pane to its minimum width', () => {
     expect(
       clampSplitRatio({ containerSize: 1000, ratio: 0.1, minPrimary: 280, minSecondary: 360 }),
@@ -68,17 +116,17 @@ describe('split workspace sizing', () => {
 });
 
 describe('workspace defaults', () => {
-  it('preserves the expanded Browse default at the narrow desktop breakpoint', () => {
+  it('preserves the expanded Browse ratio once the complete nested minimum fits', () => {
     const minimums = (
       responsiveLayout as typeof responsiveLayout & {
         BROWSE_CATALOG_SPLIT_MINIMUMS?: { minPrimary: number; minSecondary: number };
       }
     ).BROWSE_CATALOG_SPLIT_MINIMUMS;
 
-    expect(minimums).toEqual({ minPrimary: 160, minSecondary: 600 });
+    expect(minimums).toEqual({ minPrimary: 160, minSecondary: 689 });
     expect(
       clampSplitRatio({
-        containerSize: 804,
+        containerSize: 900,
         ratio: getWorkspaceDefaultRatio('mibModules'),
         ...minimums!,
       }),

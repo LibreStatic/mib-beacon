@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -29,25 +29,30 @@ import {
   useTheme,
 } from '@mibbeacon/ui';
 import type {
+  EngineEvent,
   LiveMibSettings,
+  PacketTraceServiceStatus,
   ResolverSourceDraft,
   SourceConfig,
   SourceKind,
 } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import {
-  clearResolverCache,
+  cancelResolverSourcePreview,
   dragResolverSource,
   moveResolverSource,
   previewResolverSource,
   refreshResolverState,
   removeResolverSource,
+  resolverSourceController,
+  resolverCacheClearController,
   saveResolverSource,
   testResolverSource,
   toggleResolverSource,
-  updateResolverSettings,
 } from '../actions';
+import { resetSplitWorkspaceLayouts } from '../components/SplitWorkspace';
+import { resetVerticalDockLayouts } from '../components/VerticalDockWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
 import type { AppHostAdapter, HostUpdateStatus } from '../AppRoot';
@@ -60,13 +65,46 @@ import {
   type SettingsSectionId,
   type SettingsSectionOffsets,
 } from '../settings-navigation';
-import {
-  DEFAULT_LIVE_MIB_SETTINGS,
-  normalizeLiveMibSettings,
-  resolveLiveMibSettings,
-} from '../live-mibs-model';
 import { acquireBrowserThemeFiles } from '../theme-file-picker';
 import { prepareThemeImports } from '../theme-import';
+import {
+  LIVE_MIB_GLOBAL_SCOPE,
+  LiveMibSettingsController,
+  createLiveMibNumericFormDraft,
+  editLiveMibNumericFormDraft,
+  liveMibAgentScopeKey,
+  liveMibSettingsStatusText,
+  resolveConfirmedLiveMibSettingsForScope,
+  resolveLiveMibSettingsForScope,
+  validateLiveMibNumericFormDraft,
+  type LiveMibNumericKey,
+  type LiveMibNumericFormDraft,
+  type LiveMibSettingsScopeKey,
+} from '../live-mib-settings-transaction';
+import {
+  ResolverSettingsController,
+  resolverSettingsStatusText,
+} from '../resolver-settings-transaction';
+import {
+  AutomaticUpdatePreferenceController,
+  UpdateStatusCoordinator,
+  updatePreferenceStatusText,
+  type UpdatePreferenceSnapshot,
+} from '../update-preference-transaction';
+import {
+  PacketRetentionController,
+  packetRetentionStatusText,
+} from '../packet-retention-transaction';
+import {
+  resolverSourceCollectionStatusText,
+  resolverSourceEditorRecovery,
+} from '../resolver-source-collection';
+import { resolverCacheClearStatusText } from '../resolver-cache-transaction';
+import {
+  createBrowserNotificationAdapter,
+  type HostNotificationAdapter,
+  type NotificationPermissionState,
+} from '../notification-delivery';
 
 const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
   { kind: 'http-template', label: 'HTTP template' },
@@ -78,14 +116,17 @@ const CUSTOM_KINDS: { kind: Exclude<SourceKind, 'cache'>; label: string }[] = [
 export function SettingsScreen({
   host,
   onBrowseThemes,
+  executeAction,
 }: {
   host?: AppHostAdapter;
   onBrowseThemes: () => void;
+  executeAction: (actionId: string) => Promise<void | boolean>;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
+  const updates = host?.updates;
   const { mode, supportsSplitView } = useResponsiveLayout();
-  const settings = useAppStore((s) => s.resolverSettings);
   const sources = useAppStore((s) => s.resolverSources);
   const cache = useAppStore((s) => s.resolverCache);
   const history = useAppStore((s) => s.resolverHistory);
@@ -95,31 +136,90 @@ export function SettingsScreen({
   const darkThemeId = useAppStore((s) => s.darkThemeId);
   const installedThemes = useAppStore((s) => s.installedThemes);
   const openVsxThemeCatalogEnabled = useAppStore((s) => s.openVsxThemeCatalogEnabled);
+  const notificationPreferences = useAppStore((s) => s.notificationPreferences);
+  const setNotificationPreference = useAppStore((s) => s.setNotificationPreference);
   const densityMode = useAppStore((s) => s.densityMode);
   const patternTraceColor = useAppStore((s) => s.patternTraceColor);
-  const packetStatus = useAppStore((s) => s.packetStatus);
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const [editing, setEditing] = useState<SourceConfig | 'new' | null>(null);
+  const sourceCollectionController = useMemo(
+    () => resolverSourceController(engine, ownsEngine, false),
+    [engine, ownsEngine],
+  );
+  const sourceCollectionState = useSyncExternalStore(
+    (listener) => sourceCollectionController.subscribe(listener),
+    () => sourceCollectionController.snapshot(),
+    () => sourceCollectionController.snapshot(),
+  );
+  const cacheClearController = useMemo(
+    () => resolverCacheClearController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const cacheClearState = useSyncExternalStore(
+    (listener) => cacheClearController.subscribe(listener),
+    () => cacheClearController.snapshot(),
+    () => cacheClearController.snapshot(),
+  );
+  const sourceCollectionBlocked =
+    sourceCollectionState.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(sourceCollectionState.phase);
   const [testModule, setTestModule] = useState('IF-MIB');
   const [configTransfer, setConfigTransfer] = useState('');
   const [transferMessage, setTransferMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
   const [updateStatus, setUpdateStatus] = useState<HostUpdateStatus | null>(null);
-  const [automaticChecks, setAutomaticChecks] = useState(false);
+  const [, setUpdatePreferenceRevision] = useState(0);
+  const updateLifetime = useMemo(
+    () => ({
+      adapter: updates,
+      controller: new AutomaticUpdatePreferenceController(),
+      status: new UpdateStatusCoordinator(setUpdateStatus),
+    }),
+    [updates],
+  );
+  const updatePreferenceController = updateLifetime.controller;
+  const updateStatusCoordinator = updateLifetime.status;
   const [showLicenses, setShowLicenses] = useState(false);
-  const [packetRetention, setPacketRetention] = useState('32');
-  const [packetMessage, setPacketMessage] = useState<string | null>(null);
+  const [, setPacketRetentionRevision] = useState(0);
+  const packetRetentionLifetime = useMemo(
+    () => ({
+      engine,
+      controller: new PacketRetentionController((status) =>
+        useAppStore.getState().setPacketStatus(status),
+      ),
+    }),
+    [engine],
+  );
+  const packetRetentionController = packetRetentionLifetime.controller;
   const [patternTraceColorDraft, setPatternTraceColorDraft] = useState(patternTraceColor);
-  const [liveSettings, setLiveSettings] = useState<LiveMibSettings>(DEFAULT_LIVE_MIB_SETTINGS);
   const [liveAgentId, setLiveAgentId] = useState<string | null>(null);
-  const [liveOverrides, setLiveOverrides] = useState<Partial<LiveMibSettings> | null>(null);
-  const [liveMessage, setLiveMessage] = useState<string | null>(null);
-  const [liveBusy, setLiveBusy] = useState(false);
+  const [, setLiveRevision] = useState(0);
+  const liveController = useMemo(() => new LiveMibSettingsController(), []);
+  const [, setResolverRevision] = useState(0);
+  const resolverController = useMemo(
+    () =>
+      new ResolverSettingsController((confirmed) => {
+        useAppStore.getState().setResolverSettings(confirmed);
+      }),
+    [],
+  );
+  const [liveNumericForms, setLiveNumericForms] = useState<
+    Partial<Record<LiveMibSettingsScopeKey, LiveMibNumericFormDraft>>
+  >({});
   const [themeImportBusy, setThemeImportBusy] = useState(false);
   const [themeImportMessage, setThemeImportMessage] = useState<{
     tone: 'ok' | 'warn' | 'error';
     text: string;
   } | null>(null);
+  const notificationAdapter = useMemo<HostNotificationAdapter | null>(
+    () => host?.notifications ?? createBrowserNotificationAdapter(),
+    [host?.notifications],
+  );
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermissionState>('unsupported');
+  const [notificationPermissionMessage, setNotificationPermissionMessage] = useState<string | null>(
+    null,
+  );
   const settingsScroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<SettingsSectionOffsets>({});
   const cacheSource = sources.find((source) => source.kind === 'cache');
@@ -151,89 +251,292 @@ export function SettingsScreen({
 
   const externalSources = sources.filter((source) => source.kind !== 'cache');
   useEffect(() => {
-    if (!host?.updates) return;
+    sourceCollectionController.activate();
+    void sourceCollectionController.load().catch(() => undefined);
+  }, [sourceCollectionController]);
+  useEffect(() => {
+    cacheClearController.activate();
+    if (cacheClearController.snapshot().readiness === 'unloaded') {
+      void cacheClearController.load().catch(() => undefined);
+    }
+  }, [cacheClearController]);
+  useEffect(() => {
+    updatePreferenceController.activate();
+    updateStatusCoordinator.activate();
+    const unsubscribe = updatePreferenceController.subscribe(() =>
+      setUpdatePreferenceRevision((revision) => revision + 1),
+    );
+    return () => {
+      unsubscribe();
+      updatePreferenceController.dispose();
+      updateStatusCoordinator.dispose();
+    };
+  }, [updatePreferenceController, updateStatusCoordinator]);
+  useEffect(() => {
+    const adapter = updateLifetime.adapter;
+    if (!adapter) return;
     let active = true;
-    void host.updates.get().then((state) => {
-      if (!active || !state) return;
-      setAutomaticChecks(state.preferences.automaticChecks);
-      setUpdateStatus(state.status);
-    });
-    const unsubscribe = host.updates.onStatus((status) => {
-      if (active) setUpdateStatus(status);
+    void updatePreferenceController
+      .load(async () =>
+        toUpdatePreferenceSnapshot(
+          await updateStatusCoordinator.run(
+            () => adapter.get(),
+            (state) => state?.status,
+          ),
+        ),
+      )
+      .catch(() => undefined);
+    const unsubscribe = adapter.onStatus((status) => {
+      if (active) updateStatusCoordinator.event(status);
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [host]);
+  }, [updateLifetime, updatePreferenceController, updateStatusCoordinator]);
   useEffect(() => {
-    if (packetStatus) setPacketRetention(String(packetStatus.retentionMiB));
-  }, [packetStatus]);
+    packetRetentionController.activate();
+    const unsubscribe = packetRetentionController.subscribe(() =>
+      setPacketRetentionRevision((revision) => revision + 1),
+    );
+    const unsubscribePackets = packetRetentionLifetime.engine.events.subscribe(
+      'packets',
+      (event: EngineEvent) => {
+        if (event.kind === 'status' || event.kind === 'persistence-warning') {
+          packetRetentionController.observe(event.payload as PacketTraceServiceStatus);
+        }
+      },
+    );
+    void packetRetentionController
+      .load(() => packetRetentionLifetime.engine.packets.status())
+      .catch(() => undefined);
+    return () => {
+      unsubscribePackets();
+      unsubscribe();
+      packetRetentionController.dispose();
+    };
+  }, [packetRetentionController, packetRetentionLifetime]);
+  useEffect(() => {
+    let active = true;
+    setNotificationPermissionMessage(null);
+    if (!notificationAdapter) {
+      setNotificationPermission('unsupported');
+      return () => {
+        active = false;
+      };
+    }
+    void notificationAdapter
+      .getPermission()
+      .then((permission) => {
+        if (active) setNotificationPermission(permission);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setNotificationPermission('unsupported');
+        setNotificationPermissionMessage(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [notificationAdapter]);
   useEffect(() => setPatternTraceColorDraft(patternTraceColor), [patternTraceColor]);
   useEffect(() => {
-    let active = true;
-    void engine.liveMibs.settings.get().then((value) => {
-      if (active) setLiveSettings(value);
-    });
-    return () => {
-      active = false;
-    };
-  }, [engine]);
+    return liveController.subscribe(() => setLiveRevision((revision) => revision + 1));
+  }, [liveController]);
   useEffect(() => {
-    if (!liveAgentId) {
-      setLiveOverrides(null);
-      return;
-    }
-    let active = true;
-    void engine.liveMibs.agentOverrides.get(liveAgentId).then((value) => {
-      if (active) setLiveOverrides(value);
-    });
+    resolverController.activate();
+    const unsubscribe = resolverController.subscribe(() =>
+      setResolverRevision((revision) => revision + 1),
+    );
     return () => {
-      active = false;
+      unsubscribe();
+      resolverController.dispose();
     };
-  }, [engine, liveAgentId]);
-  const effectiveLiveSettings = resolveLiveMibSettings(liveSettings, liveOverrides);
-  const updateLiveSetting = async (patch: Partial<LiveMibSettings>) => {
-    setLiveBusy(true);
-    setLiveMessage(null);
-    try {
-      if (liveAgentId) {
-        const next = await engine.liveMibs.agentOverrides.update(liveAgentId, patch);
-        setLiveOverrides(next);
-        setLiveMessage('Agent override saved.');
-      } else {
-        const next = await engine.liveMibs.settings.update(patch);
-        setLiveSettings(next);
-        setLiveMessage('Live MIB defaults saved.');
-      }
-    } catch (cause) {
-      setLiveMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLiveBusy(false);
+  }, [resolverController]);
+  useEffect(() => {
+    const readiness = resolverController.readiness();
+    if (readiness.phase === 'ready' || readiness.phase === 'loading') return;
+    void resolverController.load(() => engine.resolver.settings.get()).catch(() => undefined);
+  }, [engine, resolverController]);
+  useEffect(() => {
+    const readiness = liveController.readiness(LIVE_MIB_GLOBAL_SCOPE);
+    if (readiness.phase === 'ready' || readiness.phase === 'loading') return;
+    void liveController
+      .load(LIVE_MIB_GLOBAL_SCOPE, () => engine.liveMibs.settings.get())
+      .catch(() => undefined);
+  }, [engine, liveController]);
+  useEffect(() => {
+    if (!liveAgentId) return;
+    const scopeKey = liveMibAgentScopeKey(liveAgentId);
+    const readiness = liveController.readiness(scopeKey);
+    if (readiness.phase === 'ready' || readiness.phase === 'loading') return;
+    void liveController
+      .load(scopeKey, () => engine.liveMibs.agentOverrides.get(liveAgentId))
+      .catch(() => undefined);
+  }, [engine, liveAgentId, liveController]);
+  const liveScopeKey = liveAgentId ? liveMibAgentScopeKey(liveAgentId) : LIVE_MIB_GLOBAL_SCOPE;
+  const resolverState = resolverController.get();
+  const resolverReadiness = resolverController.readiness();
+  const resolverDraft = resolverController.display();
+  const resolverAvailability =
+    resolverReadiness.phase === 'error'
+      ? { text: 'LOAD ERROR', color: t.error }
+      : resolverReadiness.phase !== 'ready'
+        ? { text: 'LOADING', color: t.textDim }
+        : resolverDraft.enabled
+          ? { text: 'ONLINE', color: t.ok }
+          : { text: 'DISABLED', color: t.textDim };
+  const resolverTransport = () => ({
+    write: (value: typeof resolverDraft) => engine.resolver.settings.update(value),
+    read: () => engine.resolver.settings.get(),
+  });
+  const updatePreferenceState = updatePreferenceController.get();
+  const updatePreferenceReadiness = updatePreferenceController.readiness();
+  const automaticChecks = updatePreferenceController.display();
+  const updatePreferenceTransport = () => {
+    const adapter = updateLifetime.adapter;
+    return {
+      write: async (enabled: boolean) =>
+        adapter
+          ? toUpdatePreferenceSnapshot(
+              await updateStatusCoordinator.run(
+                () => adapter.setAutomaticChecks(enabled),
+                (state) => state?.status,
+              ),
+            )
+          : null,
+      read: async () =>
+        adapter
+          ? toUpdatePreferenceSnapshot(
+              await updateStatusCoordinator.run(
+                () => adapter.get(),
+                (state) => state?.status,
+              ),
+            )
+          : null,
+    };
+  };
+  const runUpdateStatusAction = (action: () => Promise<HostUpdateStatus | null>): void => {
+    void updateStatusCoordinator
+      .run(action, (status) => status)
+      .catch((cause) => {
+        updateStatusCoordinator.event({
+          phase: 'error',
+          currentVersion: updateStatus?.currentVersion ?? RELEASE_INFO.version,
+          message: cause instanceof Error ? cause.message : String(cause),
+        });
+      });
+  };
+  const packetRetentionState = packetRetentionController.get();
+  const packetRetentionReadiness = packetRetentionController.readiness();
+  const packetRetentionValidation = packetRetentionController.validation();
+  const packetRetention = packetRetentionController.displayText();
+  const authoritativePacketStatus = packetRetentionController.status();
+  const packetStatusOperation = packetRetentionController.statusOperation();
+  const packetRetentionTransport = () => ({
+    write: (retentionMiB: number) =>
+      packetRetentionLifetime.engine.packets.updateSettings({ retentionMiB }),
+    read: () => packetRetentionLifetime.engine.packets.status(),
+  });
+  const liveState = liveController.get(liveScopeKey);
+  const liveReadiness = liveController.readiness(liveScopeKey);
+  const globalLiveState = liveController.get(LIVE_MIB_GLOBAL_SCOPE);
+  const liveSettings = liveController.display(LIVE_MIB_GLOBAL_SCOPE);
+  const liveOverrides = liveAgentId
+    ? liveController.display(liveMibAgentScopeKey(liveAgentId))
+    : null;
+  const agentLiveState = liveAgentId
+    ? liveController.get(liveMibAgentScopeKey(liveAgentId))
+    : undefined;
+  const effectiveLiveSettings = useMemo(
+    () => resolveLiveMibSettingsForScope(globalLiveState, agentLiveState),
+    [agentLiveState, globalLiveState],
+  );
+  const liveNumericForm =
+    liveNumericForms[liveScopeKey] ?? createLiveMibNumericFormDraft(effectiveLiveSettings);
+  const liveNumericValidation = validateLiveMibNumericFormDraft(liveNumericForm);
+  const liveConfirmedSignature = JSON.stringify({
+    global: globalLiveState.confirmed,
+    scope: liveState.confirmed,
+  });
+  useEffect(() => {
+    if (
+      liveReadiness.phase !== 'ready' ||
+      !['confirmed', 'success', 'error-reverted', 'uncertain'].includes(liveState.phase)
+    )
+      return;
+    setLiveNumericForms((forms) => ({
+      ...forms,
+      [liveScopeKey]: createLiveMibNumericFormDraft(effectiveLiveSettings),
+    }));
+  }, [
+    effectiveLiveSettings,
+    liveConfirmedSignature,
+    liveReadiness.phase,
+    liveScopeKey,
+    liveState.phase,
+  ]);
+  const editLiveSetting = (patch: Partial<LiveMibSettings>) => {
+    if (liveAgentId) {
+      liveController.edit(liveMibAgentScopeKey(liveAgentId), {
+        ...(liveOverrides ?? {}),
+        ...patch,
+      });
+    } else {
+      liveController.edit(LIVE_MIB_GLOBAL_SCOPE, { ...liveSettings, ...patch });
     }
   };
-  const savePacketRetention = async () => {
-    const value = Number(packetRetention);
-    if (!Number.isInteger(value) || value < 0 || value > 256) {
-      setPacketMessage('Enter a whole number from 0 through 256 MiB.');
-      return;
+  const editLiveNumericSetting = (key: LiveMibNumericKey, text: string) => {
+    setLiveNumericForms((forms) => ({
+      ...forms,
+      [liveScopeKey]: editLiveMibNumericFormDraft(
+        forms[liveScopeKey] ?? createLiveMibNumericFormDraft(effectiveLiveSettings),
+        key,
+        text,
+      ),
+    }));
+    liveController.touch(liveScopeKey);
+    if (/^-?\d+$/.test(text) && Number.isSafeInteger(Number(text))) {
+      editLiveSetting({ [key]: Number(text) });
     }
-    try {
-      const status = await engine.packets.updateSettings({ retentionMiB: value });
-      useAppStore.getState().setPacketStatus(status);
-      setPacketMessage(
-        value === 0
-          ? 'Disk persistence disabled; live RAM capture remains active.'
-          : `Packet history retention set to ${value} MiB.`,
-      );
-    } catch (cause) {
-      setPacketMessage(cause instanceof Error ? cause.message : String(cause));
+  };
+  const resetLiveNumericForm = () => {
+    const confirmedEffective = resolveConfirmedLiveMibSettingsForScope(
+      globalLiveState,
+      agentLiveState,
+    );
+    setLiveNumericForms((forms) => ({
+      ...forms,
+      [liveScopeKey]: createLiveMibNumericFormDraft(confirmedEffective),
+    }));
+  };
+  const saveLiveSettings = () => {
+    const validation = validateLiveMibNumericFormDraft(liveNumericForm);
+    if (!validation.valid) return;
+    editLiveSetting(validation.patch);
+    void liveController.save(liveScopeKey, liveTransport());
+  };
+  const liveTransport = (scopeKey: LiveMibSettingsScopeKey = liveScopeKey) => {
+    if (scopeKey === LIVE_MIB_GLOBAL_SCOPE) {
+      return {
+        write: (value: LiveMibSettings) => engine.liveMibs.settings.update(value),
+        read: () => engine.liveMibs.settings.get(),
+      };
     }
+    const agentId = scopeKey.slice('live-mibs:agent:'.length);
+    return {
+      write: async (value: Partial<LiveMibSettings> | null) => {
+        if (value === null) {
+          await engine.liveMibs.agentOverrides.reset(agentId);
+          return null;
+        }
+        return engine.liveMibs.agentOverrides.update(agentId, value);
+      },
+      read: () => engine.liveMibs.agentOverrides.get(agentId),
+    };
   };
   const clearPreview = () => {
-    const state = useAppStore.getState();
-    if (state.sourcePreviewHandle) void engine.resolver.cancel(state.sourcePreviewHandle);
-    state.clearSourcePreview();
+    void cancelResolverSourcePreview(engine, ownsEngine).catch(() => undefined);
   };
   const openEditor = (source: SourceConfig | 'new') => {
     clearPreview();
@@ -249,8 +552,10 @@ export function SettingsScreen({
     try {
       const parsed = JSON.parse(configTransfer) as { sources?: unknown[] };
       if (!Array.isArray(parsed.sources)) throw new Error('Expected an exported sources array.');
-      await engine.resolver.sources.importCustom(configTransfer);
-      await refreshResolverState(engine);
+      await sourceCollectionController.importCustom(configTransfer, ownsEngine);
+      const settled = sourceCollectionController.snapshot();
+      if (settled.phase === 'uncertain' || settled.phase === 'conflict')
+        throw new Error(resolverSourceCollectionStatusText(settled));
       setTransferMessage(`Imported ${parsed.sources.length} custom source definition(s).`);
     } catch (cause) {
       setTransferMessage(cause instanceof Error ? cause.message : String(cause));
@@ -263,6 +568,21 @@ export function SettingsScreen({
       setTransferMessage('Export ready. Passwords, tokens, and secret headers are excluded.');
     } catch (cause) {
       setTransferMessage(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    setNotificationPermissionMessage(null);
+    if (!notificationAdapter) {
+      setNotificationPermission('unsupported');
+      setNotificationPermissionMessage('Notifications are not supported by this host.');
+      return;
+    }
+    try {
+      setNotificationPermission(await notificationAdapter.requestPermission());
+    } catch (cause) {
+      setNotificationPermission('unsupported');
+      setNotificationPermissionMessage(cause instanceof Error ? cause.message : String(cause));
     }
   };
 
@@ -313,12 +633,7 @@ export function SettingsScreen({
         <WorkspaceHeader
           title="Resolver settings"
           subtitle="PRIVACY · SOURCE PRIORITY · CACHE · EXTERNAL EVIDENCE"
-          actions={
-            <Pill
-              text={settings?.enabled ? 'ONLINE' : 'DISABLED'}
-              color={settings?.enabled ? t.ok : t.textDim}
-            />
-          }
+          actions={<Pill text={resolverAvailability.text} color={resolverAvailability.color} />}
         />
       ) : null}
       {mode === 'medium' ? (
@@ -567,179 +882,258 @@ export function SettingsScreen({
                   title="Reset agent overrides"
                   small
                   variant="ghost"
-                  disabled={liveBusy || !liveOverrides}
-                  onPress={() =>
-                    void engine.liveMibs.agentOverrides.reset(liveAgentId).then(() => {
-                      setLiveOverrides(null);
-                      setLiveMessage('Agent now inherits global defaults.');
-                    })
+                  disabled={
+                    liveReadiness.phase !== 'ready' ||
+                    !liveOverrides ||
+                    ['queued', 'updating', 'uncertain'].includes(liveState.phase)
                   }
+                  onPress={() => {
+                    const scopeKey = liveMibAgentScopeKey(liveAgentId);
+                    liveController.edit(scopeKey, null);
+                    void liveController.save(scopeKey, liveTransport(scopeKey));
+                  }}
                 />
               ) : null}
 
-              <Label size={11}>Refresh strategy</Label>
-              <Row style={styles.wrap}>
-                {(['adaptive', 'fixed', 'manual'] as const).map((value) => (
-                  <Chip
-                    key={value}
-                    label={value}
-                    active={effectiveLiveSettings.refreshMode === value}
-                    onPress={() => void updateLiveSetting({ refreshMode: value })}
+              {liveReadiness.phase !== 'ready' ? (
+                <View style={styles.sectionGroup}>
+                  <Label tone={liveReadiness.phase === 'error' ? 'error' : 'dim'} size={11}>
+                    {liveReadiness.phase === 'error'
+                      ? `Unable to load this scope: ${liveReadiness.error}`
+                      : 'Loading authoritative Live MIB settings…'}
+                  </Label>
+                  {liveReadiness.phase === 'error' ? (
+                    <Button
+                      title="Retry loading"
+                      small
+                      variant="ghost"
+                      onPress={() => {
+                        if (liveAgentId) {
+                          const scopeKey = liveMibAgentScopeKey(liveAgentId);
+                          void liveController
+                            .load(scopeKey, () => engine.liveMibs.agentOverrides.get(liveAgentId))
+                            .catch(() => undefined);
+                        } else {
+                          void liveController
+                            .load(LIVE_MIB_GLOBAL_SCOPE, () => engine.liveMibs.settings.get())
+                            .catch(() => undefined);
+                        }
+                      }}
+                    />
+                  ) : null}
+                </View>
+              ) : (
+                <>
+                  <Label size={11}>Refresh strategy</Label>
+                  <Row style={styles.wrap}>
+                    {(['adaptive', 'fixed', 'manual'] as const).map((value) => (
+                      <Chip
+                        key={value}
+                        label={value}
+                        active={effectiveLiveSettings.refreshMode === value}
+                        onPress={() => editLiveSetting({ refreshMode: value })}
+                      />
+                    ))}
+                  </Row>
+                  <Row style={styles.wrap}>
+                    <Field
+                      label="Refresh interval (ms)"
+                      value={liveNumericForm.values.refreshIntervalMs}
+                      keyboardType="numeric"
+                      editable={!['uncertain', 'error-reverted'].includes(liveState.phase)}
+                      onChangeText={(value) => editLiveNumericSetting('refreshIntervalMs', value)}
+                    />
+                    <Field
+                      label="Stale after (ms)"
+                      value={liveNumericForm.values.staleAfterMs}
+                      keyboardType="numeric"
+                      editable={!['uncertain', 'error-reverted'].includes(liveState.phase)}
+                      onChangeText={(value) => editLiveNumericSetting('staleAfterMs', value)}
+                    />
+                  </Row>
+                  <SettingToggle
+                    label="Pause adaptive polling while hidden"
+                    hint="Avoid background device load when the Live MIBs workspace is not visible."
+                    value={effectiveLiveSettings.pauseWhenHidden}
+                    disabled={['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChange={(pauseWhenHidden) => editLiveSetting({ pauseWhenHidden })}
                   />
-                ))}
-              </Row>
-              <Row style={styles.wrap}>
-                <Field
-                  label="Refresh interval (ms)"
-                  value={String(effectiveLiveSettings.refreshIntervalMs)}
-                  keyboardType="numeric"
-                  onChangeText={(value) => {
-                    const parsed = Number(value);
-                    if (Number.isFinite(parsed))
-                      void updateLiveSetting({ refreshIntervalMs: parsed });
-                  }}
-                />
-                <Field
-                  label="Stale after (ms)"
-                  value={String(effectiveLiveSettings.staleAfterMs)}
-                  keyboardType="numeric"
-                  onChangeText={(value) => {
-                    const parsed = Number(value);
-                    if (Number.isFinite(parsed)) void updateLiveSetting({ staleAfterMs: parsed });
-                  }}
-                />
-              </Row>
-              <SettingToggle
-                label="Pause adaptive polling while hidden"
-                hint="Avoid background device load when the Live MIBs workspace is not visible."
-                value={effectiveLiveSettings.pauseWhenHidden}
-                disabled={liveBusy}
-                onChange={(pauseWhenHidden) => void updateLiveSetting({ pauseWhenHidden })}
-              />
 
-              <Label size={11}>Scan workers</Label>
-              <Row style={styles.wrap}>
-                {[1, 2, 4, 8].map((scanConcurrency) => (
-                  <Chip
-                    key={scanConcurrency}
-                    label={
-                      scanConcurrency === 1 ? '1 · sequential' : `${scanConcurrency} · concurrent`
+                  <Label size={11}>Scan workers</Label>
+                  <Row style={styles.wrap}>
+                    {[1, 2, 4, 8].map((scanConcurrency) => (
+                      <Chip
+                        key={scanConcurrency}
+                        label={
+                          scanConcurrency === 1
+                            ? '1 · sequential'
+                            : `${scanConcurrency} · concurrent`
+                        }
+                        active={effectiveLiveSettings.scanConcurrency === scanConcurrency}
+                        onPress={() => editLiveSetting({ scanConcurrency })}
+                      />
+                    ))}
+                  </Row>
+                  {effectiveLiveSettings.scanConcurrency > 1 ? (
+                    <Label tone="warn" size={10}>
+                      Concurrent scans open multiple SNMP sessions to this agent. Reduce the setting
+                      if the device drops requests or becomes CPU constrained.
+                    </Label>
+                  ) : null}
+                  <SettingToggle
+                    label="Show read-only objects"
+                    hint="Off keeps the document tree focused on editable values. Locked values remain available when enabled."
+                    value={effectiveLiveSettings.showReadOnly}
+                    disabled={['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChange={(showReadOnly) => editLiveSetting({ showReadOnly })}
+                  />
+
+                  <Label size={11}>Write trigger</Label>
+                  <Row style={styles.wrap}>
+                    {(['confirm', 'blur', 'change'] as const).map((writeMode) => (
+                      <Chip
+                        key={writeMode}
+                        label={
+                          writeMode === 'confirm'
+                            ? 'Confirm every Set'
+                            : writeMode === 'blur'
+                              ? 'Send on blur'
+                              : 'Send on change'
+                        }
+                        active={effectiveLiveSettings.writeMode === writeMode}
+                        onPress={() => editLiveSetting({ writeMode })}
+                      />
+                    ))}
+                  </Row>
+                  {effectiveLiveSettings.writeMode === 'change' ? (
+                    <Field
+                      label="Change debounce (0–2000 ms)"
+                      value={liveNumericForm.values.writeDebounceMs}
+                      keyboardType="numeric"
+                      editable={!['uncertain', 'error-reverted'].includes(liveState.phase)}
+                      onChangeText={(value) => editLiveNumericSetting('writeDebounceMs', value)}
+                    />
+                  ) : null}
+                  <SettingToggle
+                    label="Verify successful Sets"
+                    hint="Read the value back from the device before showing the edit as confirmed."
+                    value={effectiveLiveSettings.verifyWrites}
+                    disabled={['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChange={(verifyWrites) => editLiveSetting({ verifyWrites })}
+                  />
+
+                  <Label size={11}>Two-state values</Label>
+                  <Row style={styles.wrap}>
+                    {(['auto', 'switch', 'select'] as const).map((booleanEditor) => (
+                      <Chip
+                        key={booleanEditor}
+                        label={booleanEditor}
+                        active={effectiveLiveSettings.booleanEditor === booleanEditor}
+                        onPress={() => editLiveSetting({ booleanEditor })}
+                      />
+                    ))}
+                  </Row>
+                  <SettingToggle
+                    label="Prefer formatted values"
+                    hint="Use enum labels and DISPLAY-HINT output while preserving raw values underneath."
+                    value={effectiveLiveSettings.preferFormattedValues}
+                    disabled={['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChange={(preferFormattedValues) => editLiveSetting({ preferFormattedValues })}
+                  />
+                  <Field
+                    label="Auto-collapse object after instances"
+                    value={liveNumericForm.values.documentAutoCollapseThreshold}
+                    keyboardType="numeric"
+                    editable={!['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChangeText={(value) =>
+                      editLiveNumericSetting('documentAutoCollapseThreshold', value)
                     }
-                    active={effectiveLiveSettings.scanConcurrency === scanConcurrency}
-                    onPress={() => void updateLiveSetting({ scanConcurrency })}
                   />
-                ))}
-              </Row>
-              {effectiveLiveSettings.scanConcurrency > 1 ? (
-                <Label tone="warn" size={10}>
-                  Concurrent scans open multiple SNMP sessions to this agent. Reduce the setting if
-                  the device drops requests or becomes CPU constrained.
-                </Label>
-              ) : null}
-              <SettingToggle
-                label="Show read-only objects"
-                hint="Off keeps the document tree focused on editable values. Locked values remain available when enabled."
-                value={effectiveLiveSettings.showReadOnly}
-                disabled={liveBusy}
-                onChange={(showReadOnly) => void updateLiveSetting({ showReadOnly })}
-              />
 
-              <Label size={11}>Write trigger</Label>
-              <Row style={styles.wrap}>
-                {(['confirm', 'blur', 'change'] as const).map((writeMode) => (
-                  <Chip
-                    key={writeMode}
-                    label={
-                      writeMode === 'confirm'
-                        ? 'Confirm every Set'
-                        : writeMode === 'blur'
-                          ? 'Send on blur'
-                          : 'Send on change'
+                  <SettingToggle
+                    label="Enable managed file-transfer workflows"
+                    hint="Required for vendor adapters that stage a file outside the SNMP message. Off by default."
+                    value={effectiveLiveSettings.managedTransfersEnabled}
+                    disabled={['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChange={(managedTransfersEnabled) =>
+                      editLiveSetting({ managedTransfersEnabled })
                     }
-                    active={effectiveLiveSettings.writeMode === writeMode}
-                    onPress={() => void updateLiveSetting({ writeMode })}
                   />
-                ))}
-              </Row>
-              {effectiveLiveSettings.writeMode === 'change' ? (
-                <Field
-                  label="Change debounce (0–2000 ms)"
-                  value={String(effectiveLiveSettings.writeDebounceMs)}
-                  keyboardType="numeric"
-                  onChangeText={(value) => {
-                    const parsed = Number(value);
-                    if (Number.isFinite(parsed))
-                      void updateLiveSetting({ writeDebounceMs: parsed });
-                  }}
-                />
-              ) : null}
-              <SettingToggle
-                label="Verify successful Sets"
-                hint="Read the value back from the device before showing the edit as confirmed."
-                value={effectiveLiveSettings.verifyWrites}
-                disabled={liveBusy}
-                onChange={(verifyWrites) => void updateLiveSetting({ verifyWrites })}
-              />
-
-              <Label size={11}>Two-state values</Label>
-              <Row style={styles.wrap}>
-                {(['auto', 'switch', 'select'] as const).map((booleanEditor) => (
-                  <Chip
-                    key={booleanEditor}
-                    label={booleanEditor}
-                    active={effectiveLiveSettings.booleanEditor === booleanEditor}
-                    onPress={() => void updateLiveSetting({ booleanEditor })}
+                  <Field
+                    label="Maximum staged upload bytes"
+                    value={liveNumericForm.values.maximumUploadBytes}
+                    keyboardType="numeric"
+                    editable={!['uncertain', 'error-reverted'].includes(liveState.phase)}
+                    onChangeText={(value) => editLiveNumericSetting('maximumUploadBytes', value)}
                   />
-                ))}
-              </Row>
-              <SettingToggle
-                label="Prefer formatted values"
-                hint="Use enum labels and DISPLAY-HINT output while preserving raw values underneath."
-                value={effectiveLiveSettings.preferFormattedValues}
-                disabled={liveBusy}
-                onChange={(preferFormattedValues) =>
-                  void updateLiveSetting({ preferFormattedValues })
-                }
-              />
-              <Field
-                label="Auto-collapse object after instances"
-                value={String(effectiveLiveSettings.documentAutoCollapseThreshold)}
-                keyboardType="numeric"
-                onChangeText={(value) => {
-                  const parsed = Number(value);
-                  if (Number.isFinite(parsed))
-                    void updateLiveSetting({ documentAutoCollapseThreshold: parsed });
-                }}
-              />
-
-              <SettingToggle
-                label="Enable managed file-transfer workflows"
-                hint="Required for vendor adapters that stage a file outside the SNMP message. Off by default."
-                value={effectiveLiveSettings.managedTransfersEnabled}
-                disabled={liveBusy}
-                onChange={(managedTransfersEnabled) =>
-                  void updateLiveSetting({ managedTransfersEnabled })
-                }
-              />
-              <Field
-                label="Maximum staged upload bytes"
-                value={String(effectiveLiveSettings.maximumUploadBytes)}
-                keyboardType="numeric"
-                onChangeText={(value) => {
-                  const parsed = Number(value);
-                  if (Number.isFinite(parsed))
-                    void updateLiveSetting({
-                      maximumUploadBytes: normalizeLiveMibSettings({
-                        maximumUploadBytes: parsed,
-                      }).maximumUploadBytes,
-                    });
-                }}
-              />
-              {liveMessage ? (
-                <Label tone={/saved|inherits/i.test(liveMessage) ? 'ok' : 'error'} size={11}>
-                  {liveMessage}
-                </Label>
-              ) : null}
+                  {!liveNumericValidation.valid ? (
+                    <Label tone="error" size={11}>
+                      {liveNumericValidation.reason}
+                    </Label>
+                  ) : null}
+                  <Row style={styles.wrap}>
+                    <Button
+                      title="Save changes"
+                      small
+                      disabled={liveState.phase !== 'dirty' || !liveNumericValidation.valid}
+                      onPress={saveLiveSettings}
+                    />
+                    <Button
+                      title="Cancel / revert"
+                      small
+                      variant="ghost"
+                      disabled={!liveController.canCancel(liveScopeKey)}
+                      onPress={() => {
+                        liveController.cancel(liveScopeKey);
+                        resetLiveNumericForm();
+                      }}
+                    />
+                    {liveState.phase === 'error-reverted' ? (
+                      <>
+                        <Button
+                          title="Retry"
+                          small
+                          variant="ghost"
+                          onPress={() => void liveController.retry(liveScopeKey, liveTransport())}
+                        />
+                        <Button
+                          title="Acknowledge"
+                          small
+                          variant="ghost"
+                          onPress={() => {
+                            liveController.acknowledge(liveScopeKey);
+                            void liveController.save(liveScopeKey, liveTransport());
+                          }}
+                        />
+                      </>
+                    ) : null}
+                    {liveState.phase === 'uncertain' ? (
+                      <Button
+                        title="Check remote value"
+                        small
+                        variant="ghost"
+                        onPress={() =>
+                          void liveController.reconcile(liveScopeKey, liveTransport().read)
+                        }
+                      />
+                    ) : null}
+                  </Row>
+                  <Label
+                    tone={
+                      ['success', 'confirmed'].includes(liveState.phase)
+                        ? 'ok'
+                        : ['error-reverted', 'conflict'].includes(liveState.phase)
+                          ? 'error'
+                          : liveState.phase === 'dirty'
+                            ? 'warn'
+                            : 'dim'
+                    }
+                    size={11}
+                  >
+                    {liveMibSettingsStatusText(liveState)}
+                  </Label>
+                </>
+              )}
             </Card>
           </View>
           <View style={styles.sectionGroup} onLayout={captureSection('updates')}>
@@ -747,17 +1141,115 @@ export function SettingsScreen({
               <SectionTitle>Desktop updates</SectionTitle>
               {host?.updates ? (
                 <>
-                  <SettingToggle
-                    label="Check for updates automatically"
-                    hint="Off by default. Enabling this permits packaged desktop builds to contact GitHub Releases after startup."
-                    value={automaticChecks}
-                    onChange={(enabled) => {
-                      setAutomaticChecks(enabled);
-                      void host.updates?.setAutomaticChecks(enabled).then((state) => {
-                        if (state) setUpdateStatus(state.status);
-                      });
-                    }}
-                  />
+                  {updatePreferenceReadiness.phase === 'loading' ||
+                  updatePreferenceReadiness.phase === 'unloaded' ? (
+                    <Label tone="dim" size={11}>
+                      Loading the authoritative update preference…
+                    </Label>
+                  ) : updatePreferenceReadiness.phase === 'error' ? (
+                    <>
+                      <Label tone="error" size={11}>
+                        Update preference could not be loaded. {updatePreferenceReadiness.error}
+                      </Label>
+                      <Button
+                        title="Retry loading"
+                        small
+                        variant="ghost"
+                        onPress={() =>
+                          void updatePreferenceController
+                            .load(async () =>
+                              toUpdatePreferenceSnapshot(
+                                await updateStatusCoordinator.run(
+                                  () => host.updates!.get(),
+                                  (state) => state?.status,
+                                ),
+                              ),
+                            )
+                            .catch(() => undefined)
+                        }
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <SettingToggle
+                        label="Check for updates automatically"
+                        hint="Off by default. Enabling this permits packaged desktop builds to contact GitHub Releases after startup."
+                        value={automaticChecks}
+                        disabled={['uncertain', 'error-reverted'].includes(
+                          updatePreferenceState.phase,
+                        )}
+                        onChange={(enabled) => updatePreferenceController.edit(enabled)}
+                      />
+                      <Label
+                        tone={
+                          ['error-reverted', 'uncertain', 'conflict'].includes(
+                            updatePreferenceState.phase,
+                          )
+                            ? 'error'
+                            : updatePreferenceState.phase === 'dirty'
+                              ? 'warn'
+                              : ['success', 'confirmed'].includes(updatePreferenceState.phase)
+                                ? 'ok'
+                                : 'dim'
+                        }
+                        size={11}
+                      >
+                        {updatePreferenceStatusText(updatePreferenceState)}
+                      </Label>
+                      <Row style={styles.wrap}>
+                        <Button
+                          title="Save preference"
+                          small
+                          disabled={updatePreferenceState.phase !== 'dirty'}
+                          onPress={() =>
+                            void updatePreferenceController.save(updatePreferenceTransport())
+                          }
+                        />
+                        <Button
+                          title="Cancel / revert"
+                          small
+                          variant="ghost"
+                          disabled={!updatePreferenceController.canCancel()}
+                          onPress={() => updatePreferenceController.cancel()}
+                        />
+                        {updatePreferenceState.phase === 'error-reverted' ? (
+                          <>
+                            <Button
+                              title="Retry"
+                              small
+                              variant="ghost"
+                              onPress={() =>
+                                void updatePreferenceController.retry(updatePreferenceTransport())
+                              }
+                            />
+                            <Button
+                              title="Acknowledge"
+                              small
+                              variant="ghost"
+                              onPress={() => void updatePreferenceController.acknowledgeAndResume()}
+                            />
+                          </>
+                        ) : null}
+                        {updatePreferenceState.phase === 'uncertain' ? (
+                          <Button
+                            title="Check remote value"
+                            small
+                            variant="ghost"
+                            onPress={() =>
+                              void updatePreferenceController.reconcile(async () =>
+                                toUpdatePreferenceSnapshot(
+                                  await updateStatusCoordinator.run(
+                                    () => host.updates!.get(),
+                                    (state) => state?.status,
+                                  ),
+                                ),
+                              )
+                            }
+                          />
+                        ) : null}
+                      </Row>
+                    </>
+                  )}
                   <Row style={styles.wrap}>
                     <Pill
                       text={(updateStatus?.phase ?? 'idle').replace('-', ' ').toUpperCase()}
@@ -775,21 +1267,13 @@ export function SettingsScreen({
                       small
                       variant="ghost"
                       disabled={updateStatus?.phase === 'checking'}
-                      onPress={() =>
-                        void host.updates
-                          ?.check()
-                          .then((status) => status && setUpdateStatus(status))
-                      }
+                      onPress={() => runUpdateStatusAction(() => host.updates!.check())}
                     />
                     {updateStatus?.phase === 'available' ? (
                       <Button
                         title="Download update"
                         small
-                        onPress={() =>
-                          void host.updates
-                            ?.download()
-                            .then((status) => status && setUpdateStatus(status))
-                        }
+                        onPress={() => runUpdateStatusAction(() => host.updates!.download())}
                       />
                     ) : null}
                     {updateStatus?.phase === 'downloaded' ? (
@@ -826,6 +1310,114 @@ export function SettingsScreen({
               )}
             </Card>
           </View>
+          <View style={styles.sectionGroup} onLayout={captureSection('notifications')}>
+            <Card>
+              <View style={styles.sectionHead}>
+                <View style={styles.sectionHeadCopy}>
+                  <SectionTitle>Notifications</SectionTitle>
+                  <Label tone="dim" size={11}>
+                    Explicit opt-in controls for local trap-rule and watch-alert notifications.
+                  </Label>
+                </View>
+                <Pill
+                  text={notificationPermission.toUpperCase()}
+                  color={
+                    notificationPermission === 'granted'
+                      ? t.ok
+                      : notificationPermission === 'denied'
+                        ? t.error
+                        : t.textDim
+                  }
+                />
+              </View>
+              {!notificationAdapter ? (
+                <Label tone="warn" size={11}>
+                  Notifications are not supported by this host. Rule and watch notifications stay
+                  disabled until the platform provides a notification adapter.
+                </Label>
+              ) : (
+                <>
+                  <SettingToggle
+                    label="Trap rule notifications"
+                    hint="Show a local notification when a received trap matches a saved rule."
+                    value={notificationPreferences.trapRules}
+                    disabled={notificationPermission !== 'granted'}
+                    onChange={(enabled) => setNotificationPreference('trapRules', enabled)}
+                  />
+                  <SettingToggle
+                    label="Watch alert notifications"
+                    hint="Show a local notification when a Tool watch threshold fires."
+                    value={notificationPreferences.watchAlerts}
+                    disabled={notificationPermission !== 'granted'}
+                    onChange={(enabled) => setNotificationPreference('watchAlerts', enabled)}
+                  />
+                  {notificationPermission !== 'granted' ? (
+                    <Label tone={notificationPermission === 'denied' ? 'error' : 'warn'} size={11}>
+                      Permission is {notificationPermission}. Enable notifications explicitly before
+                      notification toggles can be changed.
+                    </Label>
+                  ) : (
+                    <Label tone="ok" size={11}>
+                      Permission granted. Enabled classes can notify without requesting permission
+                      from trap or watch events.
+                    </Label>
+                  )}
+                  <Row style={styles.wrap}>
+                    <Button
+                      title="Request notification permission"
+                      small
+                      variant="ghost"
+                      disabled={notificationPermission === 'granted'}
+                      onPress={() => void requestNotificationPermission()}
+                    />
+                    <Pill text={notificationAdapter.label.toUpperCase()} color={t.textDim} />
+                  </Row>
+                </>
+              )}
+              {notificationPermissionMessage ? (
+                <Label tone="error" size={11}>
+                  {notificationPermissionMessage}
+                </Label>
+              ) : null}
+            </Card>
+          </View>
+
+          <View style={styles.sectionGroup} onLayout={captureSection('layout')}>
+            <Card>
+              <SectionTitle>Layout</SectionTitle>
+              <Label tone="dim" size={11}>
+                Reset persisted split-pane ratios and packet dock sizing back to the responsive
+                defaults. Current panes keep working; the defaults apply as panes remount or resize.
+              </Label>
+              <Row style={styles.wrap}>
+                <Button
+                  title="Reset split panes"
+                  small
+                  variant="ghost"
+                  onPress={() => {
+                    resetSplitWorkspaceLayouts();
+                    useAppStore.getState().pushToast({
+                      tone: 'success',
+                      message: 'Split pane layout defaults restored',
+                    });
+                  }}
+                />
+                <Button
+                  title="Reset packet dock"
+                  small
+                  variant="ghost"
+                  onPress={() => {
+                    resetVerticalDockLayouts();
+                    useAppStore.getState().pushToast({
+                      tone: 'success',
+                      message: 'Packet dock layout defaults restored',
+                    });
+                  }}
+                />
+              </Row>
+            </Card>
+          </View>
+
           <View style={styles.sectionGroup} onLayout={captureSection('privacy')}>
             <View style={styles.hero}>
               <View style={styles.heroCopy}>
@@ -834,52 +1426,131 @@ export function SettingsScreen({
                   Privacy, source order, cache, and external evidence
                 </Text>
               </View>
-              <Pill
-                text={settings?.enabled ? 'ONLINE' : 'DISABLED'}
-                color={settings?.enabled ? t.ok : t.textDim}
-              />
+              <Pill text={resolverAvailability.text} color={resolverAvailability.color} />
             </View>
 
             <Card>
               <SectionTitle>Privacy & automation</SectionTitle>
-              <SettingToggle
-                label="Enable resolver"
-                hint="Allow cache and configured sources to resolve modules."
-                value={settings?.enabled ?? false}
-                onChange={(enabled) => void updateResolverSettings(engine, { enabled })}
-              />
-              <SettingToggle
-                label="Resolve missing imports automatically"
-                hint="Runs only after a local import reports missing dependencies."
-                value={settings?.autoResolveImports ?? false}
-                disabled={!settings?.enabled}
-                onChange={(autoResolveImports) =>
-                  void updateResolverSettings(engine, { autoResolveImports })
-                }
-              />
-              <View style={styles.settingRow}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }}>
-                    External access consent
-                  </Text>
-                  <Text style={{ color: t.textDim, fontSize: 11, lineHeight: 16 }}>
-                    Consent can only be remembered from the disclosure prompt. Revoke it here at any
-                    time.
-                  </Text>
-                </View>
-                {settings?.externalConsentRemembered ? (
+              {resolverReadiness.phase === 'loading' || resolverReadiness.phase === 'unloaded' ? (
+                <Label tone="dim" size={11}>
+                  Loading the authoritative resolver settings…
+                </Label>
+              ) : resolverReadiness.phase === 'error' ? (
+                <>
+                  <Label tone="error" size={11}>
+                    Resolver settings could not be loaded. {resolverReadiness.error}
+                  </Label>
                   <Button
-                    title="Revoke"
+                    title="Retry loading"
                     small
-                    variant="danger"
+                    variant="ghost"
                     onPress={() =>
-                      void updateResolverSettings(engine, { externalConsentRemembered: false })
+                      void resolverController
+                        .load(() => engine.resolver.settings.get())
+                        .catch(() => undefined)
                     }
                   />
-                ) : (
-                  <Pill text="ASK EVERY TIME" color={t.textDim} />
-                )}
-              </View>
+                </>
+              ) : (
+                <>
+                  <SettingToggle
+                    label="Enable resolver"
+                    hint="Allow cache and configured sources to resolve modules."
+                    value={resolverDraft.enabled}
+                    disabled={['uncertain', 'error-reverted'].includes(resolverState.phase)}
+                    onChange={(enabled) => resolverController.edit({ enabled })}
+                  />
+                  <SettingToggle
+                    label="Resolve missing imports automatically"
+                    hint="Runs only after a local import reports missing dependencies."
+                    value={resolverDraft.autoResolveImports}
+                    disabled={
+                      !resolverDraft.enabled ||
+                      ['uncertain', 'error-reverted'].includes(resolverState.phase)
+                    }
+                    onChange={(autoResolveImports) =>
+                      resolverController.edit({ autoResolveImports })
+                    }
+                  />
+                  <View style={styles.settingRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ color: t.text, fontSize: 13, fontWeight: '700' }}>
+                        External access consent
+                      </Text>
+                      <Text style={{ color: t.textDim, fontSize: 11, lineHeight: 16 }}>
+                        Consent can only be remembered from the disclosure prompt. Revoke it here at
+                        any time.
+                      </Text>
+                    </View>
+                    {resolverDraft.externalConsentRemembered ? (
+                      <Button
+                        title="Revoke"
+                        small
+                        variant="danger"
+                        disabled={['uncertain', 'error-reverted'].includes(resolverState.phase)}
+                        onPress={() =>
+                          resolverController.edit({ externalConsentRemembered: false })
+                        }
+                      />
+                    ) : (
+                      <Pill text="ASK EVERY TIME" color={t.textDim} />
+                    )}
+                  </View>
+                  <Label
+                    tone={
+                      resolverState.phase === 'error-reverted' ||
+                      resolverState.phase === 'uncertain' ||
+                      resolverState.phase === 'conflict'
+                        ? 'error'
+                        : 'dim'
+                    }
+                    size={11}
+                  >
+                    {resolverSettingsStatusText(resolverState)}
+                  </Label>
+                  <Row style={styles.wrap}>
+                    <Button
+                      title="Save changes"
+                      small
+                      disabled={resolverState.phase !== 'dirty'}
+                      onPress={() => void resolverController.save(resolverTransport())}
+                    />
+                    <Button
+                      title="Cancel / revert"
+                      small
+                      variant="ghost"
+                      disabled={!resolverController.canCancel()}
+                      onPress={() => resolverController.cancel()}
+                    />
+                    {resolverState.phase === 'error-reverted' ? (
+                      <>
+                        <Button
+                          title="Retry"
+                          small
+                          variant="ghost"
+                          onPress={() => void resolverController.retry(resolverTransport())}
+                        />
+                        <Button
+                          title="Acknowledge"
+                          small
+                          variant="ghost"
+                          onPress={() => void resolverController.acknowledgeAndResume()}
+                        />
+                      </>
+                    ) : null}
+                    {resolverState.phase === 'uncertain' ? (
+                      <Button
+                        title="Check remote value"
+                        small
+                        variant="ghost"
+                        onPress={() =>
+                          void resolverController.reconcile(() => engine.resolver.settings.get())
+                        }
+                      />
+                    ) : null}
+                  </Row>
+                </>
+              )}
             </Card>
           </View>
 
@@ -899,10 +1570,58 @@ export function SettingsScreen({
                   title="Clear cache"
                   small
                   variant="danger"
-                  disabled={!cache?.entries}
-                  onPress={() => void clearResolverCache(engine)}
+                  disabled={
+                    !cache?.entries ||
+                    ['queued', 'updating', 'uncertain'].includes(cacheClearState.phase)
+                  }
+                  onPress={() =>
+                    void executeAction('settings:clear-resolver-cache').catch(() => undefined)
+                  }
                 />
               </View>
+              <View role="status" accessibilityLiveRegion="polite">
+                <Text
+                  style={{
+                    color:
+                      cacheClearState.phase === 'success'
+                        ? t.ok
+                        : cacheClearState.phase === 'confirmed'
+                          ? t.textDim
+                          : t.warn,
+                    fontSize: 12,
+                  }}
+                >
+                  {resolverCacheClearStatusText(cacheClearState)}
+                </Text>
+              </View>
+              {cacheClearState.phase === 'error-reverted' ||
+              cacheClearState.phase === 'conflict' ? (
+                <Row>
+                  <Button
+                    title="Retry clear"
+                    small
+                    onPress={() =>
+                      void cacheClearController.retry(ownsEngine).catch(() => undefined)
+                    }
+                  />
+                  <Button
+                    title="Dismiss"
+                    small
+                    variant="ghost"
+                    onPress={() => cacheClearController.acknowledge()}
+                  />
+                </Row>
+              ) : null}
+              {cacheClearState.phase === 'uncertain' ? (
+                <Button
+                  title="Check engine cache"
+                  small
+                  variant="ghost"
+                  onPress={() =>
+                    void cacheClearController.reconcile(ownsEngine).catch(() => undefined)
+                  }
+                />
+              ) : null}
             </Card>
           </View>
 
@@ -915,7 +1634,12 @@ export function SettingsScreen({
                   order.
                 </Label>
               </View>
-              <Button title="Add source" small onPress={() => openEditor('new')} />
+              <Button
+                title="Add source"
+                small
+                disabled={sourceCollectionBlocked}
+                onPress={() => openEditor('new')}
+              />
             </View>
             <Card style={styles.sourcesCard}>
               <Row>
@@ -929,9 +1653,42 @@ export function SettingsScreen({
                   title="Refresh"
                   small
                   variant="ghost"
-                  onPress={() => void refreshResolverState(engine)}
+                  onPress={() =>
+                    void refreshResolverState(engine, ownsEngine).catch(() => undefined)
+                  }
                 />
               </Row>
+              <Label
+                tone={
+                  ['error-reverted', 'uncertain', 'conflict'].includes(
+                    sourceCollectionState.phase,
+                  ) || sourceCollectionState.readiness.phase === 'error'
+                    ? 'error'
+                    : sourceCollectionState.phase === 'success'
+                      ? 'ok'
+                      : 'dim'
+                }
+                size={11}
+              >
+                {resolverSourceCollectionStatusText(sourceCollectionState)}
+              </Label>
+              {['error-reverted', 'conflict'].includes(sourceCollectionState.phase) ? (
+                <Button
+                  title="Acknowledge and continue"
+                  small
+                  variant="ghost"
+                  onPress={() => sourceCollectionController.acknowledge()}
+                />
+              ) : null}
+              {['uncertain', 'conflict'].includes(sourceCollectionState.phase) ||
+              sourceCollectionState.readiness.phase === 'error' ? (
+                <Button
+                  title="Reconcile with engine"
+                  small
+                  variant="ghost"
+                  onPress={() => void sourceCollectionController.reconcile()}
+                />
+              ) : null}
               {cacheSource ? (
                 <SourceRow
                   source={cacheSource}
@@ -979,7 +1736,7 @@ export function SettingsScreen({
                 <Button
                   title="Import pasted config"
                   small
-                  disabled={!configTransfer.trim()}
+                  disabled={!configTransfer.trim() || sourceCollectionBlocked}
                   onPress={() => void importConfiguration()}
                 />
               </Row>
@@ -1005,57 +1762,159 @@ export function SettingsScreen({
                 The live console keeps a bounded RAM feed. Final packet records are also stored as
                 rolling JSON Lines text up to this limit; 0 disables disk persistence.
               </Label>
-              <Row style={styles.wrap}>
-                <Field
-                  label="Retention (MiB, 0–256)"
-                  value={packetRetention}
-                  onChangeText={setPacketRetention}
-                  keyboardType="number-pad"
-                />
-                <Button title="Save limit" small onPress={() => void savePacketRetention()} />
-                <Button
-                  title="Open packet console"
-                  small
-                  variant="ghost"
-                  onPress={() => useAppStore.getState().setPacketConsoleOpen(true)}
-                />
-                {packetStatus?.persistence === 'degraded' ? (
+              {packetRetentionReadiness.phase === 'loading' ||
+              packetRetentionReadiness.phase === 'unloaded' ? (
+                <Label tone="dim" size={11}>
+                  Loading the authoritative packet retention status…
+                </Label>
+              ) : packetRetentionReadiness.phase === 'error' ? (
+                <>
+                  <Label tone="error" size={11}>
+                    Packet retention could not be loaded. {packetRetentionReadiness.error}
+                  </Label>
                   <Button
-                    title="Retry disk writes"
+                    title="Retry loading"
                     small
                     variant="ghost"
                     onPress={() =>
-                      void engine.packets.retryPersistence().then((status) => {
-                        useAppStore.getState().setPacketStatus(status);
-                        setPacketMessage(status.warning ?? 'Packet persistence is active again.');
-                      })
+                      void packetRetentionController
+                        .load(() => packetRetentionLifetime.engine.packets.status())
+                        .catch(() => undefined)
                     }
                   />
-                ) : null}
-              </Row>
+                </>
+              ) : (
+                <>
+                  <Row style={styles.wrap}>
+                    <Field
+                      label="Retention (MiB, 0–256)"
+                      value={packetRetention}
+                      onChangeText={(text) => packetRetentionController.edit(text)}
+                      editable={
+                        !['uncertain', 'error-reverted'].includes(packetRetentionState.phase)
+                      }
+                      keyboardType="number-pad"
+                    />
+                    <Button
+                      title="Save limit"
+                      small
+                      disabled={
+                        packetRetentionState.phase !== 'dirty' || !packetRetentionValidation.valid
+                      }
+                      onPress={() =>
+                        void packetRetentionController.save(packetRetentionTransport())
+                      }
+                    />
+                    <Button
+                      title="Cancel / revert"
+                      small
+                      variant="ghost"
+                      disabled={!packetRetentionController.canCancel()}
+                      onPress={() => packetRetentionController.cancel()}
+                    />
+                    {packetRetentionState.phase === 'error-reverted' ? (
+                      <>
+                        <Button
+                          title="Retry"
+                          small
+                          variant="ghost"
+                          onPress={() =>
+                            void packetRetentionController.retry(packetRetentionTransport())
+                          }
+                        />
+                        <Button
+                          title="Acknowledge"
+                          small
+                          variant="ghost"
+                          onPress={() => void packetRetentionController.acknowledgeAndResume()}
+                        />
+                      </>
+                    ) : null}
+                    {packetRetentionState.phase === 'uncertain' ? (
+                      <Button
+                        title="Check remote value"
+                        small
+                        variant="ghost"
+                        onPress={() =>
+                          void packetRetentionController.reconcile(() =>
+                            packetRetentionLifetime.engine.packets.status(),
+                          )
+                        }
+                      />
+                    ) : null}
+                    <Button
+                      title="Open packet console"
+                      small
+                      variant="ghost"
+                      onPress={() => useAppStore.getState().setPacketConsoleOpen(true)}
+                    />
+                    {authoritativePacketStatus?.persistence === 'degraded' ? (
+                      <Button
+                        title={
+                          packetStatusOperation.phase === 'updating'
+                            ? 'Retrying disk writes…'
+                            : 'Retry disk writes'
+                        }
+                        small
+                        variant="ghost"
+                        disabled={packetStatusOperation.phase === 'updating'}
+                        onPress={() =>
+                          void packetRetentionController.runStatusOperation(
+                            () => packetRetentionLifetime.engine.packets.retryPersistence(),
+                            () => packetRetentionLifetime.engine.packets.status(),
+                          )
+                        }
+                      />
+                    ) : null}
+                  </Row>
+                  {!packetRetentionValidation.valid ? (
+                    <Label tone="error" size={11}>
+                      {packetRetentionValidation.reason}
+                    </Label>
+                  ) : null}
+                  <Label
+                    tone={
+                      ['error-reverted', 'uncertain', 'conflict'].includes(
+                        packetRetentionState.phase,
+                      )
+                        ? 'error'
+                        : packetRetentionState.phase === 'dirty'
+                          ? 'warn'
+                          : ['confirmed', 'success'].includes(packetRetentionState.phase)
+                            ? 'ok'
+                            : 'dim'
+                    }
+                    size={11}
+                  >
+                    {packetRetentionStatusText(packetRetentionState)}
+                  </Label>
+                  {packetStatusOperation.phase === 'error' ||
+                  packetStatusOperation.phase === 'uncertain' ? (
+                    <Label tone="error" size={11}>
+                      Disk-write retry {packetStatusOperation.phase}. {packetStatusOperation.error}
+                    </Label>
+                  ) : null}
+                </>
+              )}
               <Row style={styles.wrap}>
                 <Pill
-                  text={(packetStatus?.persistence ?? 'loading').toUpperCase()}
+                  text={(authoritativePacketStatus?.persistence ?? 'loading').toUpperCase()}
                   color={
-                    packetStatus?.persistence === 'degraded'
+                    authoritativePacketStatus?.persistence === 'degraded'
                       ? t.error
-                      : packetStatus?.persistence === 'disabled'
+                      : authoritativePacketStatus?.persistence === 'disabled'
                         ? t.textDim
                         : t.ok
                   }
                 />
                 <Label tone="dim" size={10}>
-                  {((packetStatus?.persistedBytes ?? 0) / 1024 / 1024).toFixed(2)} MiB persisted
+                  {((authoritativePacketStatus?.persistedBytes ?? 0) / 1024 / 1024).toFixed(2)} MiB
+                  persisted
                 </Label>
               </Row>
-              {packetStatus?.warning ? (
+              {authoritativePacketStatus?.warning ? (
                 <Label tone="error" size={11}>
-                  {packetStatus.warning}
-                </Label>
-              ) : null}
-              {packetMessage ? (
-                <Label tone={packetMessage.includes('Enter') ? 'error' : 'ok'} size={11}>
-                  {packetMessage}
+                  {authoritativePacketStatus.warning}
                 </Label>
               ) : null}
               <Label tone="warn" size={10}>
@@ -1160,6 +2019,14 @@ export function SettingsScreen({
   );
 }
 
+function toUpdatePreferenceSnapshot(
+  state: { preferences: { automaticChecks: boolean }; status: HostUpdateStatus } | null | undefined,
+): UpdatePreferenceSnapshot | null {
+  return state
+    ? { automaticChecks: state.preferences.automaticChecks, status: state.status }
+    : null;
+}
+
 function SettingToggle({
   label,
   hint,
@@ -1208,15 +2075,23 @@ function SourceRow({
   onEdit: () => void;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
+  const collection = resolverSourceController(engine, ownsEngine, false);
+  const collectionState = collection.snapshot();
+  const blocked =
+    collectionState.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(collectionState.phase);
+  const sourceMutationStatus = collection.statusFor(source.id);
   const test = useAppStore((s) => s.sourceTestResults[source.id]);
   const testing = Boolean(useAppStore((s) => s.sourceTestHandles[source.id]));
   const fixedCache = source.kind === 'cache';
   const dragResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => !fixedCache,
-        onMoveShouldSetPanResponder: (_event, gesture) => !fixedCache && Math.abs(gesture.dy) > 4,
+        onStartShouldSetPanResponder: () => !fixedCache && !blocked,
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          !fixedCache && !blocked && Math.abs(gesture.dy) > 4,
         onPanResponderRelease: (_event, gesture) => {
           const rows = Math.round(gesture.dy / 64);
           if (rows !== 0) {
@@ -1224,11 +2099,12 @@ function SourceRow({
               engine,
               source.id,
               Math.max(0, Math.min(count - 1, index + rows)),
-            );
+              ownsEngine,
+            ).catch(() => undefined);
           }
         },
       }),
-    [count, engine, fixedCache, index, source.id],
+    [blocked, count, engine, fixedCache, index, ownsEngine, source.id],
   );
   return (
     <View style={[styles.sourceRow, { borderTopColor: t.border }]}>
@@ -1247,21 +2123,25 @@ function SourceRow({
               <Text style={{ color: t.textDim, fontSize: 14 }}>↕</Text>
             </View>
             <Pressable
-              disabled={first}
+              disabled={first || blocked}
               accessibilityRole="button"
               accessibilityLabel={`Move ${source.name} earlier`}
-              accessibilityState={{ disabled: first }}
-              onPress={() => void moveResolverSource(engine, source.id, -1)}
+              accessibilityState={{ disabled: first || blocked }}
+              onPress={() =>
+                void moveResolverSource(engine, source.id, -1, ownsEngine).catch(() => undefined)
+              }
               style={styles.reorderButton}
             >
               <Text style={{ color: first ? t.border : t.accent, fontSize: 18 }}>↑</Text>
             </Pressable>
             <Pressable
-              disabled={last}
+              disabled={last || blocked}
               accessibilityRole="button"
               accessibilityLabel={`Move ${source.name} later`}
-              accessibilityState={{ disabled: last }}
-              onPress={() => void moveResolverSource(engine, source.id, 1)}
+              accessibilityState={{ disabled: last || blocked }}
+              onPress={() =>
+                void moveResolverSource(engine, source.id, 1, ownsEngine).catch(() => undefined)
+              }
               style={styles.reorderButton}
             >
               <Text style={{ color: last ? t.border : t.accent, fontSize: 18 }}>↓</Text>
@@ -1274,6 +2154,12 @@ function SourceRow({
           <Text style={{ color: t.text, fontSize: 13, fontWeight: '800' }}>{source.name}</Text>
           <Pill text={source.kind} />
           {source.builtIn ? <Pill text="built-in" color={t.kind.module} /> : null}
+          {sourceMutationStatus ? (
+            <Pill
+              text={sourceMutationStatus.toUpperCase()}
+              color={sourceMutationStatus === 'updating' ? t.warn : t.textDim}
+            />
+          ) : null}
         </Row>
         <Mono dim size={9} numberOfLines={1}>
           {sourceLocation(source)}
@@ -1315,7 +2201,10 @@ function SourceRow({
         <ThemedSwitch
           accessibilityLabel={`Enable ${source.name}`}
           value={source.enabled}
-          onValueChange={() => void toggleResolverSource(engine, source)}
+          disabled={blocked}
+          onValueChange={() =>
+            void toggleResolverSource(engine, source, ownsEngine).catch(() => undefined)
+          }
         />
       )}
       <View style={styles.sourceActions}>
@@ -1325,10 +2214,16 @@ function SourceRow({
             small
             variant="ghost"
             disabled={testing || !source.enabled || !testModule.trim()}
-            onPress={() => void testResolverSource(engine, source.id, testModule)}
+            onPress={() =>
+              void testResolverSource(engine, source.id, testModule, ownsEngine).catch(
+                () => undefined,
+              )
+            }
           />
         ) : null}
-        {!source.builtIn ? <Button title="Edit" small variant="ghost" onPress={onEdit} /> : null}
+        {!source.builtIn ? (
+          <Button title="Edit" small variant="ghost" disabled={blocked} onPress={onEdit} />
+        ) : null}
       </View>
     </View>
   );
@@ -1386,24 +2281,46 @@ function SourceEditor({
 
 function SourceEditorBody({ source, onClose }: { source?: SourceConfig; onClose: () => void }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
+  const sourceController = resolverSourceController(engine, ownsEngine, false);
+  const sourceState = useSyncExternalStore(
+    (listener) => sourceController.subscribe(listener),
+    () => sourceController.snapshot(),
+    () => sourceController.snapshot(),
+  );
+  const editorBlocked = ['error-reverted', 'uncertain', 'conflict'].includes(sourceState.phase);
   const [form, setForm] = useState<FormState>(() => sourceToForm(source));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [failedOperation, setFailedOperation] = useState<'save' | 'delete'>('save');
+  const [localCommand, setLocalCommand] = useState<string | null>(null);
   const previewing = Boolean(useAppStore((state) => state.sourcePreviewHandle));
   const catalogPreview = useAppStore((state) => state.sourcePreview);
+  const editorRecovery = resolverSourceEditorRecovery(
+    sourceState,
+    localCommand,
+    Boolean(error),
+    saving,
+  );
   const patch = (next: Partial<FormState>) => {
-    const state = useAppStore.getState();
-    if (state.sourcePreviewHandle) void engine.resolver.cancel(state.sourcePreviewHandle);
-    state.clearSourcePreview();
+    void cancelResolverSourcePreview(engine, ownsEngine).catch(() => undefined);
     setForm((current) => ({ ...current, ...next }));
   };
 
-  const save = async () => {
+  const save = async (retry = false) => {
     setSaving(true);
+    setFailedOperation('save');
+    setLocalCommand(source ? `update:${source.id}` : 'create');
     setError(null);
     try {
-      await saveResolverSource(engine, buildSourceDraft(form, source), source?.id);
+      await saveResolverSource(
+        engine,
+        buildSourceDraft(form, source),
+        source?.id,
+        ownsEngine,
+        retry,
+      );
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1418,18 +2335,20 @@ function SourceEditorBody({ source, onClose }: { source?: SourceConfig; onClose:
       const draft = buildSourceDraft(form, source);
       if (draft.config.kind !== 'json-catalog')
         throw new Error('Preview is available for JSON catalogs only.');
-      await previewResolverSource(engine, draft);
+      await previewResolverSource(engine, draft, ownsEngine);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
 
-  const remove = async () => {
+  const remove = async (retry = false) => {
     if (!source) return;
     setSaving(true);
+    setFailedOperation('delete');
+    setLocalCommand(`remove:${source.id}`);
     setError(null);
     try {
-      await removeResolverSource(engine, source.id);
+      await removeResolverSource(engine, source.id, ownsEngine, retry);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1698,16 +2617,56 @@ function SourceEditorBody({ source, onClose }: { source?: SourceConfig; onClose:
         ) : null}
 
         {error ? <Label tone="error">{error}</Label> : null}
+        {editorBlocked ? (
+          <Label tone="error" size={11}>
+            {resolverSourceCollectionStatusText(sourceState)}
+          </Label>
+        ) : null}
+        {editorRecovery === 'retry-local' ? (
+          <Row style={styles.wrap}>
+            <Button
+              title="Acknowledge"
+              small
+              variant="ghost"
+              onPress={() => sourceController.acknowledge()}
+            />
+            <Button
+              title="Retry rejected change"
+              small
+              onPress={() => {
+                sourceController.prepareRetry();
+                if (failedOperation === 'delete') void remove(true);
+                else void save(true);
+              }}
+            />
+          </Row>
+        ) : null}
+        {editorRecovery === 'acknowledge-queued' ? (
+          <Button
+            title="Acknowledge and resume queued save"
+            small
+            variant="ghost"
+            onPress={() => sourceController.acknowledge()}
+          />
+        ) : null}
+        {editorRecovery === 'reconcile' ? (
+          <Button
+            title="Reconcile with engine"
+            small
+            variant="ghost"
+            onPress={() => void sourceController.reconcile().catch(() => undefined)}
+          />
+        ) : null}
         <Button
           title={saving ? 'Saving…' : 'Save source'}
-          disabled={saving}
+          disabled={saving || editorBlocked}
           onPress={() => void save()}
         />
         {source && !source.builtIn ? (
           <Button
             title={saving ? 'Working…' : 'Delete source'}
             variant="danger"
-            disabled={saving}
+            disabled={saving || editorBlocked}
             onPress={() => void remove()}
           />
         ) : null}

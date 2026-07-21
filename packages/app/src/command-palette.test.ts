@@ -26,7 +26,7 @@ const tabs: NavigationTab[] = [
 ];
 
 describe('command palette inventory and filtering', () => {
-  it('builds responsive navigation, safe preparation commands, and host capabilities', () => {
+  it('builds responsive static actions without duplicating contextual Query actions', () => {
     const commands = getPaletteCommands(tabs, true);
     expect(commands.map(({ id }) => id)).toEqual([
       'navigate:browse',
@@ -44,18 +44,10 @@ describe('command palette inventory and filtering', () => {
       'agents:create-profile',
       'app:shortcuts',
       'window:new',
-      'query:prepare-get',
-      'query:prepare-get-next',
-      'query:prepare-get-bulk',
-      'query:prepare-walk',
-      'query:prepare-set',
       'traps:receive',
       'traps:send',
     ]);
-    expect(commands.find(({ id }) => id === 'query:prepare-walk')?.effect).toEqual({
-      kind: 'prepare-query',
-      operation: 'walk',
-    });
+    expect(commands.some(({ id }) => id.startsWith('query:prepare-'))).toBe(false);
     expect(getPaletteCommands(tabs, false).some(({ id }) => id === 'window:new')).toBe(false);
   });
 
@@ -66,7 +58,9 @@ describe('command palette inventory and filtering', () => {
         .map(({ id }) => id)
         .slice(0, 3),
     ).toEqual(['navigate:traps', 'traps:receive', 'traps:send']);
-    expect(filterPaletteCommands(commands, 'bulk')[0]?.id).toBe('query:prepare-get-bulk');
+    expect(filterPaletteCommands(commands, 'color theme')[0]?.id).toBe(
+      'preferences:color-theme',
+    );
   });
 
   it('uses @ as the explicit OID mode', () => {
@@ -94,7 +88,7 @@ describe('command palette inventory and filtering', () => {
     ]);
   });
 
-  it('prepares query and trap state without exposing a network executor', () => {
+  it('preserves legacy preparation and navigation effects during registry migration', () => {
     const calls: string[] = [];
     const context = {
       navigate: (tab: string) => calls.push(`navigate:${tab}`),
@@ -126,8 +120,6 @@ describe('command palette inventory and filtering', () => {
       'navigate:liveMibs',
       'create-agent-profile',
     ]);
-    expect(Object.keys(context)).not.toContain('runQuery');
-    expect(Object.keys(context)).not.toContain('sendTrap');
   });
 });
 
@@ -158,7 +150,7 @@ describe('command palette recents', () => {
     expect(items.filter((item) => item.kind === 'oid' && item.oid === '1.3.6.1')).toHaveLength(0);
   });
 
-  it('defensively parses versioned history and drops malformed or obsolete entries', () => {
+  it('defensively parses versioned history and drops malformed entries', () => {
     const parsed = parsePaletteHistory(
       JSON.stringify({
         version: 1,
@@ -174,11 +166,32 @@ describe('command palette recents', () => {
     expect(parsed).toEqual([
       command('navigate:browse'),
       { kind: 'command', commandId: 'navigate:liveMibs' },
+      { kind: 'command', commandId: 'removed:command' },
       oid('1.3.6.1'),
     ]);
     expect(parsePaletteHistory('{broken')).toEqual([]);
     expect(parsePaletteHistory(JSON.stringify({ version: 2, items: [] }))).toEqual([]);
     expect(parsePaletteHistory('x'.repeat(100_001))).toEqual([]);
+  });
+
+  it('roundtrips bounded safe future action IDs and ignores them when absent', async () => {
+    const customId = 'plugin-tools:poll-selected_v2';
+    let persisted: string | null = null;
+    const controller = new PaletteHistoryController({
+      getItem: async () => persisted,
+      setItem: async (_key, value) => void (persisted = value),
+    });
+    await controller.load();
+    controller.record({ kind: 'command', commandId: customId });
+    await controller.flush();
+    const parsed = parsePaletteHistory(persisted);
+    expect(parsed).toEqual([{ kind: 'command', commandId: customId }]);
+    expect(buildPaletteEntries([], parsed, '')).toEqual([]);
+    expect(
+      parsePaletteHistory(
+        JSON.stringify({ version: 1, items: [{ kind: 'command', commandId: '../unsafe' }] }),
+      ),
+    ).toEqual([]);
   });
 
   it('merges selections made before hydration and persists optimistic state', async () => {

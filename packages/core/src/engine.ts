@@ -38,10 +38,7 @@ export interface EngineOptions {
   /** Deterministic test seam; production uses SnmpSession.get. */
   agentTester?: (agent: AgentSpec, oids: string[]) => Promise<DecodedVarbind[]>;
   /** Deterministic test seam; production uses SnmpSession.set. */
-  agentSetter?: (
-    agent: AgentSpec,
-    varbinds: SnmpVarbindInput[],
-  ) => Promise<DecodedVarbind[]>;
+  agentSetter?: (agent: AgentSpec, varbinds: SnmpVarbindInput[]) => Promise<DecodedVarbind[]>;
 }
 
 const MIB_URL_MAX_BYTES = 5 * 1024 * 1024;
@@ -52,8 +49,9 @@ function netSnmpVersion(): string {
 
 export function createEngine(transport: Transport, opts: EngineOptions = {}): EngineAPI {
   const bus = new EventBus();
-  const packetTrace = new PacketTraceService(transport.files, (kind, payload) =>
-    bus.emit({ channel: 'packets', kind, payload }),
+  const packetTrace = new PacketTraceService(
+    transport.files,
+    (kind, payload) => bus.emit({ channel: 'packets', kind, payload }),
     opts.dbPath !== ':memory:',
   );
   const packetTraceReady = packetTrace.initialize();
@@ -93,9 +91,9 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
     }
   }
 
-  async function persistCatalog(): Promise<void> {
+  async function persistCatalog(candidate: MibStore = mibStore): Promise<void> {
     if (!db) return;
-    await persistMibCatalog(db, transport.files, mibStore);
+    await persistMibCatalog(db, transport.files, candidate);
   }
 
   /** Decorate decoded varbinds with MIB-resolved display names. */
@@ -541,8 +539,12 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
 
       async importTexts(files) {
         const result = await mibMutations.run(async () => {
-          const result = mibStore.importTexts(files);
-          if (result.loaded.length > 0) await persistCatalog();
+          const candidate = mibStore.fork();
+          const result = candidate.importTexts(files);
+          if (result.loaded.length > 0) {
+            await persistCatalog(candidate);
+            mibStore.adopt(candidate);
+          }
           return result;
         });
         if (result.loaded.length > 0)
@@ -568,8 +570,12 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
         }
         const name = url.split('/').pop() || 'downloaded-mib';
         const result = await mibMutations.run(async () => {
-          const result = mibStore.importTexts([{ name, content: res.text }]);
-          if (result.loaded.length > 0) await persistCatalog();
+          const candidate = mibStore.fork();
+          const result = candidate.importTexts([{ name, content: res.text }]);
+          if (result.loaded.length > 0) {
+            await persistCatalog(candidate);
+            mibStore.adopt(candidate);
+          }
           return result;
         });
         if (result.loaded.length > 0)
@@ -600,8 +606,10 @@ export function createEngine(transport: Transport, opts: EngineOptions = {}): En
 
       async unload(moduleName) {
         await mibMutations.run(async () => {
-          mibStore.unload(moduleName);
-          await persistCatalog();
+          const candidate = mibStore.fork();
+          candidate.unload(moduleName);
+          await persistCatalog(candidate);
+          mibStore.adopt(candidate);
         });
         bus.emit({
           channel: 'tools',

@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createNodeTransport } from '@mibbeacon/transport/node';
-import type { SecretStore, Transport } from '@mibbeacon/transport';
+import type { SecretStore, StorageAdapter, Transport } from '@mibbeacon/transport';
 import { createEngine } from '../engine';
 import type { DecodedVarbind } from '../snmp/types';
 import { buildPortRows } from './service';
@@ -34,6 +34,115 @@ async function savedAgent(engine: ReturnType<typeof createEngine>, host = '127.0
 }
 
 describe('tools service', () => {
+  it('recovers an active pattern control handle from its stable request identity', async () => {
+    vi.useFakeTimers();
+    try {
+      const engine = createEngine(createNodeTransport({ secrets: encryptedSecrets() }), {
+        dbPath: ':memory:',
+      });
+      const agent = await savedAgent(engine);
+      const series = await engine.tools.polls.create({
+        name: 'Controlled target',
+        agentId: agent.id,
+        oid: '1.3.6.1.2.1.1.3.0',
+        intervalMs: 5_000,
+        mode: 'raw',
+      });
+      const input = {
+        requestId: 'pattern-request-1',
+        name: 'Recoverable pattern',
+        seriesIds: [series.id],
+        cadenceMs: 500,
+        durationMs: 60_000,
+        color: '#ef4444',
+      };
+
+      const first = await engine.tools.patterns.start(input);
+      const repeated = await engine.tools.patterns.start(input);
+      const persisted = (await engine.tools.patterns.list()).filter(
+        (session) => session.requestId === input.requestId,
+      );
+
+      expect(repeated).toEqual(first);
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]).toMatchObject({
+        id: first.sessionId,
+        requestId: input.requestId,
+        operationHandleId: first.handleId,
+        status: 'running',
+      });
+      await expect(
+        engine.tools.patterns.start({ ...input, name: 'Different intent' }),
+      ).rejects.toThrow(/request identity conflict/i);
+      await engine.tools.patterns.cancel(first.handleId);
+      await expect(engine.tools.patterns.list()).resolves.toEqual(
+        expect.arrayContaining([
+          expect.not.objectContaining({
+            id: first.sessionId,
+            status: 'cancelled',
+            operationHandleId: expect.any(String),
+          }),
+        ]),
+      );
+      await expect(engine.tools.patterns.start(input)).rejects.toThrow(/already ended/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rolls back the passive annotation session when any event insert fails', async () => {
+    const transport = createNodeTransport({ secrets: encryptedSecrets() });
+    const open = transport.storage.open.bind(transport.storage);
+    let failPatternEvent = false;
+    const failingTransport: Transport = {
+      ...transport,
+      storage: {
+        open(path): StorageAdapter {
+          const db = open(path);
+          let inserts = 0;
+          const wrapped: StorageAdapter = {
+            exec: db.exec.bind(db),
+            get: db.get.bind(db),
+            all: db.all.bind(db),
+            close: db.close.bind(db),
+            transaction: db.transaction.bind(db),
+            run(sql, params) {
+              if (failPatternEvent && sql.includes('INSERT INTO poll_pattern_events')) {
+                inserts += 1;
+                if (inserts === 2) throw new Error('fixture event insert failure');
+              }
+              return db.run(sql, params);
+            },
+          };
+          return wrapped;
+        },
+      },
+    };
+    const engine = createEngine(failingTransport, { dbPath: ':memory:' });
+    const agent = await savedAgent(engine);
+    const series = await engine.tools.polls.create({
+      name: 'Atomic annotation target',
+      agentId: agent.id,
+      oid: '1.3.6.1.2.1.1.3.0',
+      intervalMs: 5_000,
+      mode: 'raw',
+    });
+    failPatternEvent = true;
+
+    await expect(
+      engine.tools.patterns.annotate({
+        requestId: 'annotation-request-1',
+        name: 'Must roll back',
+        seriesIds: [series.id],
+        cadenceMs: 500,
+        startAt: 1_000,
+        endAt: 2_000,
+        color: '#ef4444',
+      }),
+    ).rejects.toThrow('fixture event insert failure');
+    expect(await engine.tools.patterns.list()).toEqual([]);
+  });
+
   it('marks persisted running patterns as failed when the engine restarts', async () => {
     vi.useFakeTimers();
     const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-pattern-restart-'));
@@ -69,6 +178,7 @@ describe('tools service', () => {
       );
 
       expect(session?.status).toBe('failed');
+      expect(session?.operationHandleId).toBeUndefined();
       await first.tools.patterns.cancel(run.handleId);
     } finally {
       vi.useRealTimers();
@@ -107,7 +217,9 @@ describe('tools service', () => {
       now = 1_000;
       await Promise.resolve();
       const events = await engine.tools.patterns.events(run.sessionId);
-      const session = (await engine.tools.patterns.list()).find((item) => item.id === run.sessionId);
+      const session = (await engine.tools.patterns.list()).find(
+        (item) => item.id === run.sessionId,
+      );
 
       expect(tester).toHaveBeenCalledTimes(2);
       expect(events).toHaveLength(2);
@@ -153,8 +265,20 @@ describe('tools service', () => {
       hitCount: 2,
     });
     expect(events).toMatchObject([
-      { sessionId: session.id, seriesId: series.id, hitIndex: 0, hitAt: 1_000, status: 'annotated' },
-      { sessionId: session.id, seriesId: series.id, hitIndex: 1, hitAt: 1_500, status: 'annotated' },
+      {
+        sessionId: session.id,
+        seriesId: series.id,
+        hitIndex: 0,
+        hitAt: 1_000,
+        status: 'annotated',
+      },
+      {
+        sessionId: session.id,
+        seriesId: series.id,
+        hitIndex: 1,
+        hitAt: 1_500,
+        status: 'annotated',
+      },
     ]);
     expect(csv).toContain('pattern_session_ids,pattern_active,pattern_event_count');
     expect(csv).toContain('# pattern_trace_events');

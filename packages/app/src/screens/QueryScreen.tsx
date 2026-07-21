@@ -1,28 +1,37 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { View, FlatList, Pressable, ScrollView, Share, StyleSheet } from 'react-native';
 import {
-  View,
-  FlatList,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-} from 'react-native';
-import { Button, Card, Chip, Dialog, EmptyState, Field, Label, Mono, Pill, Row, SectionTitle, Skeleton, Text, useTheme } from '@mibbeacon/ui';
+  Button,
+  Card,
+  Chip,
+  Dialog,
+  EmptyState,
+  Field,
+  Label,
+  Mono,
+  Pill,
+  Row,
+  SectionTitle,
+  Skeleton,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import { inferWireType, validateVarbindInput } from '@mibbeacon/core/client';
 import type {
   AuthProtocol,
   DecodedVarbind,
   EngineInfo,
-  OperationBookmark,
   PrivProtocol,
   SecurityLevel,
   SnmpVersion,
-  WalkSnapshotSummary,
   MibNodeDetail,
 } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
-import { useAppStore, type QueryOperation } from '../store';
+import { useEngine, useEngineOwnership } from '../engine-context';
+import { useAppStore, type AgentForm, type QueryOperation } from '../store';
 import { canUseBrowserEventTarget, queryShortcut } from '../browser-shortcuts';
+import { useActionPlatform, useActionRegistry } from '../action-registry-react';
+import { dispatchRegisteredAction } from '../action-dispatch';
+import { QUERY_OPERATION_SLUGS, queryShortcutActionId } from '../query-actions';
 import { queryResultTabAccessibilityLabel, queryResultTabPresentation } from '../query-tabs';
 import {
   runGet,
@@ -30,31 +39,42 @@ import {
   runGetNext,
   runSet,
   runWalk,
-  stopWalk,
   resolveOidHint,
   prepareSetReview,
   openTableView,
   runTableView,
+  openQuerySnapshot,
   buildAgentTarget,
+  refreshAgentGroups,
+  refreshAgentProfiles,
+  saveAgentProfile,
 } from '../actions';
+import { AgentProfileDialog } from '../components/AgentProfileDialog';
 import { VarbindEditor } from '../components/VarbindEditor';
 import { OidLookupPanel } from '../components/OidLookupPanel';
-import { SplitWorkspace } from '../components/SplitWorkspace';
+import { ContainerAwareSplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { createGraphPollSeries, ToolsCollectionRecoveryRequiredError } from '../graph-poll-series';
 import { useResponsiveLayout } from '../responsive-context';
-import { shouldUseEmbeddedQuerySplit } from '../responsive-layout';
+import { EMBEDDED_QUERY_SPLIT_MINIMUMS, QUERY_SPLIT_MINIMUMS } from '../responsive-layout';
 import { serializeQueryResults, type ResultExportFormat } from '../result-export';
-import {
-  canOpenResultTable,
-  copyResultText,
-  resolveResultNode,
-} from '../query-result-actions';
+import { canOpenResultTable, copyResultText, resolveResultNode } from '../query-result-actions';
 import {
   buildTableRows,
   encodeTableIndex,
   TABLE_ROW_HEIGHT,
   tableViewportHeight,
 } from '../table-view';
+import {
+  queryArtifactCollectionsController,
+  queryArtifactStatusText,
+} from '../query-artifact-collections';
+import { agentPersistentCollectionsController } from '../agent-persistent-collections';
+import {
+  agentDraftFromEditor,
+  EMPTY_AGENT_EDITOR,
+  type AgentEditorState,
+} from '../agent-profile-form';
 
 const VERSIONS: SnmpVersion[] = ['v1', 'v2c', 'v3'];
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
@@ -68,6 +88,32 @@ const OPERATIONS: { key: QueryOperation; label: string }[] = [
   { key: 'set', label: 'Set' },
 ];
 
+type PendingProfileAction = { kind: 'bookmark' } | { kind: 'graph'; value: DecodedVarbind };
+
+function editorFromAgentForm(agent: AgentForm): AgentEditorState {
+  return {
+    ...EMPTY_AGENT_EDITOR,
+    name: agent.host ? `${agent.host} SNMP` : 'SNMP target',
+    host: agent.host,
+    port: agent.port,
+    transport: agent.transport,
+    version: agent.version,
+    timeoutMs: agent.timeoutMs,
+    retries: agent.retries,
+    getBulkNonRepeaters: agent.getBulkNonRepeaters,
+    getBulkMaxRepetitions: agent.getBulkMaxRepetitions,
+    community: agent.community,
+    user: agent.v3.user,
+    level: agent.v3.level,
+    authProtocol: agent.v3.authProtocol,
+    authKey: agent.v3.authKey,
+    privProtocol: agent.v3.privProtocol,
+    privKey: agent.v3.privKey,
+    context: agent.v3.context,
+    contextEngineId: agent.v3.contextEngineId,
+  };
+}
+
 export function QueryScreen({
   info,
   embedded = false,
@@ -76,6 +122,7 @@ export function QueryScreen({
   embedded?: boolean;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const oid = useAppStore((s) => s.oid);
@@ -92,7 +139,6 @@ export function QueryScreen({
   const queryTabs = useAppStore((s) => s.queryTabs);
   const activeQueryTabId = useAppStore((s) => s.activeQueryTabId);
   const selectedNode = useAppStore((s) => s.selected);
-  const selectedAgentId = useAppStore((s) => s.selectedAgentId);
   const agentOperationStatuses = useAppStore((s) => s.agentOperationStatuses);
   const operationPduLog = useAppStore((s) => s.operationPduLog);
   const rawPduOpen = useAppStore((s) => s.rawPduOpen);
@@ -101,32 +147,89 @@ export function QueryScreen({
     .map(validateVarbindInput)
     .find(Boolean);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [bookmarks, setBookmarks] = useState<OperationBookmark[]>([]);
-  const [snapshots, setSnapshots] = useState<WalkSnapshotSummary[]>([]);
   const [bookmarkName, setBookmarkName] = useState('');
   const [snapshotName, setSnapshotName] = useState('');
+  const [pendingProfileAction, setPendingProfileAction] = useState<PendingProfileAction | null>(
+    null,
+  );
+  const [profileRequestId, setProfileRequestId] = useState(0);
   const [sending, setSending] = useState(false);
+  const artifactController = useMemo(
+    () => queryArtifactCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const artifacts = useSyncExternalStore(
+    (listener) => artifactController.subscribe(listener),
+    () => artifactController.snapshot(),
+    () => artifactController.snapshot(),
+  );
+  const artifactBlocked = ['error-reverted', 'uncertain', 'conflict'].includes(artifacts.phase);
+  const artifactNeedsReconcile = ['uncertain', 'conflict'].includes(artifacts.phase);
+  const artifactBusy = artifacts.phase === 'queued' || artifacts.phase === 'updating';
+  const actionRegistry = useActionRegistry();
+  const actionPlatform = useActionPlatform();
+  const dispatchQueryAction = useCallback(
+    (actionId: string) =>
+      dispatchRegisteredAction(actionRegistry, actionId, actionPlatform, (message) =>
+        useAppStore.getState().setQueryError(message),
+      ),
+    [actionPlatform, actionRegistry],
+  );
   const submitSet = async () => {
     setSending(true);
     try {
-      await runSet(engine);
+      await runSet(engine, ownsEngine);
     } finally {
-      setSending(false);
+      if (ownsEngine()) setSending(false);
     }
   };
 
-  const refreshArtifacts = useCallback(async () => {
-    const [nextBookmarks, nextSnapshots] = await Promise.all([
-      engine.ops.bookmarks.list(),
-      engine.ops.snapshots.list(),
-    ]);
-    setBookmarks(nextBookmarks);
-    setSnapshots(nextSnapshots);
-  }, [engine]);
+  const requestProfileThen = (action: PendingProfileAction) => {
+    setPendingProfileAction(action);
+    setProfileRequestId((current) => current + 1);
+  };
+
+  const saveBookmark = async () => {
+    const state = useAppStore.getState();
+    if (!state.selectedAgentId || !bookmarkName.trim()) return;
+    try {
+      await artifactController.createBookmark(
+        {
+          name: bookmarkName,
+          agentId: state.selectedAgentId,
+          oid: state.oid,
+          operation: state.queryOperation,
+        },
+        ownsEngine,
+      );
+      if (ownsEngine()) setBookmarkName('');
+    } catch (caught) {
+      if (ownsEngine())
+        useAppStore
+          .getState()
+          .setQueryError(caught instanceof Error ? caught.message : String(caught));
+    }
+  };
+
+  const resumePendingProfileAction = () => {
+    const pending = pendingProfileAction;
+    setPendingProfileAction(null);
+    if (!pending) return;
+    if (pending.kind === 'bookmark') void saveBookmark();
+    else void graphVarbind(engine, pending.value, ownsEngine);
+  };
 
   useEffect(() => {
-    void refreshArtifacts();
-  }, [refreshArtifacts]);
+    if (!ownsEngine()) return;
+    artifactController.activate(ownsEngine);
+    if (!ownsEngine()) return;
+    void artifactController.load().catch((caught) => {
+      if (ownsEngine())
+        useAppStore
+          .getState()
+          .setQueryError(caught instanceof Error ? caught.message : String(caught));
+    });
+  }, [artifactController, ownsEngine]);
 
   const onOid = (value: string) => {
     const s = useAppStore.getState();
@@ -134,15 +237,7 @@ export function QueryScreen({
     s.setOidName(null);
     if (operation === 'set') s.updateSetDraft({ oid: value });
     if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => void resolveOidHint(engine, value), 250);
-  };
-
-  const run = () => {
-    if (operation === 'get') void runGet(engine);
-    else if (operation === 'getNext') void runGetNext(engine);
-    else if (operation === 'getBulk') void runGetBulk(engine);
-    else if (operation === 'walk') void runWalk(engine);
-    else void prepareSetReview(engine);
+    debounce.current = setTimeout(() => void resolveOidHint(engine, value, ownsEngine), 250);
   };
 
   useEffect(() => {
@@ -160,33 +255,19 @@ export function QueryScreen({
       });
       if (!shortcut) return;
       event.preventDefault();
-      const state = useAppStore.getState();
-      if (shortcut === 'stop') void stopWalk(engine);
-      else {
-        if (shortcut !== 'repeat') state.setQueryOperation(shortcut);
-        if (shortcut === 'get') void runGet(engine);
-        else if (shortcut === 'getNext') void runGetNext(engine);
-        else if (shortcut === 'getBulk') void runGetBulk(engine);
-        else if (shortcut === 'walk') void runWalk(engine);
-        else if (shortcut === 'set') void prepareSetReview(engine);
-        else if (state.queryOperation === 'get') void runGet(engine);
-        else if (state.queryOperation === 'getNext') void runGetNext(engine);
-        else if (state.queryOperation === 'getBulk') void runGetBulk(engine);
-        else if (state.queryOperation === 'walk') void runWalk(engine);
-        else void prepareSetReview(engine);
-      }
+      void dispatchQueryAction(queryShortcutActionId(shortcut));
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [engine]);
+  }, [dispatchQueryAction]);
 
   useEffect(() => {
     if (!tableView?.pollMs) return;
     const timer = setInterval(() => {
-      if (!useAppStore.getState().running) void runTableView(engine);
+      if (!useAppStore.getState().running) void runTableView(engine, ownsEngine);
     }, tableView.pollMs);
     return () => clearInterval(timer);
-  }, [engine, tableView?.pollMs]);
+  }, [engine, ownsEngine, tableView?.pollMs]);
 
   const operationCard = (
     <Card style={styles.card}>
@@ -200,14 +281,9 @@ export function QueryScreen({
             key={item.key}
             label={item.label}
             active={operation === item.key}
-            onPress={() => {
-              const s = useAppStore.getState();
-              s.setQueryOperation(item.key);
-              if (item.key === 'set') {
-                s.updateSetDraft({ oid });
-                void resolveOidHint(engine, oid);
-              }
-            }}
+            onPress={() =>
+              void dispatchQueryAction(`query:prepare-${QUERY_OPERATION_SLUGS[item.key]}`)
+            }
           />
         ))}
       </Row>
@@ -254,7 +330,11 @@ export function QueryScreen({
         </View>
       ) : null}
       {operation === 'walk' && running ? (
-        <Button title="Stop walk" variant="danger" onPress={() => void stopWalk(engine)} />
+        <Button
+          title="Stop walk"
+          variant="danger"
+          onPress={() => void dispatchQueryAction('query:stop')}
+        />
       ) : (
         <Button
           title={
@@ -262,7 +342,7 @@ export function QueryScreen({
               ? 'Review Set request'
               : `Run ${OPERATIONS.find((x) => x.key === operation)?.label}`
           }
-          onPress={run}
+          onPress={() => void dispatchQueryAction('query:run-current')}
           disabled={!!running || (operation === 'set' && !!setValidationError)}
         />
       )}
@@ -270,7 +350,15 @@ export function QueryScreen({
         <Button
           title={`Open ${selectedNode.name} in Table View`}
           variant="ghost"
-          onPress={() => void openTableView(engine, selectedNode)}
+          onPress={() => {
+            void openTableView(engine, selectedNode, ownsEngine).catch((caught) => {
+              if (ownsEngine()) {
+                useAppStore
+                  .getState()
+                  .setQueryError(caught instanceof Error ? caught.message : String(caught));
+              }
+            });
+          }}
         />
       ) : null}
       <Dialog
@@ -339,31 +427,73 @@ export function QueryScreen({
       <Label tone="dim" size={11}>
         Bookmarks rerun a saved-agent target. Snapshots preserve the current result set privately.
       </Label>
+      <View role="status" accessibilityLiveRegion="polite">
+        <Label
+          tone={artifacts.phase === 'confirmed' || artifacts.phase === 'success' ? 'dim' : 'warn'}
+        >
+          {queryArtifactStatusText(artifacts)}
+        </Label>
+      </View>
+      {artifacts.readiness.phase === 'error' ? (
+        <Button
+          title="Retry loading saved work"
+          small
+          variant="ghost"
+          onPress={() => void artifactController.load().catch(() => undefined)}
+        />
+      ) : null}
+      {artifacts.phase === 'error-reverted' ? (
+        <Row style={styles.wrap}>
+          <Button
+            title="Retry rejected change"
+            small
+            variant="ghost"
+            onPress={() => void artifactController.retryFailed().catch(() => undefined)}
+          />
+          <Button
+            title="Dismiss"
+            small
+            variant="ghost"
+            onPress={() => artifactController.acknowledge()}
+          />
+        </Row>
+      ) : null}
+      {artifactNeedsReconcile ? (
+        <Row style={styles.wrap}>
+          <Button
+            title="Reconcile saved work"
+            small
+            onPress={() => void artifactController.reconcile().catch(() => undefined)}
+          />
+          {artifacts.phase === 'conflict' ? (
+            <Button
+              title="Accept confirmed engine state"
+              small
+              variant="ghost"
+              onPress={() => artifactController.acknowledge()}
+            />
+          ) : null}
+        </Row>
+      ) : null}
       <Row>
         <Field label="Bookmark name" value={bookmarkName} onChangeText={setBookmarkName} />
         <Button
           title="Save bookmark"
           small
-          disabled={!bookmarkName.trim() || !selectedAgentId}
+          disabled={!bookmarkName.trim() || artifactBlocked || artifactBusy}
+          loading={artifacts.phase === 'updating' && artifacts.active === 'bookmark:create'}
+          loadingTitle="Saving…"
           onPress={() => {
-            const state = useAppStore.getState();
-            if (!state.selectedAgentId) return;
-            void engine.ops.bookmarks
-              .create({
-                name: bookmarkName,
-                agentId: state.selectedAgentId,
-                oid: state.oid,
-                operation: state.queryOperation,
-              })
-              .then(async () => {
-                setBookmarkName('');
-                await refreshArtifacts();
-              });
+            if (!useAppStore.getState().selectedAgentId) {
+              requestProfileThen({ kind: 'bookmark' });
+              return;
+            }
+            void saveBookmark();
           }}
         />
       </Row>
       <Row style={styles.wrap}>
-        {bookmarks.map((bookmark) => (
+        {artifacts.bookmarks.map((bookmark) => (
           <View key={bookmark.id} style={styles.savedItem}>
             <Button
               title={`Run ${bookmark.name}`}
@@ -378,18 +508,26 @@ export function QueryScreen({
                 state.selectAgentProfile(profile);
                 state.setOid(bookmark.oid);
                 state.setQueryOperation(bookmark.operation);
-                if (bookmark.operation === 'get') void runGet(engine);
-                else if (bookmark.operation === 'getNext') void runGetNext(engine);
-                else if (bookmark.operation === 'getBulk') void runGetBulk(engine);
-                else if (bookmark.operation === 'walk') void runWalk(engine);
-                else void prepareSetReview(engine);
+                if (bookmark.operation === 'get') void runGet(engine, ownsEngine);
+                else if (bookmark.operation === 'getNext') void runGetNext(engine, ownsEngine);
+                else if (bookmark.operation === 'getBulk') void runGetBulk(engine, ownsEngine);
+                else if (bookmark.operation === 'walk') void runWalk(engine, ownsEngine);
+                else void prepareSetReview(engine, ownsEngine);
               }}
             />
             <Button
-              title="×"
+              title={`Delete ${bookmark.name}`}
               small
               variant="ghost"
-              onPress={() => void engine.ops.bookmarks.delete(bookmark.id).then(refreshArtifacts)}
+              disabled={artifactBlocked || artifactBusy}
+              onPress={() =>
+                void artifactController.deleteBookmark(bookmark.id, ownsEngine).catch((caught) => {
+                  if (ownsEngine())
+                    useAppStore
+                      .getState()
+                      .setQueryError(caught instanceof Error ? caught.message : String(caught));
+                })
+              }
             />
           </View>
         ))}
@@ -399,49 +537,62 @@ export function QueryScreen({
         <Button
           title="Save snapshot"
           small
-          disabled={!snapshotName.trim() || results.length === 0}
+          disabled={!snapshotName.trim() || results.length === 0 || artifactBlocked || artifactBusy}
+          loading={artifacts.phase === 'updating' && artifacts.active === 'snapshot:create'}
+          loadingTitle="Saving…"
           onPress={() => {
             const state = useAppStore.getState();
             const agentName = state.selectedAgentId
               ? (state.agentProfiles.find((item) => item.id === state.selectedAgentId)?.name ??
                 'Agent')
               : state.agent.host || 'Ad hoc';
-            void engine.ops.snapshots
-              .create({
-                name: snapshotName,
-                agentName,
-                baseOid: state.oid,
-                results: state.results,
-              })
-              .then(async () => {
+            void artifactController
+              .createSnapshot(
+                {
+                  name: snapshotName,
+                  agentName,
+                  baseOid: state.oid,
+                  results: state.results,
+                },
+                ownsEngine,
+              )
+              .then(() => {
+                if (!ownsEngine()) return;
                 setSnapshotName('');
-                await refreshArtifacts();
+              })
+              .catch((caught) => {
+                if (ownsEngine())
+                  useAppStore
+                    .getState()
+                    .setQueryError(caught instanceof Error ? caught.message : String(caught));
               });
           }}
         />
       </Row>
       <Row style={styles.wrap}>
-        {snapshots.map((snapshot) => (
+        {artifacts.snapshots.map((snapshot) => (
           <View key={snapshot.id} style={styles.savedItem}>
             <Button
               title={`Open ${snapshot.name} (${snapshot.resultCount})`}
               small
               variant="ghost"
               onPress={() =>
-                void engine.ops.snapshots.get(snapshot.id).then((loaded) => {
-                  if (!loaded) return;
-                  const state = useAppStore.getState();
-                  state.setResults(loaded.results);
-                  state.setStats({ count: loaded.results.length, batches: 1, ms: 0 });
-                  state.saveQueryResultTab(`${loaded.agentName} · snapshot · ${loaded.baseOid}`);
-                })
+                void openQuerySnapshot(engine, snapshot.id, ownsEngine).catch(() => undefined)
               }
             />
             <Button
-              title="×"
+              title={`Delete ${snapshot.name}`}
               small
               variant="ghost"
-              onPress={() => void engine.ops.snapshots.delete(snapshot.id).then(refreshArtifacts)}
+              disabled={artifactBlocked || artifactBusy}
+              onPress={() =>
+                void artifactController.deleteSnapshot(snapshot.id, ownsEngine).catch((caught) => {
+                  if (ownsEngine())
+                    useAppStore
+                      .getState()
+                      .setQueryError(caught instanceof Error ? caught.message : String(caught));
+                })
+              }
             />
           </View>
         ))}
@@ -503,12 +654,27 @@ export function QueryScreen({
                     style={({ pressed }) => [
                       styles.resultTabAction,
                       styles.resultTabClose,
-                      { borderLeftColor: t.border },
-                      presentation.closeDisabled ? styles.resultTabActionDisabled : null,
+                      {
+                        borderLeftColor: presentation.closeDisabled
+                          ? t.components.disabled.border
+                          : t.border,
+                        backgroundColor: presentation.closeDisabled
+                          ? t.components.disabled.background
+                          : 'transparent',
+                      },
                       pressed ? { backgroundColor: t.accentSoft } : null,
                     ]}
                   >
-                    <Text style={[styles.resultTabCloseText, { color: t.semantic.status.down }]}>
+                    <Text
+                      style={[
+                        styles.resultTabCloseText,
+                        {
+                          color: presentation.closeDisabled
+                            ? t.components.disabled.foreground
+                            : t.semantic.status.down,
+                        },
+                      ]}
+                    >
                       ×
                     </Text>
                   </Pressable>
@@ -605,49 +771,65 @@ export function QueryScreen({
       data={results}
       keyExtractor={(vb, i) => vb.oid + '#' + i}
       keyboardShouldPersistTaps="handled"
-      renderItem={({ item }) => <VarbindRow vb={item} />}
+      renderItem={({ item }) => (
+        <VarbindRow
+          vb={item}
+          onGraphRequiresProfile={(value) => requestProfileThen({ kind: 'graph', value })}
+        />
+      )}
     />
   );
 
-  if (shouldUseEmbeddedQuerySplit(embedded, supportsSplitView)) {
+  const queryWorkspace = (
+    <ContainerAwareSplitWorkspace
+      workspace={embedded ? 'operationConsole' : 'query'}
+      accessibilityLabel={embedded ? 'Resize SNMP operation console panes' : undefined}
+      {...(embedded ? EMBEDDED_QUERY_SPLIT_MINIMUMS : QUERY_SPLIT_MINIMUMS)}
+      splitEnabled={supportsSplitView}
+      stackOnFallback
+      primary={
+        <ScrollView
+          style={embedded ? styles.consoleConfig : styles.configuration}
+          contentContainerStyle={
+            embedded ? styles.consoleConfigContent : styles.configurationContent
+          }
+        >
+          <AgentCard
+            info={info}
+            profileRequestId={profileRequestId}
+            onProfileCreated={resumePendingProfileAction}
+          />
+          {operationCard}
+          {artifactsCard}
+        </ScrollView>
+      }
+      secondary={
+        <View style={embedded ? styles.consoleResults : styles.resultsPane}>
+          <View
+            style={[
+              styles.resultsToolbar,
+              { backgroundColor: t.surface, borderBottomColor: t.border },
+            ]}
+          >
+            {resultsHeader}
+          </View>
+          {resultContent}
+        </View>
+      }
+    />
+  );
+
+  if (embedded) {
     return (
       <View style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: t.bg }}>
-        <SplitWorkspace
-          workspace="operationConsole"
-          accessibilityLabel="Resize SNMP operation console panes"
-          minPrimary={340}
-          minSecondary={360}
-          primary={
-            <ScrollView
-              style={styles.consoleConfig}
-              contentContainerStyle={styles.consoleConfigContent}
-            >
-              <AgentCard info={info} />
-              {operationCard}
-              {artifactsCard}
-            </ScrollView>
-          }
-          secondary={
-            <View style={styles.consoleResults}>
-              <View
-                style={[
-                  styles.resultsToolbar,
-                  { backgroundColor: t.surface, borderBottomColor: t.border },
-                ]}
-              >
-                {resultsHeader}
-              </View>
-              {resultContent}
-            </View>
-          }
-        />
+        {queryWorkspace}
       </View>
     );
   }
 
-  if (supportsSplitView) {
-    return (
-      <View style={styles.workspace}>
+  return (
+    <View style={styles.workspace}>
+      {supportsSplitView ? (
         <WorkspaceHeader
           title="SNMP query"
           subtitle="CONFIGURE AN AGENT · RUN AN OPERATION · INSPECT VARBINDS"
@@ -659,72 +841,23 @@ export function QueryScreen({
             )
           }
         />
-        <SplitWorkspace
-          workspace="query"
-          minPrimary={340}
-          minSecondary={420}
-          primary={
-            <ScrollView
-              style={styles.configuration}
-              contentContainerStyle={styles.configurationContent}
-            >
-              <AgentCard info={info} />
-              {operationCard}
-              {artifactsCard}
-            </ScrollView>
-          }
-          secondary={
-            <View style={styles.resultsPane}>
-              <View
-                style={[
-                  styles.resultsToolbar,
-                  { backgroundColor: t.surface, borderBottomColor: t.border },
-                ]}
-              >
-                {resultsHeader}
-              </View>
-              {resultContent}
-            </View>
-          }
-        />
-      </View>
-    );
-  }
-
-  if (tableView) {
-    return (
-      <ScrollView style={styles.list} contentContainerStyle={styles.content}>
-        <AgentCard info={info} />
-        {operationCard}
-        {artifactsCard}
-        {resultsHeader}
-        <TableViewResult />
-      </ScrollView>
-    );
-  }
-
-  return (
-    <FlatList
-      style={styles.list}
-      contentContainerStyle={styles.content}
-      data={results}
-      keyExtractor={(vb, i) => vb.oid + '#' + i}
-      keyboardShouldPersistTaps="handled"
-      ListHeaderComponent={
-        <>
-          <AgentCard info={info} />
-          {operationCard}
-          {artifactsCard}
-          {resultsHeader}
-        </>
-      }
-      renderItem={({ item }) => <VarbindRow vb={item} />}
-      ListFooterComponent={<View style={{ height: 20 }} />}
-    />
+      ) : null}
+      {queryWorkspace}
+    </View>
   );
 }
 
-function AgentCard({ info }: { info: EngineInfo | null }) {
+function AgentCard({
+  info,
+  profileRequestId,
+  onProfileCreated,
+}: {
+  info: EngineInfo | null;
+  profileRequestId: number;
+  onProfileCreated: () => void;
+}) {
+  const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const agent = useAppStore((s) => s.agent);
   const profiles = useAppStore((s) => s.agentProfiles);
   const selectedAgentId = useAppStore((s) => s.selectedAgentId);
@@ -733,182 +866,321 @@ function AgentCard({ info }: { info: EngineInfo | null }) {
   const groupMode = useAppStore((s) => s.queryGroupMode);
   const setAgent = useAppStore.getState().setAgent;
   const setV3 = useAppStore.getState().setV3;
+  const [profileEditor, setProfileEditor] = useState<AgentEditorState | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const handledProfileRequestId = useRef(0);
+  const [groupName, setGroupName] = useState('');
+  const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const collections = useMemo(
+    () => agentPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
   const desOff = info != null && !info.ciphers.des;
+  const openProfileEditor = () => {
+    setProfileEditor(editorFromAgentForm(agent));
+    setProfileError(null);
+  };
+  const closeProfileEditor = () => {
+    if (profileBusy) return;
+    setProfileEditor(null);
+    setProfileError(null);
+  };
+  useEffect(() => {
+    if (!profileRequestId || handledProfileRequestId.current === profileRequestId) return;
+    handledProfileRequestId.current = profileRequestId;
+    setProfileEditor(editorFromAgentForm(useAppStore.getState().agent));
+    setProfileError(null);
+  }, [profileRequestId]);
+  const createProfileHere = async () => {
+    if (!profileEditor || profileBusy || !ownsEngine()) return;
+    setProfileBusy(true);
+    setProfileError(null);
+    try {
+      const { profile: created } = await saveAgentProfile(
+        engine,
+        null,
+        agentDraftFromEditor(profileEditor),
+        ownsEngine,
+      );
+      if (!ownsEngine()) return;
+      await refreshAgentProfiles(engine, ownsEngine);
+      if (!ownsEngine()) return;
+      useAppStore.getState().selectAgentProfile(created);
+      useAppStore.getState().pushToast({ tone: 'success', message: 'Profile saved and selected' });
+      setProfileEditor(null);
+      onProfileCreated();
+    } catch (caught) {
+      if (ownsEngine()) setProfileError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (ownsEngine()) setProfileBusy(false);
+    }
+  };
+  const createGroupHere = async () => {
+    if (!groupName.trim() || !groupMembers.length || groupBusy || !ownsEngine()) return;
+    setGroupBusy(true);
+    try {
+      await collections.createGroup(
+        { name: groupName.trim(), agentIds: groupMembers },
+        ownsEngine,
+      );
+      if (!ownsEngine()) return;
+      await refreshAgentGroups(engine, ownsEngine);
+      if (!ownsEngine()) return;
+      const created = useAppStore
+        .getState()
+        .agentGroups.find(
+          (group) =>
+            group.name === groupName.trim() &&
+            groupMembers.every((member) => group.agentIds.includes(member)),
+        );
+      if (created) useAppStore.getState().selectAgentGroup(created.id);
+      setGroupName('');
+      setGroupMembers([]);
+      useAppStore.getState().pushToast({ tone: 'success', message: 'Group created and selected' });
+    } catch (caught) {
+      if (ownsEngine())
+        useAppStore.getState().setQueryError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (ownsEngine()) setGroupBusy(false);
+    }
+  };
   return (
-    <Card style={styles.card}>
-      <View style={styles.targetHead}>
-        <SectionTitle>Agent</SectionTitle>
-        <Button
-          title="Manage profiles"
-          small
-          variant="ghost"
-          onPress={() => useAppStore.getState().setTab('agents')}
-        />
-      </View>
-      <Label tone="dim" size={11}>
-        Quick pick · last-used profiles appear first
-      </Label>
-      <Row style={styles.wrap}>
-        <Chip
-          label="Single agent"
-          active={!groupMode}
-          onPress={() => useAppStore.getState().setQueryGroupMode(false)}
-        />
-        <Chip
-          label="Agent group"
-          active={groupMode}
-          onPress={() => useAppStore.getState().setQueryGroupMode(true)}
-        />
-      </Row>
-      {groupMode ? (
-        <>
-          <Row style={styles.wrap}>
-            {groups.map((group) => (
-              <Chip
-                key={group.id}
-                label={`${group.name} (${group.agentIds.length})`}
-                active={selectedGroupId === group.id}
-                onPress={() => useAppStore.getState().selectAgentGroup(group.id)}
-              />
-            ))}
-          </Row>
-          {groups.length === 0 ? (
-            <Label tone="dim">Create an agent group in Manage profiles first.</Label>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <Row style={styles.wrap}>
-            <Chip
-              label="Ad hoc"
-              active={!selectedAgentId}
-              onPress={() => useAppStore.getState().selectAgentProfile(null)}
-            />
-            {profiles.map((profile) => (
-              <Chip
-                key={profile.id}
-                label={profile.name}
-                active={selectedAgentId === profile.id}
-                onPress={() => useAppStore.getState().selectAgentProfile(profile)}
-              />
-            ))}
-          </Row>
-          {selectedAgentId ? (
-            <Label tone="dim" size={11}>
-              Saved credentials stay inside the engine. Editing any field switches to ad-hoc mode.
-            </Label>
-          ) : null}
-          <Row>
-            <Field
-              label="Host"
-              placeholder="10.0.2.2"
-              value={agent.host}
-              onChangeText={(host) => setAgent({ host })}
-            />
-            <View style={{ width: 88 }}>
-              <Field
-                label="Port"
-                value={agent.port}
-                onChangeText={(port) => setAgent({ port })}
-                keyboardType="number-pad"
-              />
-            </View>
-          </Row>
-          <Row>
-            {VERSIONS.map((version) => (
-              <Chip
-                key={version}
-                label={version}
-                active={agent.version === version}
-                onPress={() => setAgent({ version })}
-              />
-            ))}
-          </Row>
-          <Row style={styles.wrap}>
-            {(['udp4', 'udp6'] as const).map((transport) => (
-              <Chip
-                key={transport}
-                label={transport}
-                active={agent.transport === transport}
-                onPress={() => setAgent({ transport })}
-              />
-            ))}
-          </Row>
-          {agent.version !== 'v3' ? (
-            <Field
-              label="Community"
-              value={agent.community}
-              onChangeText={(community) => setAgent({ community })}
-            />
-          ) : (
+    <>
+      <Card style={styles.card}>
+        <View style={styles.targetHead}>
+          <SectionTitle>Agent</SectionTitle>
+          <Button
+            title="Save current target as profile"
+            small
+            variant="ghost"
+            onPress={openProfileEditor}
+          />
+        </View>
+        <Label tone="dim" size={11}>
+          Quick pick · last-used profiles appear first
+        </Label>
+        <Row style={styles.wrap}>
+          <Chip
+            label="Single agent"
+            active={!groupMode}
+            onPress={() => useAppStore.getState().setQueryGroupMode(false)}
+          />
+          <Chip
+            label="Agent group"
+            active={groupMode}
+            onPress={() => useAppStore.getState().setQueryGroupMode(true)}
+          />
+        </Row>
+        {groupMode ? (
+          <>
+            <Row style={styles.wrap}>
+              {groups.map((group) => (
+                <Chip
+                  key={group.id}
+                  label={`${group.name} (${group.agentIds.length})`}
+                  active={selectedGroupId === group.id}
+                  onPress={() => useAppStore.getState().selectAgentGroup(group.id)}
+                />
+              ))}
+            </Row>
+            {groups.length === 0 ? (
+              <View style={styles.stack}>
+                <Label tone="dim">
+                  No saved groups yet. Create a profile here, then assemble groups from saved
+                  profiles.
+                </Label>
+                <Button
+                  title="Create a profile here"
+                  small
+                  variant="ghost"
+                  onPress={openProfileEditor}
+                />
+              </View>
+            ) : null}
             <View style={styles.stack}>
-              <Field label="User" value={agent.v3.user} onChangeText={(user) => setV3({ user })} />
+              <Field label="New group name" value={groupName} onChangeText={setGroupName} />
               <Label tone="dim" size={11}>
-                Security level
+                Select saved profiles for the new group.
               </Label>
               <Row style={styles.wrap}>
-                {LEVELS.map((level) => (
+                {profiles.map((profile) => (
                   <Chip
-                    key={level}
-                    label={level}
-                    active={agent.v3.level === level}
-                    onPress={() => setV3({ level })}
+                    key={`group-${profile.id}`}
+                    label={profile.name}
+                    active={groupMembers.includes(profile.id)}
+                    onPress={() =>
+                      setGroupMembers((current) =>
+                        current.includes(profile.id)
+                          ? current.filter((id) => id !== profile.id)
+                          : [...current, profile.id],
+                      )
+                    }
                   />
                 ))}
               </Row>
-              {agent.v3.level !== 'noAuthNoPriv' ? (
-                <>
-                  <Row style={styles.wrap}>
-                    {AUTHS.map((authProtocol) => (
-                      <Chip
-                        key={authProtocol}
-                        label={authProtocol}
-                        active={agent.v3.authProtocol === authProtocol}
-                        onPress={() => setV3({ authProtocol })}
-                      />
-                    ))}
-                  </Row>
-                  <Field
-                    label="Auth key"
-                    value={agent.v3.authKey}
-                    onChangeText={(authKey) => setV3({ authKey })}
-                    secureTextEntry
-                  />
-                </>
-              ) : null}
-              {agent.v3.level === 'authPriv' ? (
-                <>
-                  <Row style={styles.wrap}>
-                    {PRIVS.map((privProtocol) => {
-                      const disabled = privProtocol === 'des' && desOff;
-                      return (
-                        <Chip
-                          key={privProtocol}
-                          label={disabled ? 'des (n/a)' : privProtocol}
-                          active={agent.v3.privProtocol === privProtocol}
-                          onPress={disabled ? undefined : () => setV3({ privProtocol })}
-                        />
-                      );
-                    })}
-                  </Row>
-                  <Field
-                    label="Privacy key"
-                    value={agent.v3.privKey}
-                    onChangeText={(privKey) => setV3({ privKey })}
-                    secureTextEntry
-                  />
-                </>
-              ) : null}
+              <Button
+                title="Create and select group"
+                small
+                loading={groupBusy}
+                disabled={!groupName.trim() || !groupMembers.length || groupBusy}
+                onPress={() => void createGroupHere()}
+              />
             </View>
-          )}
-        </>
-      )}
-    </Card>
+          </>
+        ) : (
+          <>
+            <Row style={styles.wrap}>
+              <Chip
+                label="Ad hoc"
+                active={!selectedAgentId}
+                onPress={() => useAppStore.getState().selectAgentProfile(null)}
+              />
+              {profiles.map((profile) => (
+                <Chip
+                  key={profile.id}
+                  label={profile.name}
+                  active={selectedAgentId === profile.id}
+                  onPress={() => useAppStore.getState().selectAgentProfile(profile)}
+                />
+              ))}
+            </Row>
+            {selectedAgentId ? (
+              <Label tone="dim" size={11}>
+                Saved credentials stay inside the engine. Editing any field switches to ad-hoc mode.
+              </Label>
+            ) : null}
+            <Row>
+              <Field
+                label="Host"
+                placeholder="10.0.2.2"
+                value={agent.host}
+                onChangeText={(host) => setAgent({ host })}
+              />
+              <View style={{ width: 88 }}>
+                <Field
+                  label="Port"
+                  value={agent.port}
+                  onChangeText={(port) => setAgent({ port })}
+                  keyboardType="number-pad"
+                />
+              </View>
+            </Row>
+            <Row>
+              {VERSIONS.map((version) => (
+                <Chip
+                  key={version}
+                  label={version}
+                  active={agent.version === version}
+                  onPress={() => setAgent({ version })}
+                />
+              ))}
+            </Row>
+            <Row style={styles.wrap}>
+              {(['udp4', 'udp6'] as const).map((transport) => (
+                <Chip
+                  key={transport}
+                  label={transport}
+                  active={agent.transport === transport}
+                  onPress={() => setAgent({ transport })}
+                />
+              ))}
+            </Row>
+            {agent.version !== 'v3' ? (
+              <Field
+                label="Community"
+                value={agent.community}
+                onChangeText={(community) => setAgent({ community })}
+              />
+            ) : (
+              <View style={styles.stack}>
+                <Field
+                  label="User"
+                  value={agent.v3.user}
+                  onChangeText={(user) => setV3({ user })}
+                />
+                <Label tone="dim" size={11}>
+                  Security level
+                </Label>
+                <Row style={styles.wrap}>
+                  {LEVELS.map((level) => (
+                    <Chip
+                      key={level}
+                      label={level}
+                      active={agent.v3.level === level}
+                      onPress={() => setV3({ level })}
+                    />
+                  ))}
+                </Row>
+                {agent.v3.level !== 'noAuthNoPriv' ? (
+                  <>
+                    <Row style={styles.wrap}>
+                      {AUTHS.map((authProtocol) => (
+                        <Chip
+                          key={authProtocol}
+                          label={authProtocol}
+                          active={agent.v3.authProtocol === authProtocol}
+                          onPress={() => setV3({ authProtocol })}
+                        />
+                      ))}
+                    </Row>
+                    <Field
+                      label="Auth key"
+                      value={agent.v3.authKey}
+                      onChangeText={(authKey) => setV3({ authKey })}
+                      secureTextEntry
+                    />
+                  </>
+                ) : null}
+                {agent.v3.level === 'authPriv' ? (
+                  <>
+                    <Row style={styles.wrap}>
+                      {PRIVS.map((privProtocol) => {
+                        const disabled = privProtocol === 'des' && desOff;
+                        return (
+                          <Chip
+                            key={privProtocol}
+                            label={disabled ? 'des (n/a)' : privProtocol}
+                            active={agent.v3.privProtocol === privProtocol}
+                            onPress={disabled ? undefined : () => setV3({ privProtocol })}
+                          />
+                        );
+                      })}
+                    </Row>
+                    <Field
+                      label="Privacy key"
+                      value={agent.v3.privKey}
+                      onChangeText={(privKey) => setV3({ privKey })}
+                      secureTextEntry
+                    />
+                  </>
+                ) : null}
+              </View>
+            )}
+          </>
+        )}
+      </Card>
+      <AgentProfileDialog
+        visible={profileEditor !== null}
+        editor={profileEditor ?? EMPTY_AGENT_EDITOR}
+        error={profileError}
+        info={info}
+        busy={profileBusy}
+        title="Create a profile here"
+        subtitle="Save the current Query target and continue on this page."
+        submitTitle="Save and select profile"
+        onEditorChange={setProfileEditor}
+        onSubmit={() => void createProfileHere()}
+        onClose={closeProfileEditor}
+      />
+    </>
   );
 }
 
 function TableViewResult() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const view = useAppStore((state) => state.tableView);
   const results = useAppStore((state) => state.results);
@@ -996,7 +1268,7 @@ function TableViewResult() {
                     title="Graph"
                     small
                     variant="ghost"
-                    onPress={() => void graphVarbind(engine, cell)}
+                    onPress={() => void graphVarbind(engine, cell, ownsEngine)}
                   />
                 ) : null}
               </Row>
@@ -1018,7 +1290,14 @@ function TableViewResult() {
                   ...target,
                   rowStatusOid: `${rowStatusColumn.oid}.${row.key.split('|').at(-1)}`,
                 })
-                .then(() => runTableView(engine));
+                .then(() => runTableView(engine, ownsEngine))
+                .catch((caught) => {
+                  if (ownsEngine()) {
+                    useAppStore
+                      .getState()
+                      .setQueryError(caught instanceof Error ? caught.message : String(caught));
+                  }
+                });
             }}
           />
         </View>
@@ -1038,7 +1317,7 @@ function TableViewResult() {
           <Button
             title="Refresh"
             small
-            onPress={() => void runTableView(engine)}
+            onPress={() => void runTableView(engine, ownsEngine)}
             disabled={Boolean(running)}
           />
           <Button
@@ -1114,7 +1393,7 @@ function TableViewResult() {
                   })
                   .then(async (result) => {
                     setRowMessage(`Row created with ${result.mode}.`);
-                    await runTableView(engine);
+                    await runTableView(engine, ownsEngine);
                   })
                   .catch((error: unknown) =>
                     setRowMessage(error instanceof Error ? error.message : String(error)),
@@ -1201,8 +1480,15 @@ function TableViewResult() {
   );
 }
 
-function VarbindRow({ vb }: { vb: DecodedVarbind }) {
+function VarbindRow({
+  vb,
+  onGraphRequiresProfile,
+}: {
+  vb: DecodedVarbind;
+  onGraphRequiresProfile: (value: DecodedVarbind) => void;
+}) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const [resolvedNode, setResolvedNode] = useState<MibNodeDetail | null | undefined>(undefined);
   const [copied, setCopied] = useState(false);
@@ -1223,7 +1509,9 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
   }, [engine, vb.oid]);
 
   const loadNode = () =>
-    resolvedNode === undefined ? resolveResultNode(engine.mibs, vb.oid) : Promise.resolve(resolvedNode);
+    resolvedNode === undefined
+      ? resolveResultNode(engine.mibs, vb.oid)
+      : Promise.resolve(resolvedNode);
 
   return (
     <View style={[styles.vbRow, { borderBottomColor: t.border }]}>
@@ -1256,7 +1544,7 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
             const state = useAppStore.getState();
             state.setOid(vb.oid);
             state.setQueryOperation('get');
-            void runGet(engine);
+            void runGet(engine, ownsEngine);
           }}
         />
         <Button
@@ -1266,6 +1554,7 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
           onPress={() => {
             void loadNode()
               .then((node) => {
+                if (!ownsEngine()) return;
                 const state = useAppStore.getState();
                 if (node && !/write|create/i.test(node.access ?? '')) {
                   state.setQueryError(`${node.name} is not writable according to the loaded MIB.`);
@@ -1279,11 +1568,15 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
                   value: String(vb.rawValue ?? vb.value),
                 });
               })
-              .catch((nodeError) =>
-                useAppStore
-                  .getState()
-                  .setQueryError(nodeError instanceof Error ? nodeError.message : String(nodeError)),
-              );
+              .catch((nodeError) => {
+                if (ownsEngine()) {
+                  useAppStore
+                    .getState()
+                    .setQueryError(
+                      nodeError instanceof Error ? nodeError.message : String(nodeError),
+                    );
+                }
+              });
           }}
         />
         <Button
@@ -1293,6 +1586,7 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
           onPress={() => {
             void loadNode()
               .then((node) => {
+                if (!ownsEngine()) return;
                 if (!node) {
                   useAppStore
                     .getState()
@@ -1303,11 +1597,15 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
                 state.setSelected(node);
                 state.setTab('browse');
               })
-              .catch((nodeError) =>
-                useAppStore
-                  .getState()
-                  .setQueryError(nodeError instanceof Error ? nodeError.message : String(nodeError)),
-              );
+              .catch((nodeError) => {
+                if (ownsEngine()) {
+                  useAppStore
+                    .getState()
+                    .setQueryError(
+                      nodeError instanceof Error ? nodeError.message : String(nodeError),
+                    );
+                }
+              });
           }}
         />
         {canOpenResultTable(resolvedNode) ? (
@@ -1316,20 +1614,28 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
             small
             variant="ghost"
             onPress={() => {
-              void openTableView(engine, resolvedNode!).catch((error) =>
-                useAppStore
-                  .getState()
-                  .setQueryError(error instanceof Error ? error.message : String(error)),
-              );
+              void openTableView(engine, resolvedNode!, ownsEngine).catch((error) => {
+                if (ownsEngine()) {
+                  useAppStore
+                    .getState()
+                    .setQueryError(error instanceof Error ? error.message : String(error));
+                }
+              });
             }}
           />
         ) : null}
-        {isNumericVarbind(vb) && (vb.agentId || useAppStore.getState().selectedAgentId) ? (
+        {isNumericVarbind(vb) ? (
           <Button
             title="Graph"
             small
             variant="ghost"
-            onPress={() => void graphVarbind(engine, vb)}
+            onPress={() => {
+              if (!vb.agentId && !useAppStore.getState().selectedAgentId) {
+                onGraphRequiresProfile(vb);
+                return;
+              }
+              void graphVarbind(engine, vb, ownsEngine);
+            }}
           />
         ) : null}
         <Button
@@ -1341,13 +1647,17 @@ function VarbindRow({ vb }: { vb: DecodedVarbind }) {
             const action =
               typeof document !== 'undefined'
                 ? copyResultText(text)
-                : Share.share({ message: text, title: 'MIB Beacon result row' }).then(() => undefined);
+                : Share.share({ message: text, title: 'MIB Beacon result row' }).then(
+                    () => undefined,
+                  );
             void action
               .then(() => setCopied(true))
               .catch((copyError) =>
                 useAppStore
                   .getState()
-                  .setQueryError(copyError instanceof Error ? copyError.message : String(copyError)),
+                  .setQueryError(
+                    copyError instanceof Error ? copyError.message : String(copyError),
+                  ),
               );
           }}
         />
@@ -1366,6 +1676,7 @@ function isNumericVarbind(value: DecodedVarbind): boolean {
 async function graphVarbind(
   engine: ReturnType<typeof useEngine>,
   value: DecodedVarbind,
+  ownsEngine: ReturnType<typeof useEngineOwnership>,
 ): Promise<void> {
   const state = useAppStore.getState();
   const agentId = value.agentId ?? state.selectedAgentId;
@@ -1374,17 +1685,25 @@ async function graphVarbind(
     return;
   }
   try {
-    await engine.tools.polls.create({
-      name: value.name ?? value.oid,
-      agentId,
-      oid: value.oid,
-      intervalMs: 5_000,
-      mode: /Counter/i.test(value.typeName) ? 'rate-per-sec' : 'raw',
-      counterBits: /64/.test(value.typeName) ? 64 : 32,
-    });
+    await createGraphPollSeries(
+      engine,
+      {
+        name: value.name ?? value.oid,
+        agentId,
+        oid: value.oid,
+        intervalMs: 5_000,
+        mode: /Counter/i.test(value.typeName) ? 'rate-per-sec' : 'raw',
+        counterBits: /64/.test(value.typeName) ? 64 : 32,
+      },
+      ownsEngine,
+    );
+    if (!ownsEngine()) return;
     state.setTab('tools');
   } catch (error) {
-    state.setQueryError(error instanceof Error ? error.message : String(error));
+    if (ownsEngine()) {
+      state.setQueryError(error instanceof Error ? error.message : String(error));
+      if (error instanceof ToolsCollectionRecoveryRequiredError) state.setTab('tools');
+    }
   }
 }
 
@@ -1459,7 +1778,6 @@ const styles = StyleSheet.create({
   },
   resultTabClose: { minWidth: 36, paddingHorizontal: 6 },
   resultTabCloseText: { fontSize: 18, fontWeight: '800', lineHeight: 20 },
-  resultTabActionDisabled: { opacity: 0.38 },
   error: { marginBottom: 8 },
   vbRow: {
     flexDirection: 'column',

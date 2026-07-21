@@ -1,12 +1,13 @@
 import { StyleSheet, View } from 'react-native';
 import { Button, Label, Mono, Pill, useTheme } from '@mibbeacon/ui';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import { cancelImport } from '../actions';
 
 /** Live import progress plus the last import outcome, fed from the shared store. */
 export function ImportProgressPanel() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const busy = useAppStore((s) => s.importBusy);
   const lastImport = useAppStore((s) => s.lastImport);
@@ -54,7 +55,7 @@ export function ImportProgressPanel() {
               title="Cancel resolution"
               small
               variant="danger"
-              onPress={() => void cancelImport(engine)}
+              onPress={() => void cancelImport(engine, ownsEngine)}
             />
           ) : null}
         </View>

@@ -1,13 +1,10 @@
 import { useEffect, useMemo } from 'react';
 import { Platform, StatusBar, useColorScheme } from 'react-native';
-import {
-  SafeAreaProvider,
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { File, Paths } from 'expo-file-system';
 import Storage from 'expo-sqlite/kv-store';
 import * as Sharing from 'expo-sharing';
+import * as Notifications from 'expo-notifications';
 import { Buffer } from 'buffer';
 import { createReactNativeTransport } from '@mibbeacon/transport/react-native';
 import { createEngine } from '@mibbeacon/core';
@@ -20,6 +17,8 @@ import {
   type FileImportAdapter,
   type AppHostAdapter,
   type PaletteHistoryStorage,
+  type HostNotificationAdapter,
+  type NotificationPermissionState,
 } from '@mibbeacon/app';
 import { acquireNativeMibDirectory, acquireNativeMibFiles } from './src/file-import';
 import { acquireNativeThemeFiles } from './src/theme-import';
@@ -27,6 +26,39 @@ import { acquireNativeThemeFiles } from './src/theme-import';
 // The Android emulator reaches the host machine (where snmpd runs) via 10.0.2.2.
 const SPIKE_HOST = '10.0.2.2';
 const SPIKE_PORT = 1611;
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+function mapNativeNotificationPermission(status: string): NotificationPermissionState {
+  if (status === 'granted') return 'granted';
+  if (status === 'denied') return 'denied';
+  return 'default';
+}
+
+const nativeNotifications: HostNotificationAdapter = {
+  label: 'native notifications',
+  async getPermission() {
+    const permission = await Notifications.getPermissionsAsync();
+    return mapNativeNotificationPermission(permission.status);
+  },
+  async requestPermission() {
+    const permission = await Notifications.requestPermissionsAsync();
+    return mapNativeNotificationPermission(permission.status);
+  },
+  async show(message) {
+    await Notifications.scheduleNotificationAsync({
+      content: { title: message.title, body: message.body },
+      trigger: null,
+    });
+  },
+};
 
 /**
  * Mobile host: the engine runs IN-PROCESS (no IPC) with the React Native
@@ -110,6 +142,27 @@ function MobileApp() {
         removeItem: (key) => Storage.removeItem(key),
       },
       pickThemeFiles: acquireNativeThemeFiles,
+      notifications: nativeNotifications,
+      async shareChartPng(capture) {
+        if (!(await Sharing.isAvailableAsync())) throw new Error('File sharing is unavailable.');
+        const file = new File(Paths.cache, capture.fileName);
+        if (file.exists) file.delete();
+        file.create({ intermediates: true });
+        const handle = file.open();
+        try {
+          handle.writeBytes(new Uint8Array(Buffer.from(capture.base64, 'base64')));
+        } finally {
+          handle.close();
+        }
+        try {
+          await Sharing.shareAsync(file.uri, {
+            mimeType: 'image/png',
+            dialogTitle: `Export ${capture.fileName}`,
+          });
+        } finally {
+          if (file.exists) file.delete();
+        }
+      },
       async savePacketCapture(capture) {
         if (!(await Sharing.isAvailableAsync())) throw new Error('File sharing is unavailable.');
         const file = new File(Paths.cache, capture.fileName);

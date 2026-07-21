@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { AgentGroup, AgentProfile, EngineAPI } from '@mibbeacon/core/client';
 import {
   buildAgentTarget,
@@ -11,6 +13,10 @@ import {
 } from './actions';
 import { useAppStore } from './store';
 import { agentDraftFromEditor, editAgentProfile, EMPTY_AGENT_EDITOR } from './agent-profile-form';
+import {
+  agentPersistentCollectionsController,
+  disposeAgentPersistentCollectionsController,
+} from './agent-persistent-collections';
 
 const profile: AgentProfile = {
   id: 'agent-one',
@@ -60,7 +66,9 @@ describe('saved-agent quick picker', () => {
 
   it('clears a selected profile when an authoritative refresh no longer contains it', async () => {
     useAppStore.getState().selectAgentProfile(profile);
-    const engine = { agents: { list: async () => [] } } as unknown as EngineAPI;
+    const engine = {
+      agents: { list: async () => [], groups: { list: async () => [] } },
+    } as unknown as EngineAPI;
 
     await refreshAgentProfiles(engine);
 
@@ -74,7 +82,10 @@ describe('saved-agent quick picker', () => {
     const second = new Promise<AgentProfile[]>((resolve) => (resolveSecond = resolve));
     let request = 0;
     const engine = {
-      agents: { list: () => (request++ === 0 ? first : second) },
+      agents: {
+        list: () => (request++ === 0 ? first : second),
+        groups: { list: async () => [] },
+      },
     } as unknown as EngineAPI;
     const newer = { ...profile, id: 'agent-newer', name: 'Newer profile' };
 
@@ -88,7 +99,7 @@ describe('saved-agent quick picker', () => {
     expect(useAppStore.getState().agentProfiles).toEqual([newer]);
   });
 
-  it('keeps a confirmed create when the follow-up profile refresh fails', async () => {
+  it('gates create when authoritative profiles cannot be loaded', async () => {
     const created = { ...profile, id: 'agent-created', name: 'Created profile' };
     let creates = 0;
     const engine = {
@@ -100,15 +111,14 @@ describe('saved-agent quick picker', () => {
         list: async () => {
           throw new Error('list unavailable');
         },
+        groups: { list: async () => [] },
       },
     } as unknown as EngineAPI;
 
-    const outcome = await saveAgentProfile(engine, null, agentDraftFromEditor(EMPTY_AGENT_EDITOR));
-
-    expect(creates).toBe(1);
-    expect(outcome.profile).toEqual(created);
-    expect(outcome.refreshError).toEqual(new Error('list unavailable'));
-    expect(useAppStore.getState().agentProfiles).toEqual([created]);
+    await expect(
+      saveAgentProfile(engine, null, agentDraftFromEditor(EMPTY_AGENT_EDITOR)),
+    ).rejects.toThrow('list unavailable');
+    expect(creates).toBe(0);
   });
 
   it('keeps a successful connection result when metadata refresh fails', async () => {
@@ -119,6 +129,7 @@ describe('saved-agent quick picker', () => {
         list: async () => {
           throw new Error('list unavailable');
         },
+        groups: { list: async () => [] },
       },
     } as unknown as EngineAPI;
 
@@ -128,7 +139,7 @@ describe('saved-agent quick picker', () => {
     expect(outcome.refreshError).toEqual(new Error('list unavailable'));
   });
 
-  it('keeps a confirmed delete when follow-up profile and group refreshes fail', async () => {
+  it('gates delete when authoritative collections cannot be loaded', async () => {
     const group: AgentGroup = {
       id: 'group-one',
       name: 'Core devices',
@@ -154,12 +165,9 @@ describe('saved-agent quick picker', () => {
       },
     } as unknown as EngineAPI;
 
-    const outcome = await deleteAgentProfile(engine, profile.id);
-
-    expect(outcome.refreshErrors).toHaveLength(2);
-    expect(useAppStore.getState().agentProfiles).toEqual([]);
-    expect(useAppStore.getState().agentGroups[0]?.agentIds).toEqual([]);
-    expect(useAppStore.getState().selectedAgentId).toBeNull();
+    await expect(deleteAgentProfile(engine, profile.id)).rejects.toThrow('profiles unavailable');
+    expect(useAppStore.getState().agentProfiles).toEqual([profile]);
+    expect(useAppStore.getState().agentGroups).toEqual([group]);
   });
 
   it('does not let an older group refresh overwrite a newer response', async () => {
@@ -169,7 +177,10 @@ describe('saved-agent quick picker', () => {
     const second = new Promise<AgentGroup[]>((resolve) => (resolveSecond = resolve));
     let request = 0;
     const engine = {
-      agents: { groups: { list: () => (request++ === 0 ? first : second) } },
+      agents: {
+        list: async () => [],
+        groups: { list: () => (request++ === 0 ? first : second) },
+      },
     } as unknown as EngineAPI;
     const newer: AgentGroup = {
       id: 'group-newer',
@@ -187,6 +198,56 @@ describe('saved-agent quick picker', () => {
     await olderRefresh;
 
     expect(useAppStore.getState().agentGroups).toEqual([newer]);
+  });
+
+  it('publishes reconciled controller authority to the cross-screen store', async () => {
+    const newer = { ...profile, id: 'newer' };
+    const list = vi.fn().mockResolvedValueOnce([profile]).mockResolvedValueOnce([newer]);
+    const engine = { agents: { list, groups: { list: async () => [] } } } as unknown as EngineAPI;
+    const controller = agentPersistentCollectionsController(engine);
+    await controller.load();
+    expect(useAppStore.getState().agentProfiles).toEqual([profile]);
+    await controller.reconcile();
+    expect(useAppStore.getState().agentProfiles).toEqual([newer]);
+  });
+
+  it('does not reactivate or read a disposed old controller from a late refresh', async () => {
+    const list = vi.fn(async () => [profile]);
+    const engine = { agents: { list, groups: { list: async () => [] } } } as unknown as EngineAPI;
+    const controller = agentPersistentCollectionsController(engine);
+    await controller.load();
+    disposeAgentPersistentCollectionsController(engine);
+    await refreshAgentProfiles(engine, () => false);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses store writes when ownership flips as the controller command resolves', async () => {
+    let owns = true;
+    const created = { ...profile, id: 'created' };
+    const engine = {
+      agents: {
+        list: async () => [],
+        groups: { list: async () => [] },
+        create: async () => {
+          owns = false;
+          return created;
+        },
+      },
+    } as unknown as EngineAPI;
+    await expect(
+      saveAgentProfile(engine, null, agentDraftFromEditor(EMPTY_AGENT_EDITOR), () => owns),
+    ).rejects.toThrow(/ownership/);
+    expect(useAppStore.getState().agentProfiles).toEqual([]);
+  });
+
+  it('keeps the controller publish sink as the sole collection-store writer in helpers', () => {
+    const source = readFileSync(join(__dirname, 'actions.ts'), 'utf8');
+    const helpers = source
+      .split('export async function refreshAgentProfiles')[1]
+      ?.split('/** Live OID')[0];
+    expect(helpers).not.toContain('setAgentProfiles(');
+    expect(helpers).not.toContain('setAgentGroups(');
+    expect(helpers).not.toContain('selectAgentProfile(');
   });
 
   it('keeps saved passwords write-only and emits only version-relevant fields', () => {

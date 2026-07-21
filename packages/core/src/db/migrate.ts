@@ -288,6 +288,17 @@ export const MIGRATIONS: Migration[] = [
         ON poll_pattern_events(session_id, series_id, hit_at);
     `,
   },
+  {
+    id: 11,
+    name: 'pattern_trace_operation_identity',
+    up: `
+      ALTER TABLE poll_pattern_sessions ADD COLUMN request_id TEXT;
+      ALTER TABLE poll_pattern_sessions ADD COLUMN request_intent_json TEXT;
+      ALTER TABLE poll_pattern_sessions ADD COLUMN operation_handle_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS poll_pattern_sessions_request_id_idx
+        ON poll_pattern_sessions(request_id) WHERE request_id IS NOT NULL;
+    `,
+  },
 ];
 
 /** Apply any migrations newer than the recorded version. Idempotent. */

@@ -11,10 +11,21 @@ import {
   StyleSheet,
   type TextInput,
 } from 'react-native';
-import { Button, Card, EmptyState, Field, KindGlyph, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  KindGlyph,
+  Mono,
+  Pill,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import { normalizeNumericOid } from '@mibbeacon/core/client';
 import type { EngineInfo, MibNodeSummary, MibSearchHit } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import {
   loadChildren,
@@ -31,10 +42,11 @@ import {
   refreshModules,
 } from '../actions';
 import { OidLookupPanel } from '../components/OidLookupPanel';
-import { SplitWorkspace } from '../components/SplitWorkspace';
+import { ContainerAwareSplitWorkspace } from '../components/SplitWorkspace';
+import { BrowseSplitWorkspace } from '../components/BrowseSplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
-import { BROWSE_CATALOG_SPLIT_MINIMUMS } from '../responsive-layout';
+import { BROWSE_NAVIGATOR_SPLIT_MINIMUMS } from '../responsive-layout';
 import { MibCatalogPane, MibImportModal, MibModuleStrip } from '../components/MibCatalogControls';
 import { VerticalDockWorkspace } from '../components/VerticalDockWorkspace';
 import { QueryScreen } from './QueryScreen';
@@ -55,8 +67,9 @@ export function BrowseScreen({
   focusSearchRequest?: number;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
-  const { mode, width, height, supportsSplitView } = useResponsiveLayout();
+  const { mode, supportsSplitView } = useResponsiveLayout();
   const cache = useAppStore((s) => s.childrenCache);
   const expanded = useAppStore((s) => s.expanded);
   const selected = useAppStore((s) => s.selected);
@@ -69,6 +82,7 @@ export function BrowseScreen({
   const running = useAppStore((s) => s.running);
   const searchInput = useRef<TextInput>(null);
   const [tabletDrawerOpen, setTabletDrawerOpen] = useState(false);
+  const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [contextNode, setContextNode] = useState<{ oid: string; name: string } | null>(null);
 
@@ -84,9 +98,9 @@ export function BrowseScreen({
 
   useEffect(() => {
     if (!search.trim()) return;
-    const timer = setTimeout(() => void runSearch(engine, search), 250);
+    const timer = setTimeout(() => void runSearch(engine, search, ownsEngine), 250);
     return () => clearTimeout(timer);
-  }, [engine, search]);
+  }, [engine, ownsEngine, search]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !canUseBrowserEventTarget(window)) return;
@@ -108,10 +122,10 @@ export function BrowseScreen({
   const toggle = (node: MibNodeSummary) => {
     const open = !expanded[node.oid];
     useAppStore.getState().setExpanded(node.oid, open);
-    if (open) void loadChildren(engine, node.oid);
+    if (open) void loadChildren(engine, node.oid, ownsEngine).catch(() => undefined);
   };
 
-  const pickHit = (oid: string) => void openSearchHit(engine, oid);
+  const pickHit = (oid: string) => void openSearchHit(engine, oid, ownsEngine);
   const contextProps = (node: { oid: string; name: string }) => ({
     onLongPress: () => setContextNode(node),
     delayLongPress: 420,
@@ -130,7 +144,8 @@ export function BrowseScreen({
           onKeyDown: (event: { key: string; preventDefault(): void }) => {
             if (event.key === 'ArrowRight' && node.hasChildren && !isExpanded) toggle(node);
             else if (event.key === 'ArrowLeft' && node.hasChildren && isExpanded) toggle(node);
-            else if (event.key === 'Enter') void selectNode(engine, node.oid);
+            else if (event.key === 'Enter')
+              void selectNode(engine, node.oid, ownsEngine).catch(() => undefined);
             else return;
             event.preventDefault();
           },
@@ -140,7 +155,7 @@ export function BrowseScreen({
     setRefreshing(true);
     try {
       useAppStore.getState().clearChildrenCache();
-      await Promise.all([refreshModules(engine), loadChildren(engine, '')]);
+      await Promise.all([refreshModules(engine, ownsEngine), loadChildren(engine, '', ownsEngine)]);
     } finally {
       setRefreshing(false);
     }
@@ -173,7 +188,7 @@ export function BrowseScreen({
             title="All MIBs"
             small
             variant="ghost"
-            onPress={() => void clearModuleFocus(engine)}
+            onPress={() => void clearModuleFocus(engine, ownsEngine)}
           />
         </View>
       ) : null}
@@ -306,7 +321,9 @@ export function BrowseScreen({
               >
                 <Pressable
                   onPress={() =>
-                    node.hasChildren ? toggle(node) : void selectNode(engine, node.oid)
+                    node.hasChildren
+                      ? toggle(node)
+                      : void selectNode(engine, node.oid, ownsEngine).catch(() => undefined)
                   }
                   accessibilityRole="button"
                   accessibilityLabel={
@@ -333,7 +350,9 @@ export function BrowseScreen({
                   <KindGlyph kind={node.kind} />
                 </Pressable>
                 <Pressable
-                  onPress={() => void selectNode(engine, node.oid)}
+                  onPress={() =>
+                    void selectNode(engine, node.oid, ownsEngine).catch(() => undefined)
+                  }
                   {...contextProps(node)}
                   {...treeKeyboardProps(node, isExpanded)}
                   accessibilityRole="button"
@@ -386,7 +405,8 @@ export function BrowseScreen({
             <Button
               title="View details"
               onPress={() => {
-                if (contextNode) void selectNode(engine, contextNode.oid);
+                if (contextNode)
+                  void selectNode(engine, contextNode.oid, ownsEngine).catch(() => undefined);
                 setContextNode(null);
               }}
             />
@@ -394,7 +414,7 @@ export function BrowseScreen({
               title="Walk subtree"
               variant="ghost"
               onPress={() => {
-                if (contextNode) void walkFromNode(engine, contextNode.oid);
+                if (contextNode) void walkFromNode(engine, contextNode.oid, ownsEngine);
                 setContextNode(null);
               }}
             />
@@ -495,76 +515,74 @@ export function BrowseScreen({
   ) : (
     <BrowseInspectorEmpty />
   );
-  const navigatorPane =
-    unified && mode === 'medium' ? (
-      <View style={styles.navigatorWrapper}>
-        <MibModuleStrip />
-        {navigator}
-      </View>
-    ) : (
-      navigator
-    );
   const browserSplit = (
-    <SplitWorkspace
+    <ContainerAwareSplitWorkspace
       workspace="browse"
-      minPrimary={300}
-      minSecondary={380}
-      primary={navigatorPane}
+      {...BROWSE_NAVIGATOR_SPLIT_MINIMUMS}
+      inactivePane={selected ? 'secondary' : 'primary'}
+      inactiveSecondaryHeader={
+        selected ? (
+          <View style={[styles.tabletDrawerBar, { borderBottomColor: t.border }]}>
+            <Button
+              title="Open MIB tree drawer"
+              small
+              variant="ghost"
+              onPress={() => {
+                setCatalogDrawerOpen(false);
+                setTabletDrawerOpen(true);
+              }}
+            />
+          </View>
+        ) : undefined
+      }
+      primaryDrawer={
+        selected
+          ? {
+              open: tabletDrawerOpen,
+              onClose: () => setTabletDrawerOpen(false),
+              accessibilityLabel: 'MIB tree drawer',
+              closeLabel: 'Close MIB tree drawer',
+            }
+          : undefined
+      }
+      primary={navigator}
       secondary={inspector}
     />
   );
-  const tabletPortrait = mode === 'medium' && height > width;
-  const tabletMain = tabletPortrait ? (
-    selected ? (
-      <View style={styles.container}>
-        <View style={[styles.tabletDrawerBar, { borderBottomColor: t.border }]}>
-          <Button
-            title="Browse MIB tree"
-            small
-            variant="ghost"
-            onPress={() => setTabletDrawerOpen(true)}
-          />
-        </View>
-        {inspector}
-        <Modal
-          visible={tabletDrawerOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setTabletDrawerOpen(false)}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close MIB tree drawer"
-            onPress={() => setTabletDrawerOpen(false)}
-            style={styles.tabletDrawerBackdrop}
-          >
-            <Pressable
-              accessible={false}
-              onPress={(event) => event.stopPropagation()}
-              style={[styles.tabletDrawer, { backgroundColor: t.bg, borderColor: t.border }]}
-            >
-              {navigatorPane}
-            </Pressable>
-          </Pressable>
-        </Modal>
-      </View>
-    ) : (
-      navigatorPane
-    )
+  const browserMain = unified ? (
+    <BrowseSplitWorkspace
+      expanded={mode === 'expanded'}
+      selected={Boolean(selected)}
+      moduleStrip={<MibModuleStrip />}
+      catalog={<MibCatalogPane />}
+      navigator={navigator}
+      inspector={inspector}
+      treeDrawer={{
+        open: tabletDrawerOpen,
+        onOpen: () => {
+          setCatalogDrawerOpen(false);
+          setTabletDrawerOpen(true);
+        },
+        onClose: () => setTabletDrawerOpen(false),
+        accessibilityLabel: 'MIB tree drawer',
+        openLabel: 'Open MIB tree drawer',
+        closeLabel: 'Close MIB tree drawer',
+      }}
+      catalogDrawer={{
+        open: catalogDrawerOpen,
+        onOpen: () => {
+          setTabletDrawerOpen(false);
+          setCatalogDrawerOpen(true);
+        },
+        onClose: () => setCatalogDrawerOpen(false),
+        accessibilityLabel: 'MIB catalog drawer',
+        openLabel: 'Open MIB catalog drawer',
+        closeLabel: 'Close MIB catalog drawer',
+      }}
+    />
   ) : (
     browserSplit
   );
-  const browserMain =
-    unified && mode === 'expanded' ? (
-      <SplitWorkspace
-        workspace="mibModules"
-        {...BROWSE_CATALOG_SPLIT_MINIMUMS}
-        primary={<MibCatalogPane />}
-        secondary={browserSplit}
-      />
-    ) : (
-      tabletMain
-    );
   const console =
     unified && consoleOpen ? (
       <View style={[styles.operationConsole, { backgroundColor: t.bg }]}>
@@ -617,6 +635,7 @@ function DetailPanel({
   unified?: boolean;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const selected = useAppStore((s) => s.selected)!;
   const writable =
@@ -643,8 +662,8 @@ function DetailPanel({
           small
           onPress={() =>
             unified
-              ? void prepareNodeOperation(engine, selected, 'walk')
-              : walkFromNode(engine, selected.oid)
+              ? void prepareNodeOperation(engine, selected, 'walk', {}, ownsEngine)
+              : walkFromNode(engine, selected.oid, ownsEngine)
           }
         />
         {(selected.kind === 'scalar' || selected.kind === 'column') &&
@@ -655,8 +674,8 @@ function DetailPanel({
             variant="ghost"
             onPress={() =>
               unified
-                ? void prepareNodeOperation(engine, selected, 'get')
-                : getFromNode(engine, selected)
+                ? void prepareNodeOperation(engine, selected, 'get', {}, ownsEngine)
+                : getFromNode(engine, selected, ownsEngine)
             }
           />
         ) : null}
@@ -665,7 +684,7 @@ function DetailPanel({
             title="Get Next"
             small
             variant="ghost"
-            onPress={() => void prepareNodeOperation(engine, selected, 'getNext')}
+            onPress={() => void prepareNodeOperation(engine, selected, 'getNext', {}, ownsEngine)}
           />
         ) : null}
         {writable ? (
@@ -675,7 +694,7 @@ function DetailPanel({
             variant="ghost"
             onPress={() =>
               unified
-                ? void prepareNodeOperation(engine, selected, 'set', { execute: false })
+                ? void prepareNodeOperation(engine, selected, 'set', { execute: false }, ownsEngine)
                 : setFromNode(selected)
             }
           />
@@ -685,7 +704,7 @@ function DetailPanel({
             title="Send this trap"
             small
             variant="ghost"
-            onPress={() => void trapFromNode(engine, selected)}
+            onPress={() => void trapFromNode(engine, selected, ownsEngine)}
           />
         ) : null}
         <Button
@@ -751,7 +770,6 @@ function HighlightedValue({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  navigatorWrapper: { flex: 1, minWidth: 0, minHeight: 0 },
   navigator: { flex: 1, minWidth: 0, minHeight: 0 },
   operationConsole: { flex: 1, minWidth: 0, minHeight: 0 },
   consoleHead: {
@@ -846,8 +864,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     justifyContent: 'center',
   },
-  tabletDrawerBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)' },
-  tabletDrawer: { width: '82%', maxWidth: 520, height: '100%', borderRightWidth: 1 },
   contextBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',

@@ -17,6 +17,32 @@ function encryptedSecrets(values = new Map<string, string>()): SecretStore {
 }
 
 describe('agent profiles and groups', () => {
+  it('rejects deletion before touching secrets when saved artifacts depend on the agent', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-agent-dependencies-'));
+    const database = join(directory, 'mibbeacon.db');
+    const values = new Map<string, string>();
+    const engine = createEngine(
+      createNodeTransport({ dataDir: directory, secrets: encryptedSecrets(values) }),
+      { dbPath: database },
+    );
+    const saved = await engine.agents.create({
+      profile: { name: 'Referenced', host: '192.0.2.1', version: 'v2c' },
+      secrets: { community: 'kept-private' },
+    });
+    const db = nodeStorageFactory.open(database);
+    db.run(
+      'INSERT INTO operation_bookmarks (id, name, agent_id, oid, operation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ['bookmark-1', 'Dependent', saved.id, '1.3.6.1', 'get', 1, 1],
+    );
+    db.close();
+
+    await expect(engine.agents.delete(saved.id)).rejects.toMatchObject({
+      message: expect.stringContaining('bookmarks (1)'),
+    });
+    expect(await engine.agents.get(saved.id)).not.toBeNull();
+    expect([...values.values()]).toEqual(['kept-private']);
+  });
+
   it('stores v2c secrets only in SecretStore, preserves/replaces them, and deletes them', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'mibbeacon-agents-'));
     const database = join(directory, 'mibbeacon.db');
@@ -188,7 +214,9 @@ describe('agent profiles and groups', () => {
       secrets: { community: 'inside-engine-only' },
     });
 
-    await expect(engine.ops.get({ agentId: saved.id, oids: ['1.3.6.1.2.1.1.1.0'] })).resolves.toHaveLength(1);
+    await expect(
+      engine.ops.get({ agentId: saved.id, oids: ['1.3.6.1.2.1.1.1.0'] }),
+    ).resolves.toHaveLength(1);
     expect(seen).toEqual([
       expect.objectContaining({ host: '192.0.2.10', community: 'inside-engine-only' }),
     ]);
@@ -362,9 +390,9 @@ describe('agent profiles and groups', () => {
       hasAuthKey: false,
       hasPrivKey: false,
     });
-    await expect(
-      engine.agents.update(valid.id, { clearSecrets: ['community'] }),
-    ).rejects.toThrow(/community/i);
+    await expect(engine.agents.update(valid.id, { clearSecrets: ['community'] })).rejects.toThrow(
+      /community/i,
+    );
     expect(valid.hasCommunity).toBe(true);
     expect([...secretValues.values()]).toEqual(['public']);
 

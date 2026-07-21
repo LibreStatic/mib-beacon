@@ -32,6 +32,8 @@ interface CacheRow {
   source_id: string;
   location: string;
   warnings_json: string;
+  size_bytes: number;
+  etag: string | null;
   stored_at: number;
 }
 
@@ -105,8 +107,28 @@ export class PersistentMibCache implements MibCache {
   }
 
   async clear(): Promise<void> {
-    this.db.run('DELETE FROM resolver_cache');
-    await this.files.remove(this.directory);
+    const rows = this.db.all<CacheRow>('SELECT * FROM resolver_cache ORDER BY module');
+    if (!rows.length) return;
+    const contents = new Map<string, string>();
+    for (const row of rows) {
+      if (!contents.has(row.content_key)) {
+        contents.set(row.content_key, await this.files.readText(this.path(row.content_key)));
+      }
+    }
+    try {
+      this.db.run('DELETE FROM resolver_cache');
+      await this.files.remove(this.directory);
+    } catch (cause) {
+      try {
+        await this.restoreClearSnapshot(rows, contents);
+      } catch (rollbackCause) {
+        throw new Error(
+          `Resolver cache clear rollback outcome unknown: ${message(rollbackCause)}`,
+          { cause },
+        );
+      }
+      throw cause;
+    }
   }
 
   /** Enumerate intact cached documents for local, side-effect-free OID inspection. */
@@ -129,6 +151,60 @@ export class PersistentMibCache implements MibCache {
   private path(contentKey: string): string {
     return this.files.join(this.directory, `${contentKey}.mib`);
   }
+
+  private async restoreClearSnapshot(
+    rows: readonly CacheRow[],
+    contents: ReadonlyMap<string, string>,
+  ): Promise<void> {
+    await this.files.ensureDir(this.directory);
+    for (const [contentKey, content] of contents) {
+      const path = this.path(contentKey);
+      if (!(await this.files.exists(path)) || (await this.files.readText(path)) !== content) {
+        await this.files.writeText(path, content);
+      }
+    }
+    this.db.transaction(() => {
+      for (const row of rows) {
+        this.db.run(
+          `INSERT INTO resolver_cache
+           (module, content_key, source_id, location, warnings_json, size_bytes, etag, stored_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(module) DO UPDATE SET
+             content_key=excluded.content_key, source_id=excluded.source_id,
+             location=excluded.location, warnings_json=excluded.warnings_json,
+             size_bytes=excluded.size_bytes, etag=excluded.etag, stored_at=excluded.stored_at`,
+          [
+            row.module,
+            row.content_key,
+            row.source_id,
+            row.location,
+            row.warnings_json,
+            row.size_bytes,
+            row.etag,
+            row.stored_at,
+          ],
+        );
+      }
+    });
+    for (const row of rows) {
+      const restored = this.db.get<CacheRow>('SELECT * FROM resolver_cache WHERE module = ?', [
+        row.module,
+      ]);
+      if (!restored || JSON.stringify(restored) !== JSON.stringify(row)) {
+        throw new Error(`Resolver cache metadata compensation failed for ${row.module}`);
+      }
+      const content = contents.get(row.content_key);
+      if (
+        content === undefined ||
+        (await this.files.readText(this.path(row.content_key))) !== content
+      )
+        throw new Error(`Resolver cache file compensation failed for ${row.module}`);
+    }
+  }
+}
+
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export class ResolverSourceStore {
@@ -386,7 +462,9 @@ export class ResolverSourceStore {
         code: 'MODULE_NOT_FOUND',
         stage: result.stage ?? 'not-found',
         ...(result.httpStatus === undefined ? {} : { httpStatus: result.httpStatus }),
-        ...(result.responseExcerpt === undefined ? {} : { responseExcerpt: result.responseExcerpt }),
+        ...(result.responseExcerpt === undefined
+          ? {}
+          : { responseExcerpt: result.responseExcerpt }),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -495,7 +573,9 @@ export class ResolverSourceStore {
       if (!source.discover) continue;
       try {
         const candidates = await source.discover(evidence, { signal });
-        discovered.push(...candidates.map((candidate) => ({ ...candidate, sourceName: source.name })));
+        discovered.push(
+          ...candidates.map((candidate) => ({ ...candidate, sourceName: source.name })),
+        );
       } catch {
         // A single unavailable index must not prevent other sources from being explored.
       }

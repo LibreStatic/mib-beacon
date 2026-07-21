@@ -1,31 +1,23 @@
 import { useMemo, useRef, useState } from 'react';
-import {
-  Platform,
-  Pressable,
-  Share,
-  StyleSheet,
-  View,
-  type GestureResponderEvent,
-} from 'react-native';
+import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
-import type {
-  PatternTraceEvent,
-  PatternTraceSession,
-  PollSample,
-} from '@mibbeacon/core/client';
+import type { PatternTraceEvent, PatternTraceSession, PollSample } from '@mibbeacon/core/client';
 import { Button, Label, Mono, Row, Text, useTheme } from '@mibbeacon/ui';
-import {
-  chartPoints,
-  patternLatencyPoints,
-  patternMarkerX,
-  polylinePoints,
-} from '../tool-chart';
+import { chartPoints, patternLatencyPoints, patternMarkerX, polylinePoints } from '../tool-chart';
 
 export interface ToolChartSeries {
   id: string;
   name: string;
   color: string;
   samples: PollSample[];
+}
+
+export interface ChartPngExport {
+  fileName: string;
+  base64: string;
+  mimeType: 'image/png';
+  width: number;
+  height: number;
 }
 
 export function ToolLineChart({
@@ -35,6 +27,7 @@ export function ToolLineChart({
   patternEvents = {},
   hiddenPatternSessionIds,
   onTogglePatternSession,
+  sharePng,
 }: {
   series: ToolChartSeries[];
   title?: string;
@@ -42,6 +35,7 @@ export function ToolLineChart({
   patternEvents?: Record<string, PatternTraceEvent[]>;
   hiddenPatternSessionIds?: string[];
   onTogglePatternSession?: (sessionId: string) => void;
+  sharePng?: (capture: ChartPngExport) => Promise<void>;
 }) {
   const t = useTheme();
   const [width, setWidth] = useState(520);
@@ -109,9 +103,9 @@ export function ToolLineChart({
       plotWidth,
       plotHeight,
       {
-      minTime: bounds?.minTime ?? 0,
-      maxTime: bounds?.maxTime ?? 1,
-      maxLatency,
+        minTime: bounds?.minTime ?? 0,
+        maxTime: bounds?.maxTime ?? 1,
+        maxLatency,
       },
     ),
   }));
@@ -172,10 +166,19 @@ export function ToolLineChart({
       image.src = svgUrl;
       return;
     }
-    svgRef.current?.toDataURL?.((base64) => {
-      const url = `data:image/png;base64,${base64}`;
-      void Share.share({ url, title: `${title}.png` });
-    }, { width: Math.max(1, Math.round(width)), height: 230 });
+    const exportWidth = Math.max(1, Math.round(width));
+    svgRef.current?.toDataURL?.(
+      (base64) => {
+        void sharePng?.({
+          fileName: downloadName,
+          base64,
+          mimeType: 'image/png',
+          width: exportWidth,
+          height: 230,
+        });
+      },
+      { width: exportWidth, height: 230 },
+    );
   };
 
   return (
@@ -218,13 +221,7 @@ export function ToolLineChart({
               </SvgText>
               {traceEvents.some((event) => event.latencyMs !== undefined) ? (
                 <>
-                  <Line
-                    x1={36 + plotWidth}
-                    y1={8}
-                    x2={36 + plotWidth}
-                    y2={198}
-                    stroke={t.border}
-                  />
+                  <Line x1={36 + plotWidth} y1={8} x2={36 + plotWidth} y2={198} stroke={t.border} />
                   <SvgText x={Math.max(36, width - 34)} y={14} fill={t.textDim} fontSize={9}>
                     {formatNumber(maxLatency)}ms
                   </SvgText>
@@ -323,11 +320,30 @@ export function ToolLineChart({
             }
             style={[
               styles.legendItem,
-              { minHeight: t.density.controlMinHeight, opacity: hidden.has(item.id) ? 0.4 : 1 },
+              {
+                minHeight: t.density.controlMinHeight,
+                backgroundColor: hidden.has(item.id)
+                  ? t.components.disabled.background
+                  : 'transparent',
+              },
             ]}
           >
-            <View style={[styles.dot, { backgroundColor: item.color }]} />
-            <Text style={{ color: t.text, fontSize: 10 }}>{item.name}</Text>
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: hidden.has(item.id) ? t.components.disabled.border : item.color,
+                },
+              ]}
+            />
+            <Text
+              style={{
+                color: hidden.has(item.id) ? t.components.disabled.foreground : t.text,
+                fontSize: 10,
+              }}
+            >
+              {item.name}
+            </Text>
           </Pressable>
         ))}
         {patternSessions.map((session) => {
@@ -350,10 +366,29 @@ export function ToolLineChart({
                   });
                 }
               }}
-              style={[styles.legendItem, { opacity: isHidden ? 0.4 : 1 }]}
+              style={[
+                styles.legendItem,
+                {
+                  backgroundColor: isHidden ? t.components.disabled.background : 'transparent',
+                },
+              ]}
             >
-              <View style={[styles.dot, { backgroundColor: session.color }]} />
-              <Text style={{ color: t.text, fontSize: 10 }}>Pattern: {session.name}</Text>
+              <View
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor: isHidden ? t.components.disabled.border : session.color,
+                  },
+                ]}
+              />
+              <Text
+                style={{
+                  color: isHidden ? t.components.disabled.foreground : t.text,
+                  fontSize: 10,
+                }}
+              >
+                Pattern: {session.name}
+              </Text>
             </Pressable>
           );
         })}

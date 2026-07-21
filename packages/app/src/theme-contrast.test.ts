@@ -4,10 +4,236 @@ import {
   consolePalette,
   contrastRatio,
   createTheme,
+  resolveThemeProviderTheme,
   type ThemeDescriptor,
 } from '@mibbeacon/ui/theme-values';
+import { CODE_OSS_DEFAULT_THEMES } from '@mibbeacon/ui/default-themes';
+import { opaqueColor } from '@mibbeacon/ui/vscode-theme';
+
+function expectComponentStatesToMeetWcag(theme: ReturnType<typeof createTheme>) {
+  const { components } = theme;
+  for (const foreground of [
+    components.selected.foreground,
+    components.selected.mutedForeground,
+    components.selected.icon,
+  ]) {
+    expect(contrastRatio(foreground, components.selected.background)).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(
+    contrastRatio(components.selected.border, components.selected.background),
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    contrastRatio(components.primaryButton.foreground, components.primaryButton.background),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    contrastRatio(components.primaryButton.foreground, components.primaryButton.pressedBackground),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    contrastRatio(components.primaryButton.focusInner, components.primaryButton.background),
+  ).toBeGreaterThanOrEqual(3);
+  for (const background of [
+    components.primaryButton.background,
+    components.primaryButton.pressedBackground,
+  ]) {
+    for (const exterior of [
+      theme.bg,
+      theme.surface,
+      theme.surfaceAlt,
+      theme.workbench.activityBarBackground,
+      theme.workbench.sideBarBackground,
+      theme.workbench.panelBackground,
+      theme.workbench.titleBarBackground,
+      theme.workbench.statusBarBackground,
+      theme.workbench.inputBackground,
+    ]) {
+      expect(opaqueColor(background, exterior)).toBe(background);
+    }
+  }
+  for (const exterior of [
+    theme.bg,
+    theme.surface,
+    theme.surfaceAlt,
+    theme.workbench.activityBarBackground,
+    theme.workbench.sideBarBackground,
+    theme.workbench.panelBackground,
+    theme.workbench.titleBarBackground,
+    theme.workbench.statusBarBackground,
+    theme.workbench.inputBackground,
+  ]) {
+    expect(contrastRatio(components.primaryButton.focusOuter, exterior)).toBeGreaterThanOrEqual(3);
+  }
+  expect(
+    contrastRatio(components.badge.foreground, components.badge.background),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    contrastRatio(components.disabled.foreground, components.disabled.background),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    contrastRatio(components.disabled.border, components.disabled.background),
+  ).toBeGreaterThanOrEqual(3);
+  expect(
+    contrastRatio(components.hover.foreground, components.hover.background),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio(components.hover.icon, components.hover.background)).toBeGreaterThanOrEqual(
+    3,
+  );
+  expect(
+    contrastRatio(components.hover.border, components.hover.background),
+  ).toBeGreaterThanOrEqual(3);
+}
 
 describe('semantic theme contrast', () => {
+  it('normalizes component state pairs for every bundled theme', () => {
+    expect(CODE_OSS_DEFAULT_THEMES).toHaveLength(10);
+    for (const descriptor of CODE_OSS_DEFAULT_THEMES) {
+      expectComponentStatesToMeetWcag(createTheme(descriptor.scheme, 'comfortable', descriptor));
+    }
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    it(`repairs hostile ${scheme} mixed-midpoint surfaces and component states`, () => {
+      const fallback = THEME_PALETTES[scheme];
+      const descriptor: ThemeDescriptor = {
+        id: `hostile-${scheme}`,
+        label: `Hostile ${scheme}`,
+        scheme,
+        source: 'imported',
+        highContrast: false,
+        palette: {
+          ...fallback,
+          bg: '#000000',
+          surface: '#aaaaaa',
+          surfaceAlt: '#ffffff',
+          text: '#777777',
+          textDim: '#777777',
+          accent: '#888888',
+          accentText: '#888888',
+          border: '#888888',
+          focus: '#888888',
+          workbench: {
+            ...fallback.workbench,
+            activityBarBackground: '#aaaaaa',
+            activityBarForeground: '#777777',
+            sideBarBackground: '#000000',
+            sideBarForeground: '#777777',
+            selectionBackground: '#888888',
+          },
+        },
+      };
+      const theme = createTheme(scheme, 'comfortable', descriptor);
+      for (const background of [theme.bg, theme.surface, theme.surfaceAlt]) {
+        expect(contrastRatio(theme.text, background)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(theme.textDim, background)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(theme.border, background)).toBeGreaterThanOrEqual(3);
+      }
+      expectComponentStatesToMeetWcag(theme);
+    });
+  }
+
+  for (const scheme of ['light', 'dark'] as const) {
+    it(`normalizes a hostile ${scheme} descriptor through the ThemeProvider preview path`, () => {
+      const fallback = THEME_PALETTES[scheme];
+      const descriptor: ThemeDescriptor = {
+        id: `preview-hostile-${scheme}`,
+        label: `Preview hostile ${scheme}`,
+        scheme,
+        source: 'imported',
+        highContrast: false,
+        palette: {
+          ...fallback,
+          bg: scheme === 'dark' ? '#000000' : '#ffffff',
+          surface: '#aaaaaa',
+          surfaceAlt: scheme === 'dark' ? '#ffffff' : '#000000',
+          text: '#777777',
+          textDim: '#777777',
+          accent: '#888888',
+          accentText: '#888888',
+          focus: '#888888',
+        },
+      };
+      const theme = resolveThemeProviderTheme({
+        mode: scheme,
+        systemScheme: scheme,
+        density: 'comfortable',
+        lightTheme: scheme === 'light' ? descriptor : undefined,
+        darkTheme: scheme === 'dark' ? descriptor : undefined,
+      });
+      expect(theme.id).toBe(descriptor.id);
+      expectComponentStatesToMeetWcag(theme);
+    });
+  }
+
+  it('covers placeholder and alpha-composited soft-state contrast', () => {
+    for (const descriptor of CODE_OSS_DEFAULT_THEMES) {
+      const theme = createTheme(descriptor.scheme, 'comfortable', descriptor);
+      expect(
+        contrastRatio(theme.workbench.inputForeground, theme.workbench.inputBackground),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrastRatio(theme.accent, opaqueColor(theme.accentSoft, theme.surfaceAlt)),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrastRatio(theme.error, opaqueColor(theme.errorSoft, theme.surfaceAlt)),
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('repairs hostile light workbench exteriors and alpha selected/hover states', () => {
+    const fallback = THEME_PALETTES.light;
+    const descriptor: ThemeDescriptor = {
+      id: 'hostile-light-workbench-exteriors',
+      label: 'Hostile light workbench exteriors',
+      scheme: 'light',
+      source: 'imported',
+      highContrast: false,
+      palette: {
+        ...fallback,
+        bg: '#ffffff',
+        surface: '#ffffff',
+        surfaceAlt: '#ffffff',
+        accent: '#0000001a',
+        accentText: '#777777',
+        focus: '#777777',
+        workbench: {
+          ...fallback.workbench,
+          activityBarBackground: '#777777',
+          sideBarBackground: '#777777',
+          titleBarBackground: '#777777',
+          statusBarBackground: '#777777',
+          panelBackground: '#ffffff',
+          inputBackground: '#ffffff',
+          selectionBackground: '#ffffff1a',
+          hoverBackground: '#0000001a',
+        },
+      },
+    };
+    const theme = createTheme('light', 'comfortable', descriptor);
+    expectComponentStatesToMeetWcag(theme);
+    const exteriors = [
+      theme.bg,
+      theme.surface,
+      theme.surfaceAlt,
+      theme.workbench.activityBarBackground,
+      theme.workbench.sideBarBackground,
+      theme.workbench.titleBarBackground,
+      theme.workbench.statusBarBackground,
+      theme.workbench.panelBackground,
+      theme.workbench.inputBackground,
+    ];
+    for (const exterior of exteriors) {
+      expect(
+        contrastRatio(theme.components.primaryButton.focusOuter, exterior),
+      ).toBeGreaterThanOrEqual(3);
+      for (const state of [theme.components.selected, theme.components.hover]) {
+        const actualBackground = opaqueColor(state.background, exterior);
+        expect(actualBackground).toBe(state.background);
+        expect(contrastRatio(state.foreground, actualBackground)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(state.icon, actualBackground)).toBeGreaterThanOrEqual(3);
+        expect(contrastRatio(state.border, actualBackground)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
   for (const scheme of ['light', 'dark'] as const) {
     it(`${scheme} semantic foregrounds meet WCAG AA on surfaces`, () => {
       const theme = createTheme(scheme, 'comfortable');

@@ -86,6 +86,214 @@ describe('TrapStore', () => {
     expect(secrets.values.size).toBe(0);
   });
 
+  it('does not mutate stored v3 secrets when an upsert is rejected', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authNoPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-secret',
+    });
+
+    await expect(
+      store.upsertV3User({
+        name: 'trap-user',
+        level: 'authPriv',
+        authProtocol: 'sha',
+        authKey: 'rejected-secret',
+      }),
+    ).rejects.toThrow();
+
+    await expect(store.resolveV3Users()).resolves.toMatchObject([
+      { name: 'trap-user', level: expect.any(Number), authKey: 'confirmed-secret' },
+    ]);
+    expect([...secrets.values.values()]).not.toContain('rejected-secret');
+  });
+
+  it('rolls back earlier v3 secret writes when a later secret-store write fails', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+      privProtocol: 'aes',
+      privKey: 'confirmed-priv',
+    });
+    const normalSet = secrets.set.bind(secrets);
+    secrets.set = async (key, value) => {
+      if (key.endsWith('/priv-key') && value === 'failed-priv')
+        throw new Error('secret write failed');
+      await normalSet(key, value);
+    };
+
+    await expect(
+      store.upsertV3User({
+        name: 'trap-user',
+        level: 'authPriv',
+        authProtocol: 'sha',
+        authKey: 'temporary-auth',
+        privProtocol: 'aes',
+        privKey: 'failed-priv',
+      }),
+    ).rejects.toThrow('secret write failed');
+    await expect(store.resolveV3Users()).resolves.toMatchObject([
+      { authKey: 'confirmed-auth', privKey: 'confirmed-priv' },
+    ]);
+  });
+
+  it('rolls back v3 secrets when the database write fails after secret mutation', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authNoPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+    });
+    const normalRun = db.run.bind(db);
+    db.run = (sql, params) => {
+      if (sql.includes('INSERT INTO trap_v3_users')) throw new Error('db write failed');
+      return normalRun(sql, params);
+    };
+
+    await expect(
+      store.upsertV3User({
+        name: 'trap-user',
+        level: 'authNoPriv',
+        authProtocol: 'sha256',
+        authKey: 'temporary-auth',
+      }),
+    ).rejects.toThrow('db write failed');
+    expect(secrets.values.get('trap-users/trap-user/auth-key')).toBe('confirmed-auth');
+  });
+
+  it('restores already-deleted v3 keys when a later key deletion fails', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+      privProtocol: 'aes',
+      privKey: 'confirmed-priv',
+    });
+    const normalDelete = secrets.delete.bind(secrets);
+    let failPriv = true;
+    secrets.delete = async (key) => {
+      if (failPriv && key.endsWith('/priv-key')) {
+        failPriv = false;
+        throw new Error('secret delete failed');
+      }
+      await normalDelete(key);
+    };
+
+    await expect(store.removeV3User('trap-user')).rejects.toThrow('secret delete failed');
+    await expect(store.resolveV3Users()).resolves.toMatchObject([
+      { authKey: 'confirmed-auth', privKey: 'confirmed-priv' },
+    ]);
+  });
+
+  it('reports an unknown outcome when v3 update compensation also fails', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+      privProtocol: 'aes',
+      privKey: 'confirmed-priv',
+    });
+    const normalSet = secrets.set.bind(secrets);
+    let compensating = false;
+    secrets.set = async (key, value) => {
+      if (key.endsWith('/priv-key') && value === 'failed-priv') {
+        compensating = true;
+        throw new Error('primary secret failure');
+      }
+      if (compensating && key.endsWith('/auth-key') && value === 'confirmed-auth')
+        throw new Error('compensation failure');
+      await normalSet(key, value);
+    };
+    await expect(
+      store.upsertV3User({
+        name: 'trap-user',
+        level: 'authPriv',
+        authProtocol: 'sha',
+        authKey: 'temporary-auth',
+        privProtocol: 'aes',
+        privKey: 'failed-priv',
+      }),
+    ).rejects.toThrow('outcome unknown');
+  });
+
+  it('restores deleted v3 keys when database removal fails', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authNoPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+    });
+    const normalRun = db.run.bind(db);
+    db.run = (sql, params) => {
+      if (sql.includes('DELETE FROM trap_v3_users')) throw new Error('db delete failed');
+      return normalRun(sql, params);
+    };
+
+    await expect(store.removeV3User('trap-user')).rejects.toThrow('db delete failed');
+    await expect(store.resolveV3Users()).resolves.toMatchObject([
+      { name: 'trap-user', authKey: 'confirmed-auth' },
+    ]);
+  });
+
+  it('reports an unknown outcome when v3 removal compensation also fails', async () => {
+    const db = nodeStorageFactory.open(':memory:');
+    runMigrations(db);
+    const secrets = secretStore();
+    const store = new TrapStore(db, createNodeTransport({ secrets }));
+    await store.upsertV3User({
+      name: 'trap-user',
+      level: 'authPriv',
+      authProtocol: 'sha',
+      authKey: 'confirmed-auth',
+      privProtocol: 'aes',
+      privKey: 'confirmed-priv',
+    });
+    const normalDelete = secrets.delete.bind(secrets);
+    const normalSet = secrets.set.bind(secrets);
+    let compensating = false;
+    secrets.delete = async (key) => {
+      if (key.endsWith('/priv-key')) {
+        compensating = true;
+        throw new Error('primary delete failure');
+      }
+      await normalDelete(key);
+    };
+    secrets.set = async (key, value) => {
+      if (compensating && key.endsWith('/auth-key')) throw new Error('compensation failure');
+      await normalSet(key, value);
+    };
+    await expect(store.removeV3User('trap-user')).rejects.toThrow('outcome unknown');
+  });
+
   it('round-trips saved filters, sender presets, and rules', () => {
     const db = nodeStorageFactory.open(':memory:');
     runMigrations(db);

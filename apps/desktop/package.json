@@ -1,9 +1,9 @@
 {
   "name": "@mibbeacon/desktop",
-  "version": "0.1.0-beta.1",
+  "version": "0.6.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "MIB Beacon — SNMP toolkit for desktop (Electron + react-native-web)",
+  "description": "MIB Beacon \u2014 SNMP toolkit for desktop (Electron + react-native-web)",
   "desktopName": "com.librestatic.mibbeacon",
   "author": {
     "name": "LibreStatic",

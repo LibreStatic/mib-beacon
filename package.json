@@ -1,6 +1,6 @@
 {
   "name": "mibbeacon",
-  "version": "0.1.0-beta.1",
+  "version": "0.6.0",
   "private": true,
   "description": "Open-source cross-platform SNMP toolkit",
   "homepage": "https://librestatic.com",
@@ -43,6 +43,7 @@
     "corpus": "tsx dev/corpus/run-corpus.ts",
     "audit:artifact-identity": "dev/audit/artifact-identity-smoke.sh",
     "audit:split-workspace": "python3 dev/audit/split-workspace-smoke.py",
+    "audit:validation-matrix": "python3 dev/audit/validation-matrix.py",
     "audit:ubuntu-vm-appimage": "dev/audit/ubuntu-vm-appimage-smoke/run.sh"
   },
   "devDependencies": {
@@ -58,10 +59,11 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.4",
+    "test-renderer": "1.1.0",
     "tslib": "^2.8.1",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
-    "vitest": "^3.0.2",
-    "tsx": "^4.19.2"
+    "vitest": "^3.0.2"
   }
 }

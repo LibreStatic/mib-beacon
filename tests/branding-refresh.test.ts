@@ -124,7 +124,9 @@ describe('branding refresh', () => {
   it('shows the mark while the browser bundle loads and installs an SVG favicon', () => {
     const html = read('apps/server/src/web/index.html');
 
-    expect(existsSync(new URL('../apps/server/src/web/public/favicon.svg', import.meta.url))).toBe(true);
+    expect(existsSync(new URL('../apps/server/src/web/public/favicon.svg', import.meta.url))).toBe(
+      true,
+    );
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg" />');
     expect(html).toContain('class="boot-screen"');
     expect(html).toContain('class="boot-logo"');
@@ -152,11 +154,12 @@ describe('branding refresh', () => {
 
   it('uses the horizontal mark-and-copy lockup in every app header', () => {
     const appRoot = read('packages/app/src/AppRoot.tsx');
+    const appNavigation = read('packages/app/src/components/AppNavigation.tsx');
 
-    expect(appRoot).toContain('styles.brandLockup');
+    expect(appNavigation).toContain('styles.brandLockup');
     expect(appRoot).toContain('styles.compactBrand');
-    expect(appRoot).toContain('>Network workbench</Text>');
-    expect(appRoot).toContain("flexDirection: 'row'");
+    expect(appNavigation).toContain('>Network workbench</Text>');
+    expect(appNavigation).toContain("flexDirection: 'row'");
   });
 
   it('centers the canonical mark beneath the README title', () => {

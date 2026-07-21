@@ -1,38 +1,49 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Platform,
-  ScrollView,
-  Share,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Platform, ScrollView, Share, StyleSheet, View } from 'react-native';
 import type {
   AgentProfile,
   DiscoveryResult,
   EngineInfo,
-  PatternTraceEvent,
-  PatternTraceSession,
   PollSample,
-  PollChart,
   PollSeries,
-  PollWatch,
   PortViewRow,
   WalkDiffRow,
   WalkSnapshotSummary,
 } from '@mibbeacon/core/client';
-import { Button, Card, Chip, Field, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
-import { useEngine } from '../engine-context';
+import {
+  Button,
+  Card,
+  Chip,
+  Field,
+  Label,
+  Mono,
+  Pill,
+  Row,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
-import { refreshAgentProfiles } from '../actions';
+import { refreshAgentProfiles, saveAgentProfile } from '../actions';
 import { AgentProfileDialog } from '../components/AgentProfileDialog';
-import { ToolLineChart, ToolSparkline } from '../components/ToolLineChart';
+import { ToolLineChart, ToolSparkline, type ChartPngExport } from '../components/ToolLineChart';
+import { agentPersistentCollectionsController } from '../agent-persistent-collections';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
+import { AgentCollectionRecovery } from '../components/AgentCollectionRecovery';
 import { useResponsiveLayout } from '../responsive-context';
+import { engineStartArbitration } from '../engine-start-arbitration';
 import {
   agentDraftFromEditor,
   EMPTY_AGENT_EDITOR,
   type AgentEditorState,
 } from '../agent-profile-form';
+import {
+  toolsCollectionStatusText,
+  toolsPersistentCollectionsController,
+} from '../tools-persistent-collections';
+import { ToolsRefreshCoordinator } from '../tools-refresh-coordinator';
+import { patternPersistentCollectionsController } from '../pattern-persistent-collections';
 
 interface PingSummary {
   transmitted: number;
@@ -53,29 +64,78 @@ const SECTIONS: { key: ToolSection; label: string }[] = [
   { key: 'ports', label: 'Ports' },
   { key: 'reachability', label: 'Ping / trace' },
 ];
-export function ToolsScreen({ info }: { info: EngineInfo | null }) {
+export function ToolsScreen({
+  info,
+  shareChartPng,
+}: {
+  info: EngineInfo | null;
+  shareChartPng?: (capture: ChartPngExport) => Promise<void>;
+}) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const agents = useAppStore((state) => state.agentProfiles);
   const patternTraceColor = useAppStore((state) => state.patternTraceColor);
   const [section, setSection] = useState<ToolSection>('graphs');
-  const [series, setSeries] = useState<PollSeries[]>([]);
-  const [watches, setWatches] = useState<PollWatch[]>([]);
-  const [charts, setCharts] = useState<PollChart[]>([]);
+  const persistent = useMemo(
+    () => toolsPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const refreshCoordinator = useMemo(() => new ToolsRefreshCoordinator(), []);
+  const subscribePersistent = useCallback(
+    (listener: () => void) => persistent.subscribe(listener),
+    [persistent],
+  );
+  const persistentSnapshot = useSyncExternalStore(
+    subscribePersistent,
+    () => persistent.snapshot(),
+    () => persistent.snapshot(),
+  );
+  const agentCollections = useMemo(
+    () => agentPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const agentCollectionSnapshot = useSyncExternalStore(
+    agentCollections.subscribe,
+    agentCollections.snapshot,
+    agentCollections.snapshot,
+  );
+  const agentCollectionsBlocked = ['error-reverted', 'uncertain', 'conflict'].includes(
+    agentCollectionSnapshot.phase,
+  );
+  const series = persistentSnapshot.polls;
+  const watches = persistentSnapshot.watches;
+  const charts = persistentSnapshot.charts;
+  const patterns = useMemo(
+    () => patternPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const patternSnapshot = useSyncExternalStore(
+    patterns.subscribe.bind(patterns),
+    patterns.snapshot.bind(patterns),
+    patterns.snapshot.bind(patterns),
+  );
+  const patternSessions = patternSnapshot.sessions;
+  const patternEvents = patternSnapshot.events;
+  const runningPattern = patternSessions.find((session) => session.status === 'running');
+  const patternHandle = runningPattern?.operationHandleId ?? null;
+  const patternStopping =
+    patternSnapshot.phase === 'updating' && patternSnapshot.active === 'pattern:cancel';
+  const patternBlocked =
+    patternSnapshot.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(patternSnapshot.phase);
   const [samples, setSamples] = useState<Record<string, PollSample[]>>({});
-  const [patternSessions, setPatternSessions] = useState<PatternTraceSession[]>([]);
-  const [patternEvents, setPatternEvents] = useState<Record<string, PatternTraceEvent[]>>({});
   const [hiddenPatternSessionIds, setHiddenPatternSessionIds] = useState<string[]>([]);
   const [activeChartId, setActiveChartId] = useState<string | null>(null);
   const [patternMode, setPatternMode] = useState<'active' | 'passive'>('active');
   const [patternName, setPatternName] = useState('Pattern trace');
   const [patternCadence, setPatternCadence] = useState('500');
   const [patternDuration, setPatternDuration] = useState('60000');
-  const [patternStart, setPatternStart] = useState(() => new Date(Date.now() - 60_000).toISOString());
+  const [patternStart, setPatternStart] = useState(() =>
+    new Date(Date.now() - 60_000).toISOString(),
+  );
   const [patternEnd, setPatternEnd] = useState(() => new Date().toISOString());
-  const [patternHandle, setPatternHandle] = useState<string | null>(null);
-  const [patternStopping, setPatternStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [seriesName, setSeriesName] = useState('New series');
@@ -99,6 +159,13 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const [discoveryHandle, setDiscoveryHandle] = useState<string | null>(null);
   const [discoveryResults, setDiscoveryResults] = useState<DiscoveryResult[]>([]);
   const [discoveryProgress, setDiscoveryProgress] = useState('Idle');
+  const discoverySaveSequence = useRef(0);
+  const [savingDiscovery, setSavingDiscovery] = useState<{
+    id: number;
+    ip: string;
+    engine: typeof engine;
+  } | null>(null);
+  const activeDiscoverySave = savingDiscovery?.engine === engine ? savingDiscovery : null;
   const [compareA, setCompareA] = useState('');
   const [compareB, setCompareB] = useState('');
   const [compareOid, setCompareOid] = useState('1.3.6.1.2.1');
@@ -123,10 +190,45 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
   const [reachHandle, setReachHandle] = useState<string | null>(null);
   const [reachLines, setReachLines] = useState<string[]>([]);
   const [reachSummary, setReachSummary] = useState<PingSummary | null>(null);
+  const acceptedHandles = useRef<
+    Partial<Record<'discovery' | 'compare' | 'ports' | 'reach', string>>
+  >({});
+
+  useEffect(
+    () => () => {
+      const handles = acceptedHandles.current;
+      if (handles.discovery)
+        void engine.tools.discovery.cancel(handles.discovery).catch(() => undefined);
+      if (handles.compare) void engine.tools.compare.cancel(handles.compare).catch(() => undefined);
+      if (handles.ports) void engine.tools.ports.cancel(handles.ports).catch(() => undefined);
+      if (handles.reach)
+        void engine.tools.reachability.cancel(handles.reach).catch(() => undefined);
+    },
+    [engine],
+  );
 
   const report = useCallback(
-    (value: unknown) => setError(value instanceof Error ? value.message : String(value)),
-    [],
+    (value: unknown) => {
+      if (ownsEngine()) setError(value instanceof Error ? value.message : String(value));
+    },
+    [ownsEngine],
+  );
+  const runToolStart = useCallback(
+    async (
+      resource: string,
+      start: () => Promise<{ handleId: string }>,
+      cancel: (handleId: string) => Promise<unknown>,
+      accept: (handleId: string) => void,
+    ) => {
+      const claim = engineStartArbitration.begin(engine, resource);
+      try {
+        const { handleId } = await start();
+        await engineStartArbitration.accept(claim, handleId, ownsEngine, cancel, accept);
+      } catch (caught) {
+        if (engineStartArbitration.isCurrent(claim, ownsEngine)) report(caught);
+      }
+    },
+    [engine, ownsEngine, report],
   );
   const openTargetSetup = (next: TargetSetupSection) => {
     if (targetSetupSection !== next) setTargetEditor(EMPTY_AGENT_EDITOR);
@@ -139,12 +241,20 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
     setTargetError(null);
   };
   const createTarget = async () => {
-    if (!targetSetupSection || targetBusy) return;
+    if (!ownsEngine()) return;
+    if (!targetSetupSection || targetBusy || agentCollectionsBlocked) return;
     setTargetBusy(true);
     setTargetError(null);
     try {
-      const created = await engine.agents.create(agentDraftFromEditor(targetEditor));
-      await refreshAgentProfiles(engine);
+      const { profile: created } = await saveAgentProfile(
+        engine,
+        null,
+        agentDraftFromEditor(targetEditor),
+        ownsEngine,
+      );
+      if (!ownsEngine()) return;
+      await refreshAgentProfiles(engine, ownsEngine);
+      if (!ownsEngine()) return;
       if (targetSetupSection === 'graphs') setSeriesAgent(created.id);
       if (targetSetupSection === 'ports') setPortAgent(created.id);
       if (targetSetupSection === 'compare') {
@@ -154,66 +264,64 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
       useAppStore.getState().pushToast({ tone: 'success', message: 'Target added' });
       cancelTargetSetup();
     } catch (caught) {
+      if (!ownsEngine()) return;
+      setTargetEditor((current) => ({ ...current, community: '', authKey: '', privKey: '' }));
       const message = caught instanceof Error ? caught.message : String(caught);
       setTargetError(message);
       useAppStore.getState().pushToast({ tone: 'error', message });
     } finally {
-      setTargetBusy(false);
+      if (ownsEngine()) setTargetBusy(false);
     }
   };
   const refresh = useCallback(async () => {
-    const [nextSeries, nextWatches, nextCharts, nextSnapshots] = await Promise.all([
-      engine.tools.polls.list(),
-      engine.tools.watches.list(),
-      engine.tools.charts.list(),
-      engine.ops.snapshots.list(),
-    ]);
-    setSeries(nextSeries);
-    setWatches(nextWatches);
-    setCharts(nextCharts);
-    setSnapshots(nextSnapshots);
-    const ids = [
-      ...new Set([
-        ...(selectedSeries.length ? selectedSeries : nextSeries.slice(0, 1).map((item) => item.id)),
-        ...nextWatches.map((watch) => watch.seriesId),
-      ]),
-    ];
-    if (!selectedSeries.length && ids.length) setSelectedSeries(ids);
-    const nextPatternSessions = await engine.tools.patterns.list({ seriesIds: ids });
-    setPatternSessions(nextPatternSessions);
-    const nextPatternEvents = await Promise.all(
-      nextPatternSessions.map(async (session) => [
-        session.id,
-        await engine.tools.patterns.events(session.id),
-      ] as const),
+    await refreshCoordinator.run(
+      async (isCurrent) => {
+        const [collections, nextSnapshots] = await Promise.all([
+          persistent.refresh('refresh', isCurrent),
+          engine.ops.snapshots.list(),
+        ]);
+        const ids = [
+          ...new Set([
+            ...(selectedSeries.length
+              ? selectedSeries
+              : collections.polls.slice(0, 1).map((item) => item.id)),
+            ...collections.watches.map((watch) => watch.seriesId),
+          ]),
+        ];
+        await patterns.refresh(isCurrent);
+        const nextSamples = Object.fromEntries(
+          await Promise.all(
+            ids.map(async (id) => [id, await engine.tools.polls.samples(id)] as const),
+          ),
+        );
+        return {
+          ids,
+          nextSnapshots,
+          nextSamples,
+        };
+      },
+      ownsEngine,
+      ({ ids, nextSnapshots, nextSamples }) => {
+        setSnapshots(nextSnapshots);
+        if (!selectedSeries.length && ids.length) setSelectedSeries(ids);
+        setSamples(nextSamples);
+      },
     );
-    setPatternEvents(Object.fromEntries(nextPatternEvents));
-    setSamples(
-      Object.fromEntries(
-        await Promise.all(
-          ids.map(async (id) => [id, await engine.tools.polls.samples(id)] as const),
-        ),
-      ),
-    );
-  }, [engine, selectedSeries]);
+  }, [engine, ownsEngine, patterns, persistent, refreshCoordinator, selectedSeries]);
 
   useEffect(() => {
+    persistent.activate();
+    patterns.activate();
+    refreshCoordinator.activate();
     void refresh().catch(report);
     const off = engine.events.subscribe('tools', (event) => {
+      if (!ownsEngine()) return;
       if (event.kind === 'sample' || event.kind === 'watch-alert' || event.kind === 'poll-error')
-        void refresh();
+        void refresh().catch(report);
       if (event.handleId === patternHandle) {
-        if (event.kind === 'pattern-event') {
-          const traceEvent = event.payload as PatternTraceEvent;
-          setPatternEvents((current) => ({
-            ...current,
-            [traceEvent.sessionId]: [...(current[traceEvent.sessionId] ?? []), traceEvent],
-          }));
-        }
+        if (event.kind === 'pattern-event') refreshCoordinator.invalidate();
         if (['done', 'error', 'pattern-finished'].includes(event.kind)) {
-          setPatternHandle(null);
-          setPatternStopping(false);
-          void refresh();
+          void refresh().catch(report);
         }
       }
       if (event.handleId === discoveryHandle) {
@@ -245,8 +353,24 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
         if (['done', 'cancelled', 'error'].includes(event.kind)) setPortHandle(null);
       }
     });
-    return off;
-  }, [engine, discoveryHandle, reachHandle, compareHandle, portHandle, patternHandle, refresh, report]);
+    return () => {
+      refreshCoordinator.dispose();
+      off();
+    };
+  }, [
+    engine,
+    ownsEngine,
+    discoveryHandle,
+    reachHandle,
+    compareHandle,
+    portHandle,
+    patternHandle,
+    persistent,
+    patterns,
+    refreshCoordinator,
+    refresh,
+    report,
+  ]);
 
   const chartSeries = useMemo(
     () =>
@@ -273,44 +397,44 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
     [patternSessions, selectedSeries],
   );
   const startPattern = async () => {
+    if (!ownsEngine()) return;
     if (!selectedSeries.length || patternHandle) return;
     try {
       if (patternMode === 'active') {
-        const result = await engine.tools.patterns.start({
-          name: patternName,
-          seriesIds: selectedSeries,
-          cadenceMs: Number(patternCadence),
-          durationMs: Number(patternDuration),
-          color: patternTraceColor,
-          chartId: activeChartId ?? undefined,
-        });
-        setPatternHandle(result.handleId);
-        void refresh();
+        await patterns.start(
+          {
+            name: patternName,
+            seriesIds: selectedSeries,
+            cadenceMs: Number(patternCadence),
+            durationMs: Number(patternDuration),
+            color: patternTraceColor,
+            chartId: activeChartId ?? undefined,
+          },
+          ownsEngine,
+        );
       } else {
         const startAt = Date.parse(patternStart);
         const endAt = Date.parse(patternEnd);
-        await engine.tools.patterns.annotate({
-          name: patternName,
-          seriesIds: selectedSeries,
-          cadenceMs: Number(patternCadence),
-          startAt,
-          endAt,
-          color: patternTraceColor,
-          chartId: activeChartId ?? undefined,
-        });
-        await refresh();
+        await patterns.annotate(
+          {
+            name: patternName,
+            seriesIds: selectedSeries,
+            cadenceMs: Number(patternCadence),
+            startAt,
+            endAt,
+            color: patternTraceColor,
+            chartId: activeChartId ?? undefined,
+          },
+          ownsEngine,
+        );
       }
     } catch (caught) {
-      report(caught);
+      if (ownsEngine()) report(caught);
     }
   };
   const stopPattern = () => {
     if (!patternHandle || patternStopping) return;
-    setPatternStopping(true);
-    void engine.tools.patterns.cancel(patternHandle).catch((caught) => {
-      setPatternStopping(false);
-      report(caught);
-    });
+    void patterns.cancel(patternHandle, ownsEngine).catch(report);
   };
   const visiblePorts = useMemo(
     () =>
@@ -331,11 +455,23 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
         ),
     [ports, portFilter, portSort],
   );
+  const persistentBlocked =
+    persistentSnapshot.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(persistentSnapshot.phase);
 
   const choose = (current: string[], value: string, cap = Infinity) =>
     current.includes(value)
       ? current.filter((id) => id !== value)
       : [...current, value].slice(-cap);
+  const communityForDiscoveryResult = (credentialLabel: string) => {
+    const match = /^Community #(\d+)$/.exec(credentialLabel);
+    return match
+      ? communities
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)[Number(match[1]) - 1]
+      : undefined;
+  };
 
   return (
     <View style={styles.root}>
@@ -345,6 +481,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
           subtitle="POLLS · GRAPHS · WATCHES · DISCOVERY · DIFF · PORTS · REACHABILITY"
         />
       ) : null}
+      <AgentCollectionRecovery engine={engine} owns={ownsEngine} />
       <View style={[styles.tabs, styles.tabContent, { borderBottomColor: t.border }]}>
         {SECTIONS.map((item) => (
           <Chip
@@ -364,6 +501,56 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
           <Card>
             <Label tone="error">{error}</Label>
             <Button title="Dismiss" small variant="ghost" onPress={() => setError(null)} />
+          </Card>
+        ) : null}
+        {persistentSnapshot.readiness.phase !== 'ready' ||
+        persistentSnapshot.phase !== 'confirmed' ? (
+          <Card>
+            <Row style={styles.between}>
+              <View style={{ flex: 1 }}>
+                <SectionTitle>Saved tools state</SectionTitle>
+                <Label
+                  tone={
+                    ['error-reverted', 'uncertain', 'conflict'].includes(
+                      persistentSnapshot.phase,
+                    ) || persistentSnapshot.readiness.phase === 'error'
+                      ? 'error'
+                      : 'dim'
+                  }
+                >
+                  {toolsCollectionStatusText(persistentSnapshot)}
+                </Label>
+              </View>
+              {persistentSnapshot.phase === 'error-reverted' ? (
+                <>
+                  <Button
+                    title="Retry"
+                    small
+                    onPress={() => void persistent.retryFailed().catch(report)}
+                  />
+                  <Button
+                    title="Acknowledge"
+                    small
+                    variant="ghost"
+                    onPress={() => persistent.acknowledge()}
+                  />
+                </>
+              ) : null}
+              {persistentSnapshot.readiness.phase === 'error' ? (
+                <Button
+                  title="Retry load"
+                  small
+                  onPress={() => void persistent.load().catch(report)}
+                />
+              ) : null}
+              {['uncertain', 'conflict'].includes(persistentSnapshot.phase) ? (
+                <Button
+                  title="Reconcile"
+                  small
+                  onPress={() => void persistent.reconcile().catch(report)}
+                />
+              ) : null}
+            </Row>
           </Card>
         ) : null}
         {section === 'graphs' ? (
@@ -403,22 +590,27 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   </Row>
                   <Button
                     title="Create series"
+                    disabled={persistentBlocked}
                     onPress={() =>
-                      void engine.tools.polls
-                        .create({
-                          name: seriesName,
-                          agentId: seriesAgent,
-                          oid: seriesOid,
-                          intervalMs: Number(interval),
-                          mode,
-                        })
-                        .then(refresh)
+                      void persistent
+                        .createPoll(
+                          {
+                            name: seriesName,
+                            agentId: seriesAgent,
+                            oid: seriesOid,
+                            intervalMs: Number(interval),
+                            mode,
+                          },
+                          ownsEngine,
+                        )
                         .catch(report)
                     }
                   />
                 </>
               ) : (
-                <Label tone="dim">Choose a poll target above to configure the OID, interval, and mode.</Label>
+                <Label tone="dim">
+                  Choose a poll target above to configure the OID, interval, and mode.
+                </Label>
               )}
             </Card>
             <Card>
@@ -463,7 +655,11 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   />
                 ) : (
                   <>
-                    <Field label="Start ISO time" value={patternStart} onChangeText={setPatternStart} />
+                    <Field
+                      label="Start ISO time"
+                      value={patternStart}
+                      onChangeText={setPatternStart}
+                    />
                     <Field label="End ISO time" value={patternEnd} onChangeText={setPatternEnd} />
                   </>
                 )}
@@ -472,7 +668,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                 <Button
                   title={patternMode === 'active' ? 'Start pattern' : 'Annotate history'}
                   small
-                  disabled={!selectedSeries.length || Boolean(patternHandle)}
+                  disabled={!selectedSeries.length || Boolean(patternHandle) || patternBlocked}
                   onPress={() => void startPattern()}
                 />
                 {patternHandle ? (
@@ -480,7 +676,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                     title={patternStopping ? 'Stopping…' : 'Stop'}
                     small
                     variant="danger"
-                    disabled={patternStopping}
+                    disabled={patternStopping || patternBlocked}
                     onPress={stopPattern}
                   />
                 ) : null}
@@ -488,6 +684,44 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   Marker color: {patternTraceColor}
                 </Label>
               </Row>
+              {patternSnapshot.phase !== 'confirmed' ? (
+                <Label
+                  tone={
+                    ['error-reverted', 'uncertain', 'conflict'].includes(patternSnapshot.phase)
+                      ? 'error'
+                      : 'dim'
+                  }
+                  size={10}
+                >
+                  {patternSnapshot.phase === 'queued'
+                    ? `${patternSnapshot.queued} pattern change(s) queued`
+                    : patternSnapshot.phase === 'updating'
+                      ? `Updating ${patternSnapshot.active ?? 'patterns'}…`
+                      : (patternSnapshot.error ?? `Pattern persistence ${patternSnapshot.phase}`)}
+                </Label>
+              ) : null}
+              {patternSnapshot.readiness.phase === 'error' ? (
+                <Button
+                  title="Retry pattern load"
+                  small
+                  variant="ghost"
+                  onPress={() => void patterns.load().catch(report)}
+                />
+              ) : patternSnapshot.phase === 'uncertain' ? (
+                <Button
+                  title="Reconcile pattern state"
+                  small
+                  variant="ghost"
+                  onPress={() => void patterns.reconcile().catch(report)}
+                />
+              ) : ['error-reverted', 'conflict'].includes(patternSnapshot.phase) ? (
+                <Button
+                  title="Acknowledge pattern error"
+                  small
+                  variant="ghost"
+                  onPress={() => patterns.acknowledge()}
+                />
+              ) : null}
               {chartPatterns.length ? (
                 <Row style={styles.patternSessionList}>
                   {chartPatterns.map((session) => (
@@ -501,12 +735,8 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                         title="Delete"
                         small
                         variant="danger"
-                        onPress={() =>
-                          void engine.tools.patterns
-                            .remove(session.id)
-                            .then(refresh)
-                            .catch(report)
-                        }
+                        disabled={patternBlocked}
+                        onPress={() => void patterns.remove(session.id, ownsEngine).catch(report)}
                       />
                     </Row>
                   ))}
@@ -546,6 +776,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   patternSessions={chartPatterns}
                   patternEvents={patternEvents}
                   hiddenPatternSessionIds={hiddenPatternSessionIds}
+                  sharePng={shareChartPng}
                   onTogglePatternSession={(sessionId) =>
                     setHiddenPatternSessionIds((current) =>
                       current.includes(sessionId)
@@ -569,18 +800,20 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   title="Save chart"
                   small
                   variant="ghost"
-                  disabled={!selectedSeries.length}
+                  disabled={!selectedSeries.length || persistentBlocked}
                   onPress={() =>
-                    void engine.tools.charts
-                      .save({
-                        id: activeChartId ?? undefined,
-                        name:
-                          charts.find((chart) => chart.id === activeChartId)?.name ??
-                          `Chart ${new Date().toLocaleTimeString()}`,
-                        seriesIds: selectedSeries,
-                        hiddenPatternSessionIds,
-                      })
-                      .then(refresh)
+                    void persistent
+                      .saveChart(
+                        {
+                          id: activeChartId ?? undefined,
+                          name:
+                            charts.find((chart) => chart.id === activeChartId)?.name ??
+                            `Chart ${new Date().toLocaleTimeString()}`,
+                          seriesIds: selectedSeries,
+                          hiddenPatternSessionIds,
+                        },
+                        ownsEngine,
+                      )
                       .catch(report)
                   }
                 />
@@ -605,15 +838,22 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                     {item.lastError}
                   </Label>
                 ) : null}
+                {persistent.statusFor(`poll:update:${item.id}`) ||
+                persistent.statusFor(`poll:remove:${item.id}`) ? (
+                  <Label tone="dim" size={10}>
+                    {persistent.statusFor(`poll:update:${item.id}`) ??
+                      persistent.statusFor(`poll:remove:${item.id}`)}
+                  </Label>
+                ) : null}
                 <Row style={styles.wrap}>
                   <Button
                     title={item.paused ? 'Resume' : 'Pause'}
                     small
                     variant="ghost"
+                    disabled={persistentBlocked}
                     onPress={() =>
-                      void engine.tools.polls
-                        .update(item.id, { paused: !item.paused })
-                        .then(refresh)
+                      void persistent
+                        .updatePoll(item.id, { paused: !item.paused }, ownsEngine)
                         .catch(report)
                     }
                   />
@@ -622,10 +862,10 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       key={value}
                       label={value}
                       active={item.mode === value}
+                      disabled={persistentBlocked}
                       onPress={() =>
-                        void engine.tools.polls
-                          .update(item.id, { mode: value })
-                          .then(refresh)
+                        void persistent
+                          .updatePoll(item.id, { mode: value }, ownsEngine)
                           .catch(report)
                       }
                     />
@@ -638,6 +878,7 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       void engine.tools.polls
                         .exportCsv(item.id)
                         .then((csv) => {
+                          if (!ownsEngine()) return;
                           if (Platform.OS === 'web' && typeof document !== 'undefined') {
                             const url = URL.createObjectURL(
                               new Blob([csv], { type: 'text/csv;charset=utf-8' }),
@@ -658,9 +899,8 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                     title="Delete"
                     small
                     variant="danger"
-                    onPress={() =>
-                      void engine.tools.polls.remove(item.id).then(refresh).catch(report)
-                    }
+                    disabled={persistentBlocked}
+                    onPress={() => void persistent.removePoll(item.id, ownsEngine).catch(report)}
                   />
                 </Row>
               </Card>
@@ -710,17 +950,19 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               </Row>
               <Button
                 title="Save watch"
-                disabled={!watchSeries}
+                disabled={!watchSeries || persistentBlocked}
                 onPress={() =>
-                  void engine.tools.watches
-                    .save({
-                      seriesId: watchSeries,
-                      name: watchName,
-                      operator,
-                      threshold: Number(threshold),
-                      thresholdMode,
-                    })
-                    .then(refresh)
+                  void persistent
+                    .saveWatch(
+                      {
+                        seriesId: watchSeries,
+                        name: watchName,
+                        operator,
+                        threshold: Number(threshold),
+                        thresholdMode,
+                      },
+                      ownsEngine,
+                    )
                     .catch(report)
                 }
               />
@@ -753,13 +995,17 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                     last change{' '}
                     {watch.lastChangeAt ? new Date(watch.lastChangeAt).toLocaleString() : 'unknown'}
                   </Label>
+                  {persistent.statusFor(`watch:remove:${watch.id}`) ? (
+                    <Label tone="dim" size={10}>
+                      {persistent.statusFor(`watch:remove:${watch.id}`)}
+                    </Label>
+                  ) : null}
                   <Button
                     title="Delete"
                     small
                     variant="ghost"
-                    onPress={() =>
-                      void engine.tools.watches.remove(watch.id).then(refresh).catch(report)
-                    }
+                    disabled={persistentBlocked}
+                    onPress={() => void persistent.removeWatch(watch.id, ownsEngine).catch(report)}
                   />
                 </Card>
               ))}
@@ -804,26 +1050,30 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       .split(',')
                       .map((value) => value.trim())
                       .filter(Boolean);
-                    void engine.tools.discovery
-                      .start({
-                        target,
-                        credentials: [
-                          ...credentialIds.map((agentId) => ({
-                            agentId,
-                            label: agents.find((agent) => agent.id === agentId)?.name ?? agentId,
-                          })),
-                          ...adhoc.map((community, index) => ({
-                            community,
-                            label: `Community #${index + 1}`,
-                          })),
-                        ],
-                        prePing: discoveryPrePing,
-                      })
-                      .then(({ handleId }) => {
+                    void runToolStart(
+                      'tools-discovery',
+                      () =>
+                        engine.tools.discovery.start({
+                          target,
+                          credentials: [
+                            ...credentialIds.map((agentId) => ({
+                              agentId,
+                              label: agents.find((agent) => agent.id === agentId)?.name ?? agentId,
+                            })),
+                            ...adhoc.map((community, index) => ({
+                              community,
+                              label: `Community #${index + 1}`,
+                            })),
+                          ],
+                          prePing: discoveryPrePing,
+                        }),
+                      (id) => engine.tools.discovery.cancel(id),
+                      (handleId) => {
+                        acceptedHandles.current.discovery = handleId;
                         setDiscoveryHandle(handleId);
                         setDiscoveryProgress('Starting…');
-                      })
-                      .catch(report);
+                      },
+                    );
                   }}
                 />
                 <Button
@@ -831,7 +1081,8 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   variant="ghost"
                   disabled={!discoveryHandle}
                   onPress={() =>
-                    discoveryHandle && void engine.tools.discovery.cancel(discoveryHandle)
+                    discoveryHandle &&
+                    void engine.tools.discovery.cancel(discoveryHandle).catch(() => undefined)
                   }
                 />
               </Row>
@@ -856,23 +1107,45 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                   <Button
                     title="Save agent"
                     small
+                    loading={activeDiscoverySave?.ip === result.ip}
+                    loadingTitle="Saving…"
+                    disabled={
+                      activeDiscoverySave !== null ||
+                      agentCollectionsBlocked ||
+                      (/^Community #\d+$/.test(result.credentialLabel) &&
+                        !communityForDiscoveryResult(result.credentialLabel))
+                    }
                     onPress={() => {
                       const match = /^Community #(\d+)$/.exec(result.credentialLabel);
-                      const community = match
-                        ? communities
-                            .split(',')
-                            .map((value) => value.trim())
-                            .filter(Boolean)[Number(match[1]) - 1]
-                        : undefined;
-                      void engine.tools.discovery
-                        .saveAgent({
-                          ip: result.ip,
-                          name: result.sysName,
-                          credentialAgentId: result.credentialAgentId,
-                          community,
+                      const community = communityForDiscoveryResult(result.credentialLabel);
+                      if (match && !community) {
+                        report(new Error('Re-enter the discovery community before saving.'));
+                        return;
+                      }
+                      const saveId = ++discoverySaveSequence.current;
+                      setSavingDiscovery({ id: saveId, ip: result.ip, engine });
+                      void agentCollections
+                        .saveDiscoveredProfile(
+                          {
+                            ip: result.ip,
+                            name: result.sysName,
+                            credentialAgentId: result.credentialAgentId,
+                            community,
+                          },
+                          ownsEngine,
+                        )
+                        .then(() => refreshAgentProfiles(engine, ownsEngine))
+                        .catch((caught) => {
+                          if (!ownsEngine()) return;
+                          setCommunities('');
+                          report(caught);
                         })
-                        .then(() => refreshAgentProfiles(engine))
-                        .catch(report);
+                        .finally(() => {
+                          if (!ownsEngine()) return;
+                          setSavingDiscovery((current) =>
+                            current?.id === saveId ? null : current,
+                          );
+                        });
                     }}
                   />
                   <Button
@@ -917,17 +1190,30 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       title={compareHandle ? 'Comparing…' : 'Compare live walks'}
                       disabled={Boolean(compareHandle)}
                       onPress={() =>
-                        void engine.tools.compare
-                          .start({ agentAId: compareA, agentBId: compareB, baseOid: compareOid })
-                          .then(({ handleId }) => setCompareHandle(handleId))
-                          .catch(report)
+                        void runToolStart(
+                          'tools-compare',
+                          () =>
+                            engine.tools.compare.start({
+                              agentAId: compareA,
+                              agentBId: compareB,
+                              baseOid: compareOid,
+                            }),
+                          (id) => engine.tools.compare.cancel(id),
+                          (id) => {
+                            acceptedHandles.current.compare = id;
+                            setCompareHandle(id);
+                          },
+                        )
                       }
                     />
                     <Button
                       title="Cancel"
                       variant="ghost"
                       disabled={!compareHandle}
-                      onPress={() => compareHandle && void engine.tools.compare.cancel(compareHandle)}
+                      onPress={() =>
+                        compareHandle &&
+                        void engine.tools.compare.cancel(compareHandle).catch(() => undefined)
+                      }
                     />
                   </Row>
                 </>
@@ -980,7 +1266,10 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
               <Button
                 title="Parse & diff"
                 onPress={() =>
-                  void engine.tools.compare.text(walkA, walkB).then(setDiffRows).catch(report)
+                  void engine.tools.compare
+                    .text(walkA, walkB)
+                    .then((rows) => ownsEngine() && setDiffRows(rows))
+                    .catch((caught) => ownsEngine() && report(caught))
                 }
               />
             </Card>
@@ -1011,17 +1300,25 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                       title={portHandle ? 'Loading…' : 'Load ifTable / ifXTable'}
                       disabled={Boolean(portHandle)}
                       onPress={() =>
-                        void engine.tools.ports
-                          .start(portAgent)
-                          .then(({ handleId }) => setPortHandle(handleId))
-                          .catch(report)
+                        void runToolStart(
+                          'tools-ports',
+                          () => engine.tools.ports.start(portAgent),
+                          (id) => engine.tools.ports.cancel(id),
+                          (id) => {
+                            acceptedHandles.current.ports = id;
+                            setPortHandle(id);
+                          },
+                        )
                       }
                     />
                     <Button
                       title="Cancel"
                       variant="ghost"
                       disabled={!portHandle}
-                      onPress={() => portHandle && void engine.tools.ports.cancel(portHandle)}
+                      onPress={() =>
+                        portHandle &&
+                        void engine.tools.ports.cancel(portHandle).catch(() => undefined)
+                      }
                     />
                   </Row>
                   <Row style={styles.wrap}>
@@ -1186,22 +1483,31 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
                 onPress={() => {
                   setReachLines([]);
                   setReachSummary(null);
-                  void engine.tools.reachability
-                    .start({
-                      kind: reachKind,
-                      target: reachTarget,
-                      count: Number(reachCount),
-                      intervalMs: Number(reachInterval),
-                    })
-                    .then(({ handleId }) => setReachHandle(handleId))
-                    .catch(report);
+                  void runToolStart(
+                    'tools-reachability',
+                    () =>
+                      engine.tools.reachability.start({
+                        kind: reachKind,
+                        target: reachTarget,
+                        count: Number(reachCount),
+                        intervalMs: Number(reachInterval),
+                      }),
+                    (id) => engine.tools.reachability.cancel(id),
+                    (id) => {
+                      acceptedHandles.current.reach = id;
+                      setReachHandle(id);
+                    },
+                  );
                 }}
               />
               <Button
                 title="Cancel"
                 variant="ghost"
                 disabled={!reachHandle}
-                onPress={() => reachHandle && void engine.tools.reachability.cancel(reachHandle)}
+                onPress={() =>
+                  reachHandle &&
+                  void engine.tools.reachability.cancel(reachHandle).catch(() => undefined)
+                }
               />
             </Row>
             {reachSummary ? (
@@ -1231,10 +1537,12 @@ export function ToolsScreen({ info }: { info: EngineInfo | null }) {
         editor={targetEditor}
         error={targetError}
         info={info}
-        busy={targetBusy}
+        busy={targetBusy || agentCollectionsBlocked}
         title="Add an SNMP target"
         subtitle="Enter the SNMP target, credentials, and optional v3 security settings."
-        submitTitle={targetSetupSection === 'compare' ? 'Save and add target' : 'Save and use target'}
+        submitTitle={
+          targetSetupSection === 'compare' ? 'Save and add target' : 'Save and use target'
+        }
         onEditorChange={setTargetEditor}
         onSubmit={() => void createTarget()}
         onClose={cancelTargetSetup}
@@ -1284,7 +1592,12 @@ function ToolTargetSelector({
         <>
           <AgentChips agents={agents} selected={selected} onToggle={onToggle} />
           <Row style={styles.wrap}>
-            <Button title="Manage profiles" small variant="ghost" onPress={() => useAppStore.getState().setTab('agents')} />
+            <Button
+              title="Manage profiles"
+              small
+              variant="ghost"
+              onPress={() => useAppStore.getState().setTab('agents')}
+            />
           </Row>
         </>
       ) : (

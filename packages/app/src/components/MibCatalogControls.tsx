@@ -1,14 +1,18 @@
 import { useState } from 'react';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  FlatList,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { Button, Dialog, EmptyState, Field, Label, Mono, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+  Button,
+  Dialog,
+  EmptyState,
+  Field,
+  Label,
+  Mono,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import type { ModuleInfo } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
 import {
   clearModuleFocus,
@@ -23,6 +27,7 @@ import { moduleCatalogSummary } from '../node-metadata';
 
 export function MibCatalogPane() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const modules = useAppStore((state) => state.modules);
   const focused = useAppStore((state) => state.moduleFocus?.module.name ?? null);
@@ -50,7 +55,7 @@ export function MibCatalogPane() {
             name="All loaded MIBs"
             count={modules.reduce((total, module) => total + module.objectCount, 0)}
             selected={!focused}
-            onPress={() => void clearModuleFocus(engine)}
+            onPress={() => void clearModuleFocus(engine, ownsEngine)}
           />
         }
         ListEmptyComponent={<EmptyState title="No MIBs loaded" />}
@@ -62,6 +67,7 @@ export function MibCatalogPane() {
 
 function ModuleItem({ module, selected }: { module: ModuleInfo; selected: boolean }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   return (
     <View style={[styles.moduleRow, { borderBottomColor: t.border }]}>
@@ -70,13 +76,13 @@ function ModuleItem({ module, selected }: { module: ModuleInfo; selected: boolea
         count={module.objectCount}
         detail={moduleCatalogSummary(module)}
         selected={selected}
-        onPress={() => void selectModuleInPlace(engine, module.name)}
+        onPress={() => void selectModuleInPlace(engine, module.name, ownsEngine)}
       />
       {!module.isBase ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Unload ${module.name}`}
-          onPress={() => void unloadModule(engine, module.name)}
+          onPress={() => void unloadModule(engine, module.name, ownsEngine).catch(() => undefined)}
           style={styles.unload}
         >
           <Text style={{ color: t.error, fontWeight: '800' }}>×</Text>
@@ -133,6 +139,7 @@ function ModuleChoice({
 
 export function MibModuleStrip() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const modules = useAppStore((state) => state.modules);
   const focused = useAppStore((state) => state.moduleFocus?.module.name ?? null);
@@ -146,14 +153,14 @@ export function MibModuleStrip() {
         <ModuleFilterButton
           label="All MIBs"
           active={!focused}
-          onPress={() => void clearModuleFocus(engine)}
+          onPress={() => void clearModuleFocus(engine, ownsEngine)}
         />
         {modules.map((module) => (
           <ModuleFilterButton
             key={module.name}
             label={module.name}
             active={focused === module.name}
-            onPress={() => void selectModuleInPlace(engine, module.name)}
+            onPress={() => void selectModuleInPlace(engine, module.name, ownsEngine)}
           />
         ))}
       </ScrollView>
@@ -199,6 +206,7 @@ function ModuleFilterButton({
 
 export function MibImportModal() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const open = useAppStore((state) => state.browserImportOpen);
   const busy = useAppStore((state) => state.importBusy);
   const [url, setUrl] = useState('');
@@ -224,7 +232,7 @@ export function MibImportModal() {
         title={busy ? 'Working…' : 'Fetch & import'}
         small
         disabled={busy || !url.trim()}
-        onPress={() => void importUrl(engine, url)}
+        onPress={() => void importUrl(engine, url, ownsEngine)}
       />
       <Field label="Or paste MIB text" value={paste} onChangeText={setPaste} multiline />
       <Button
@@ -232,7 +240,7 @@ export function MibImportModal() {
         small
         variant="ghost"
         disabled={busy || !paste.trim()}
-        onPress={() => void importPastedText(engine, 'pasted.mib', paste)}
+        onPress={() => void importPastedText(engine, 'pasted.mib', paste, ownsEngine)}
       />
       <ImportProgressPanel />
     </Dialog>
@@ -285,5 +293,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
   },
   stripContent: { alignItems: 'center', gap: 6, paddingVertical: 7 },
-  moduleFilterButton: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  moduleFilterButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
 });

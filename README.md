@@ -8,7 +8,7 @@ MIB Beacon is an experimental, open-source, cross-platform SNMP toolkit. It can
 import and browse SMIv1/SMIv2 modules, query SNMP agents, send and receive traps, and
 optionally resolve missing MIB dependencies from configured online sources.
 
-Current version: **0.1.0-beta.1**. Treat every build as prerelease software.
+Current version: **0.6.0**. Treat every build as prerelease software.
 
 > [!CAUTION]
 > **AI-generated, unaudited software — use at your own risk.** This software has been
@@ -519,7 +519,7 @@ reach this runtime can drive SNMP operations from the server host.
 
 ## Run a hosted release build
 
-Pushing a version tag such as `v0.1.0-beta.1` runs the complete no-cost beta matrix:
+Pushing a version tag such as `v0.6.0` runs the complete no-cost beta matrix:
 AppImage, deb, rpm, Flatpak, clearly named unsigned NSIS and DMG packages, signed Android
 APK/AAB, and the unsigned IPA. A manual **Release** run from the GitHub Actions web UI
 must target an existing matching version tag and can independently select each output,

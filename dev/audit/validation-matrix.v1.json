@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "routes": [
+    { "id": "browse", "identity": "Browse" },
+    { "id": "live-mibs", "identity": "Live MIBs" },
+    { "id": "results", "identity": "Operation" },
+    { "id": "agents", "identity": "Agent profiles" },
+    { "id": "traps", "identity": "Receive" },
+    { "id": "tools", "identity": "Graphs" },
+    { "id": "settings", "identity": "Appearance" }
+  ],
+  "viewports": [
+    { "id": "phone", "width": 390, "height": 844 },
+    { "id": "compact-edge", "width": 639, "height": 720 },
+    { "id": "medium-edge", "width": 640, "height": 720 },
+    { "id": "tablet-short", "width": 820, "height": 600 },
+    { "id": "expanded-edge-minus-one", "width": 1023, "height": 768 },
+    { "id": "expanded-edge", "width": 1024, "height": 768 },
+    { "id": "desktop", "width": 1280, "height": 800 },
+    { "id": "short-landscape", "width": 640, "height": 480 }
+  ],
+  "browserAssertions": [
+    "route-identity",
+    "horizontal-bounds",
+    "vertical-bounds",
+    "hit-target-occlusion",
+    "last-control-reachability",
+    "nested-pane-viability",
+    "dialog-reachability",
+    "tested-commit-freshness"
+  ],
+  "dialogs": [
+    { "route": "browse", "openButton": "Import MIB", "identity": "IMPORT MIB" },
+    { "route": "agents", "openButton": "New profile", "identity": "ADD PROFILE" }
+  ],
+  "nativeAssertions": [
+    "android-emulator-launch",
+    "notification-permission-and-delivery",
+    "binary-png-sharing",
+    "tested-commit-freshness"
+  ]
+}

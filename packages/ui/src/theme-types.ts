@@ -11,6 +11,41 @@ export interface ThemeDensity {
   fontScale: number;
 }
 
+export interface ThemeComponentStates {
+  selected: {
+    background: string;
+    foreground: string;
+    mutedForeground: string;
+    icon: string;
+    border: string;
+  };
+  primaryButton: {
+    background: string;
+    foreground: string;
+    pressedBackground: string;
+    focusInner: string;
+    focusOuter: string;
+  };
+  badge: { background: string; foreground: string };
+  disabled: { background: string; foreground: string; border: string };
+  hover: {
+    background: string;
+    foreground: string;
+    icon: string;
+    border: string;
+    focusInner: string;
+  };
+  dangerButton: {
+    background: string;
+    foreground: string;
+    pressedBackground: string;
+    pressedForeground: string;
+    border: string;
+    focusInner: string;
+    pressedFocusInner: string;
+  };
+}
+
 export interface ThemePalette {
   scheme: ThemeScheme;
   bg: string;
@@ -73,6 +108,8 @@ export interface Theme extends ThemePalette {
   space: { xs: number; sm: number; md: number; lg: number; xl: number };
   /** Nominal font-size ramp (px). */
   type: { caption: number; label: number; body: number; base: number; title: number };
+  /** Contrast-normalized pairs for rendered component states. Not persisted in theme descriptors. */
+  components: ThemeComponentStates;
 }
 
 export interface ThemeDescriptor {

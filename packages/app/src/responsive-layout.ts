@@ -10,8 +10,45 @@ export type WorkspaceKey =
 
 export const BROWSE_CATALOG_SPLIT_MINIMUMS = {
   minPrimary: 160,
-  minSecondary: 600,
+  minSecondary: 689,
 } as const;
+
+export const BROWSE_NAVIGATOR_SPLIT_MINIMUMS = {
+  minPrimary: 300,
+  minSecondary: 380,
+} as const;
+
+export const QUERY_SPLIT_MINIMUMS = { minPrimary: 340, minSecondary: 420 } as const;
+export const EMBEDDED_QUERY_SPLIT_MINIMUMS = { minPrimary: 340, minSecondary: 360 } as const;
+export const TRAP_SPLIT_MINIMUMS = { minPrimary: 340, minSecondary: 400 } as const;
+
+export const SPLIT_DIVIDER_WIDTH = 9;
+export const SPLIT_ACCESSIBILITY_STEP = 24;
+
+export function splitAccessibilityDelta(actionName: string): number | null {
+  if (actionName === 'increment') return SPLIT_ACCESSIBILITY_STEP;
+  if (actionName === 'decrement') return -SPLIT_ACCESSIBILITY_STEP;
+  return null;
+}
+
+export function canFitSplit(
+  containerSize: number,
+  { minPrimary, minSecondary }: Pick<SplitRatioInput, 'minPrimary' | 'minSecondary'>,
+): boolean {
+  return containerSize >= minPrimary + SPLIT_DIVIDER_WIDTH + minSecondary;
+}
+
+export function getSplitPaneSizes(
+  containerSize: number,
+  ratio: number,
+  minimums: Pick<SplitRatioInput, 'minPrimary' | 'minSecondary'>,
+): { primary: number; secondary: number; ratio: number } | null {
+  if (!canFitSplit(containerSize, minimums)) return null;
+  const contentSize = containerSize - SPLIT_DIVIDER_WIDTH;
+  const clampedRatio = clampSplitRatio({ containerSize: contentSize, ratio, ...minimums });
+  const primary = clampedRatio * contentSize;
+  return { primary, secondary: contentSize - primary, ratio: clampedRatio };
+}
 
 export function shouldUseEmbeddedQuerySplit(
   embedded: boolean,

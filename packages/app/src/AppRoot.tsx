@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Platform, View, Pressable, StyleSheet, Modal, ScrollView } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Platform,
+  View,
+  Pressable,
+  StyleSheet,
+  Modal,
+  ScrollView,
+} from 'react-native';
 import {
   Button,
   CODE_OSS_DEFAULT_THEMES,
@@ -22,7 +31,7 @@ import type {
   PacketTraceServiceStatus,
   TrapRecord,
 } from '@mibbeacon/core/client';
-import { useEngine } from './engine-context';
+import { useEngine, useEngineOwnership } from './engine-context';
 import { configureThemeStorage, useAppStore, type Tab } from './store';
 import type { RawThemeImportFile } from './theme-import';
 import type { ThemeStorageAdapter } from './theme-storage';
@@ -33,8 +42,14 @@ import {
   refreshResolverState,
   refreshAgentProfiles,
   refreshAgentGroups,
+  refreshTrapRecords,
+  invalidateTrapRecordAuthority,
+  refreshTrapReceiverStatus,
+  refreshLoadedOidLookups,
   openGlobalCatalogObject,
   respondResolverConsent,
+  disposeResolverSourceController,
+  disposeResolverCacheClearController,
 } from './actions';
 import { BrowseScreen } from './screens/BrowseScreen';
 import { QueryScreen } from './screens/QueryScreen';
@@ -43,6 +58,15 @@ import { MibsScreen } from './screens/MibsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { AgentsScreen } from './screens/AgentsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
+import type { ChartPngExport } from './components/ToolLineChart';
+import {
+  disposeToolsPersistentCollectionsController,
+  toolsPersistentCollectionsController,
+} from './tools-persistent-collections';
+import { disposeTrapPersistentCollectionsController } from './trap-persistent-collections';
+import { disposeAgentPersistentCollectionsController } from './agent-persistent-collections';
+import { disposeQueryArtifactCollectionsController } from './query-artifact-collections';
+import { disposePatternPersistentCollectionsController } from './pattern-persistent-collections';
 import { LiveMibsScreen } from './screens/LiveMibsScreen';
 import { ResponsiveLayoutProvider, useResponsiveLayout } from './responsive-context';
 import {
@@ -60,7 +84,10 @@ import { CommandPalette } from './components/CommandPalette';
 import type { CommandPaletteView } from './components/CommandPalette';
 import { ToastHost } from './components/ToastHost';
 import { MibBeaconMark } from './components/MibBeaconMark';
-import { PacketActivityLights, PacketConsole } from './components/PacketConsole';
+import { AppNavigation } from './components/AppNavigation';
+import { PacketConsole } from './components/PacketConsole';
+import { RegisteredQueryActions } from './components/RegisteredQueryActions';
+import { RegisteredResolverCacheActions } from './components/RegisteredResolverCacheActions';
 import { MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE } from './packet-console';
 import {
   createInitialFileSelection,
@@ -74,10 +101,58 @@ import {
   type PaletteCommand,
   type PaletteHistoryStorage,
 } from './command-palette';
+import { ActionRegistry, resolveActionPlatform, type AppAction } from './action-registry';
+import {
+  ActionRegistryProvider,
+  useActionPlatform,
+  useActionRegistry,
+  useActionRegistrySnapshot,
+  useRegisteredActions,
+} from './action-registry-react';
 import { acquireBrowserThemeFiles } from './theme-file-picker';
 import { prepareThemeImports } from './theme-import';
+import { PacketBootstrapCoordinator } from './packet-bootstrap-coordinator';
+import { EngineEffectHarness } from './engine-effect-harness';
+import { runEngineOwnedContinuation } from './engine-owned-continuation';
+import { cleanupAcceptedEngineHandles } from './engine-start-arbitration';
+import {
+  createBrowserNotificationAdapter,
+  notifyTrapRule,
+  notifyWatchAlert,
+  type HostNotificationAdapter,
+} from './notification-delivery';
 
 const TABBAR_BASE_PADDING = 6;
+
+function authorizeActionConfirmation(action: AppAction): boolean | Promise<boolean> {
+  const confirmation = action.confirmation;
+  if (confirmation.kind === 'none') return true;
+  const prompt = [confirmation.title, confirmation.description].filter(Boolean).join('\n\n');
+  if (Platform.OS === 'web' && typeof globalThis.confirm === 'function') {
+    return globalThis.confirm(prompt);
+  }
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const settle = (accepted: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(accepted);
+    };
+    Alert.alert(
+      confirmation.title,
+      confirmation.description,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => settle(false) },
+        {
+          text: 'Continue',
+          style: confirmation.kind === 'destructive' ? 'destructive' : 'default',
+          onPress: () => settle(true),
+        },
+      ],
+      { cancelable: true, onDismiss: () => settle(false) },
+    );
+  });
+}
 
 export interface HostUpdateStatus {
   phase:
@@ -111,6 +186,8 @@ export interface AppHostAdapter {
   updates?: HostUpdateAdapter;
   subscribeOpenFiles?: (listener: (files: RawSelectedFile[]) => void) => () => void;
   savePacketCapture?: (capture: PacketCaptureExportReader) => Promise<void>;
+  shareChartPng?: (capture: ChartPngExport) => Promise<void>;
+  notifications?: HostNotificationAdapter;
   themeStorage?: ThemeStorageAdapter;
   pickThemeFiles?: () => Promise<RawThemeImportFile[]>;
 }
@@ -157,6 +234,8 @@ function ThemedAppRoot({
   const installedThemes = useAppStore((state) => state.installedThemes);
   const densityMode = useAppStore((state) => state.densityMode);
   const [previewTheme, setPreviewTheme] = useState<ThemeDescriptor | null>(null);
+  const actionRegistry = useMemo(() => new ActionRegistry(), []);
+  const actionPlatform = resolveActionPlatform(Platform.OS, Boolean(host));
   useEffect(() => {
     void configureThemeStorage(host?.themeStorage ?? paletteHistoryStorage);
   }, [host?.themeStorage, paletteHistoryStorage]);
@@ -178,13 +257,15 @@ function ThemedAppRoot({
         lightTheme={lightTheme}
         darkTheme={darkTheme}
       >
-        <ResponsiveAppRoot
-          host={host}
-          paletteHistoryStorage={paletteHistoryStorage}
-          safeAreaBottomInset={safeAreaBottomInset}
-          onPreviewTheme={setPreviewTheme}
-          onClearThemePreview={() => setPreviewTheme(null)}
-        />
+        <ActionRegistryProvider registry={actionRegistry} platform={actionPlatform}>
+          <ResponsiveAppRoot
+            host={host}
+            paletteHistoryStorage={paletteHistoryStorage}
+            safeAreaBottomInset={safeAreaBottomInset}
+            onPreviewTheme={setPreviewTheme}
+            onClearThemePreview={() => setPreviewTheme(null)}
+          />
+        </ActionRegistryProvider>
       </ThemeProvider>
     </SafeAreaBottomInsetProvider>
   );
@@ -204,6 +285,13 @@ function ResponsiveAppRoot({
   onClearThemePreview: () => void;
 }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
+  const actionRegistry = useActionRegistry();
+  const actionPlatform = useActionPlatform();
+  const notificationAdapter = useMemo(
+    () => host?.notifications ?? createBrowserNotificationAdapter(),
+    [host?.notifications],
+  );
   const t = useTheme();
   const { mode } = useResponsiveLayout();
   const tab = useAppStore((s) => s.tab);
@@ -227,15 +315,12 @@ function ResponsiveAppRoot({
   );
   const [browseSearchFocusRequest, setBrowseSearchFocusRequest] = useState(0);
   const [agentProfileCreateRequest, setAgentProfileCreateRequest] = useState(0);
-  const handleAgentProfileCreateRequest = useCallback(
-    () => setAgentProfileCreateRequest(0),
-    [],
-  );
+  const handleAgentProfileCreateRequest = useCallback(() => setAgentProfileCreateRequest(0), []);
   const resolvedPaletteStorage = useMemo(
     () => paletteHistoryStorage ?? createBrowserPaletteHistoryStorage(),
     [paletteHistoryStorage],
   );
-  const paletteCommands = useMemo(
+  const legacyPaletteCommands = useMemo(
     () => getPaletteCommands(tabs, Boolean(host?.canOpenWindow)),
     [host?.canOpenWindow, tabs],
   );
@@ -248,6 +333,7 @@ function ResponsiveAppRoot({
     },
     [setTab],
   );
+  const navigateToQuery = useCallback(() => selectTab('query'), [selectTab]);
 
   useEffect(() => {
     if (mode !== 'compact') setMoreOpen(false);
@@ -276,14 +362,14 @@ function ResponsiveAppRoot({
   useEffect(() => {
     if (!host?.subscribeOpenFiles) return;
     return host.subscribeOpenFiles((files) => {
-      void (async () => {
-        const state = useAppStore.getState();
-        try {
-          const review = await stageAcquiredFileImport(
-            { status: 'selected', files },
-            state.modules,
-            (module) => engine.mibs.replacementGroup(module),
-          );
+      const state = useAppStore.getState();
+      void runEngineOwnedContinuation(
+        () =>
+          stageAcquiredFileImport({ status: 'selected', files }, state.modules, (module) =>
+            engine.mibs.replacementGroup(module),
+          ),
+        ownsEngine,
+        (review) => {
           state.setFileImportDraft({
             review,
             selected: [...createInitialFileSelection(review)],
@@ -295,15 +381,16 @@ function ResponsiveAppRoot({
           if (Platform.OS === 'web' && typeof window !== 'undefined') {
             window.history.replaceState(null, '', routeForTab('browse'));
           }
-        } catch (cause) {
+        },
+        (cause) => {
           console.error('OS_OPEN_FILE_REVIEW_FAILED', cause);
           state.setResolverError(
             `Could not review the file opened by the operating system: ${cause instanceof Error ? cause.message : String(cause)}`,
           );
-        }
-      })();
+        },
+      );
     });
-  }, [engine, host]);
+  }, [engine, host, ownsEngine]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -368,8 +455,7 @@ function ResponsiveAppRoot({
             }
           })();
         },
-        createAgentProfile: () =>
-          setAgentProfileCreateRequest((request) => request + 1),
+        createAgentProfile: () => setAgentProfileCreateRequest((request) => request + 1),
         showShortcuts: () => setShortcutsOpen(true),
         newWindow: host?.canOpenWindow ? host.newWindow : undefined,
         prepareQuery: state.setQueryOperation,
@@ -378,6 +464,40 @@ function ResponsiveAppRoot({
       return keepOpen ? false : undefined;
     },
     [host, selectTab],
+  );
+
+  const staticActions = useMemo<AppAction[]>(
+    () =>
+      legacyPaletteCommands.map((command) => ({
+        ...command,
+        keyboard: { suitable: true },
+        palette: { exposed: true },
+        enabled: { value: true },
+        confirmation: { kind: 'none' },
+        platforms: ['web', 'desktop', 'native'] as const,
+        execute: () => executePaletteCommand(command),
+      })),
+    [executePaletteCommand, legacyPaletteCommands],
+  );
+  useRegisteredActions(staticActions);
+  const registeredActions = useActionRegistrySnapshot();
+  const paletteCommands = useMemo(
+    () =>
+      registeredActions.filter(
+        (action) => action.palette.exposed && action.platforms.includes(actionPlatform),
+      ),
+    [actionPlatform, registeredActions],
+  );
+
+  const executeRegisteredAction = useCallback(
+    (action: AppAction) =>
+      actionRegistry.execute(action.id, actionPlatform, authorizeActionConfirmation),
+    [actionPlatform, actionRegistry],
+  );
+  const executeRegisteredActionById = useCallback(
+    (actionId: string) =>
+      actionRegistry.execute(actionId, actionPlatform, authorizeActionConfirmation),
+    [actionPlatform, actionRegistry],
   );
 
   const commitTheme = useCallback(
@@ -398,10 +518,11 @@ function ResponsiveAppRoot({
 
   const openPaletteOid = useCallback(
     async (oid: string) => {
-      await openGlobalCatalogObject(engine, oid);
+      await openGlobalCatalogObject(engine, oid, ownsEngine);
+      if (!ownsEngine()) return;
       selectTab('browse');
     },
-    [engine, selectTab],
+    [engine, ownsEngine, selectTab],
   );
 
   useEffect(() => {
@@ -411,37 +532,45 @@ function ResponsiveAppRoot({
 
   useEffect(() => {
     const store = useAppStore.getState;
-    engine.system
-      .info()
-      .then(setInfo)
-      .catch(() => setInfo(null));
-    void refreshModules(engine);
-    void refreshAgentProfiles(engine);
-    void refreshAgentGroups(engine);
-    void loadChildren(engine, '');
-    void refreshResolverState(engine).catch((error: unknown) =>
-      store().setResolverError(error instanceof Error ? error.message : String(error)),
-    );
-    void engine.traps.status().then((status) =>
-      store().setReceiver({
-        running: status.running,
-        ...(status.port ? { port: status.port } : {}),
-        count: status.count,
-        drops: status.drops,
-        ...(status.transports ? { transports: status.transports } : {}),
-      }),
-    );
-    void engine.traps.list().then((records) => {
-      store().setTrapRecords(records);
+    toolsPersistentCollectionsController(engine, ownsEngine);
+    const lifetime = new EngineEffectHarness(ownsEngine);
+    const ownsToken = (token: Parameters<EngineEffectHarness['owns']>[0]) => lifetime.owns(token);
+    const applyToken = (token: Parameters<EngineEffectHarness['apply']>[0], mutation: () => void) =>
+      lifetime.apply(token, mutation);
+    const packetBootstrap = new PacketBootstrapCoordinator({
+      setHistory: (events) => ownsEngine() && store().setPacketEvents(events),
+      append: (event) => ownsEngine() && store().addPacketEvent(event),
+      clear: () => ownsEngine() && store().clearPacketEvents(),
+      setStatus: (status) => ownsEngine() && store().setPacketStatus(status),
+      clearStatus: () => ownsEngine() && store().setPacketStatus(null),
     });
-    void Promise.all([engine.packets.history(), engine.packets.status()]).then(
-      ([packets, status]) => {
-        store().setPacketEvents(packets);
-        store().setPacketStatus(status);
-      },
-    );
-
+    packetBootstrap.cleared();
+    packetBootstrap.clearStatus();
+    store().resetEngineSessionTransientState();
+    setInfo(null);
+    store().setModules([]);
+    store().setAgentProfiles([]);
+    store().setAgentGroups([]);
+    store().selectAgentProfile(null);
+    store().selectAgentGroup(null);
+    store().setResolverSettings(null);
+    store().setResolverSources([]);
+    store().setResolverCache(null);
+    store().setResolverHistory([]);
+    store().setResolverError(null);
+    store().setTrapRecords([]);
+    store().setReceiver({ running: false });
+    store().clearChildrenCache();
+    const offPackets = engine.events.subscribe('packets', (e: EngineEvent) => {
+      if (!ownsEngine()) return;
+      if (e.kind === 'packet') packetBootstrap.packet(e.payload as PacketTraceEvent);
+      else if (e.kind === 'status' || e.kind === 'persistence-warning') {
+        packetBootstrap.status(e.payload as PacketTraceServiceStatus);
+      } else if (e.kind === 'cleared') packetBootstrap.cleared();
+    });
     const offOps = engine.events.subscribe('ops', (e: EngineEvent) => {
+      const token = lifetime.capture('ops');
+      if (!ownsToken(token)) return;
       const s = store();
       if (e.handleId !== s.running) return;
       if (e.kind === 'pdu') {
@@ -487,19 +616,35 @@ function ResponsiveAppRoot({
     });
 
     const offTraps = engine.events.subscribe('traps', (e: EngineEvent) => {
+      if (e.kind === 'trap' || e.kind === 'status') lifetime.invalidate('traps');
+      if (e.kind === 'trap' || e.kind === 'removed' || e.kind === 'cleared') {
+        lifetime.invalidate('trap-records');
+        invalidateTrapRecordAuthority(engine);
+      }
+      const token = lifetime.capture('traps');
+      const eventLifetime = lifetime.capture('trap-event-lifetime');
+      if (!ownsToken(eventLifetime)) return;
       if (e.kind === 'trap') {
         store().addTrap(e.payload as TrapRecord);
-        void engine.traps.status().then((status) =>
-          store().setReceiver({
-            running: status.running,
-            ...(status.port ? { port: status.port } : {}),
-            count: status.count,
-            drops: status.drops,
-            ...(status.transports ? { transports: status.transports } : {}),
-          }),
+        void lifetime.settle(
+          token,
+          () => engine.traps.status(),
+          (status) => {
+            if (!ownsEngine()) return;
+            store().setReceiver({
+              running: status.running,
+              ...(status.port ? { port: status.port } : {}),
+              count: status.count,
+              drops: status.drops,
+              ...(status.transports ? { transports: status.transports } : {}),
+            });
+          },
         );
-      } else if (e.kind === 'rule-notification') showTrapRuleNotification(e.payload);
-      else if (e.kind === 'status') {
+      } else if (e.kind === 'rule-notification') {
+        void notifyTrapRule(notificationAdapter, store().notificationPreferences, e.payload, () =>
+          ownsToken(eventLifetime),
+        ).catch(() => undefined);
+      } else if (e.kind === 'status') {
         const status = e.payload as {
           running: boolean;
           port?: number;
@@ -520,42 +665,119 @@ function ResponsiveAppRoot({
     });
 
     const offResolver = engine.events.subscribe('resolver', (e: EngineEvent) => {
-      void handleResolverEvent(engine, e).then(async () => {
-        if (!['done', 'partial', 'error', 'cancelled', 'expired'].includes(e.kind)) return;
-        await Promise.all([refreshModules(engine), refreshResolverState(engine)]);
-        store().clearChildrenCache();
-        await loadChildren(engine, '');
-      });
+      const terminal = ['done', 'partial', 'error', 'cancelled', 'expired'].includes(e.kind);
+      const eventToken = lifetime.capture('resolver-event-lifetime');
+      const errorToken = lifetime.begin(
+        terminal ? 'resolver-terminal-error' : `resolver-event-error:${e.handleId ?? 'global'}`,
+      );
+      const modulesToken = terminal ? lifetime.begin('modules') : null;
+      const resolverToken = terminal ? lifetime.begin('resolver') : null;
+      const childrenToken = terminal ? lifetime.begin('children') : null;
+      const ownsEvent = () => ownsToken(eventToken);
+      void handleResolverEvent(engine, e, ownsEvent, terminal)
+        .then(async () => {
+          if (!ownsEvent() || !modulesToken || !resolverToken || !childrenToken) return;
+          await Promise.all([
+            refreshModules(engine, () => ownsToken(modulesToken)),
+            refreshResolverState(engine, () => ownsToken(resolverToken), true),
+          ]);
+          await refreshLoadedOidLookups(engine, () => ownsEvent() && ownsToken(modulesToken));
+          if (!ownsEvent() || !ownsToken(childrenToken)) return;
+          store().clearChildrenCache();
+          await loadChildren(engine, '', () => ownsToken(childrenToken));
+        })
+        .catch((error: unknown) => {
+          applyToken(errorToken, () =>
+            store().setResolverError(error instanceof Error ? error.message : String(error)),
+          );
+        });
     });
 
     const offTools = engine.events.subscribe('tools', (e: EngineEvent) => {
+      const eventToken = lifetime.capture('tools-event');
+      if (!ownsToken(eventToken)) return;
       if (e.kind === 'watch-alert') {
-        showWatchNotification(e.payload);
+        void notifyWatchAlert(notificationAdapter, store().notificationPreferences, e.payload, () =>
+          ownsToken(eventToken),
+        ).catch(() => undefined);
       } else if (e.kind === 'resolver-changed') {
-        void refreshResolverState(engine);
+        const resolverToken = lifetime.begin('resolver');
+        void refreshResolverState(engine, () => ownsToken(resolverToken), true).catch(
+          () => undefined,
+        );
       } else if (e.kind === 'catalog-changed') {
-        void refreshModules(engine).then(async () => {
-          store().clearChildrenCache();
-          await loadChildren(engine, '');
-        });
+        const modulesToken = lifetime.begin('modules');
+        const childrenToken = lifetime.begin('children');
+        void refreshModules(engine, () => ownsToken(modulesToken))
+          .then(async () => {
+            if (!ownsToken(eventToken) || !ownsToken(childrenToken)) return;
+            store().clearChildrenCache();
+            await loadChildren(engine, '', () => ownsToken(childrenToken));
+          })
+          .catch(() => undefined);
       }
     });
 
-    const offPackets = engine.events.subscribe('packets', (e: EngineEvent) => {
-      if (e.kind === 'packet') store().addPacketEvent(e.payload as PacketTraceEvent);
-      else if (e.kind === 'status' || e.kind === 'persistence-warning') {
-        store().setPacketStatus(e.payload as PacketTraceServiceStatus);
-      } else if (e.kind === 'cleared') store().clearPacketEvents();
+    const historyToken = packetBootstrap.captureHistory();
+    void engine.packets
+      .history()
+      .then((packets) => packetBootstrap.applyHistory(historyToken, packets))
+      .catch(() => undefined);
+    const statusToken = packetBootstrap.captureStatus();
+    void engine.packets
+      .status()
+      .then((status) => packetBootstrap.applyStatus(statusToken, status))
+      .catch(() => undefined);
+
+    void lifetime.runLatest(
+      'info',
+      () => engine.system.info(),
+      (nextInfo) => ownsEngine() && setInfo(nextInfo),
+      () => ownsEngine() && setInfo(null),
+    );
+    const modulesToken = lifetime.begin('modules');
+    void refreshModules(engine, () => ownsToken(modulesToken)).catch(() => undefined);
+    const profilesToken = lifetime.begin('agent-profiles');
+    void refreshAgentProfiles(engine, () => ownsToken(profilesToken)).catch(() => undefined);
+    const groupsToken = lifetime.begin('agent-groups');
+    void refreshAgentGroups(engine, () => ownsToken(groupsToken)).catch(() => undefined);
+    const childrenToken = lifetime.begin('children');
+    void loadChildren(engine, '', () => ownsToken(childrenToken)).catch(() => undefined);
+    const resolverToken = lifetime.begin('resolver');
+    void refreshResolverState(engine, () => ownsToken(resolverToken)).catch((error: unknown) => {
+      applyToken(resolverToken, () =>
+        store().setResolverError(error instanceof Error ? error.message : String(error)),
+      );
     });
+    const trapStatusToken = lifetime.begin('traps');
+    void refreshTrapReceiverStatus(engine, () => ownsToken(trapStatusToken)).catch(() => undefined);
+    const trapRecordsToken = lifetime.begin('trap-records');
+    void refreshTrapRecords(engine, {}, () => ownsToken(trapRecordsToken)).catch(() => undefined);
 
     return () => {
+      const accepted = store();
+      void cleanupAcceptedEngineHandles(engine, {
+        running: accepted.running,
+        importHandle: accepted.importHandle,
+        sourceTestHandles: accepted.sourceTestHandles,
+        sourcePreviewHandle: accepted.sourcePreviewHandle,
+      });
+      lifetime.dispose();
+      disposeResolverSourceController(engine);
+      disposeResolverCacheClearController(engine);
+      disposeToolsPersistentCollectionsController(engine);
+      disposeTrapPersistentCollectionsController(engine);
+      disposeAgentPersistentCollectionsController(engine);
+      disposeQueryArtifactCollectionsController(engine);
+      disposePatternPersistentCollectionsController(engine);
+      packetBootstrap.dispose();
       offOps();
       offTraps();
       offResolver();
       offTools();
       offPackets();
     };
-  }, [engine]);
+  }, [engine, notificationAdapter, ownsEngine]);
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
@@ -597,6 +819,8 @@ function ResponsiveAppRoot({
       ) : null}
 
       <View style={styles.workbench}>
+        <RegisteredQueryActions navigateToQuery={navigateToQuery} />
+        <RegisteredResolverCacheActions />
         {mode !== 'compact' ? (
           <AppNavigation
             expanded={mode === 'expanded'}
@@ -627,11 +851,14 @@ function ResponsiveAppRoot({
           {activeTab === 'query' ? <QueryScreen info={info} /> : null}
           {activeTab === 'agents' ? <AgentsScreen info={info} /> : null}
           {activeTab === 'traps' ? <TrapsScreen info={info} /> : null}
-          {activeTab === 'tools' ? <ToolsScreen info={info} /> : null}
+          {activeTab === 'tools' ? (
+            <ToolsScreen info={info} shareChartPng={host?.shareChartPng} />
+          ) : null}
           {activeTab === 'mibs' ? <MibsScreen /> : null}
           {activeTab === 'settings' ? (
             <SettingsScreen
               host={host}
+              executeAction={executeRegisteredActionById}
               onBrowseThemes={() => {
                 setPaletteView('theme-catalog');
                 setPaletteOpen(true);
@@ -648,7 +875,9 @@ function ResponsiveAppRoot({
         visible={Boolean(consent)}
         missingModules={consent?.missingModules ?? []}
         sourceHosts={consent?.sourceHosts ?? []}
-        onRespond={(allow, askAgain) => void respondResolverConsent(engine, allow, askAgain)}
+        onRespond={(allow, askAgain) =>
+          void respondResolverConsent(engine, allow, askAgain, ownsEngine)
+        }
       />
 
       <ShortcutOverlay visible={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
@@ -664,7 +893,7 @@ function ResponsiveAppRoot({
         openVsxEnabled={openVsxThemeCatalogEnabled}
         onClose={closePalette}
         onViewChange={setPaletteView}
-        onExecute={executePaletteCommand}
+        onExecute={executeRegisteredAction}
         onOpenOid={openPaletteOid}
         onPreviewTheme={onPreviewTheme}
         onClearThemePreview={onClearThemePreview}
@@ -703,223 +932,6 @@ function ResponsiveAppRoot({
       ) : null}
 
       <ToastHost />
-    </View>
-  );
-}
-
-function showTrapRuleNotification(payload: unknown): void {
-  const value = payload as {
-    record?: TrapRecord;
-    rules?: { name: string }[];
-  };
-  const NotificationApi = (
-    globalThis as unknown as {
-      Notification?: {
-        permission: 'default' | 'granted' | 'denied';
-        requestPermission(): Promise<'default' | 'granted' | 'denied'>;
-        new (title: string, options?: { body?: string }): unknown;
-      };
-    }
-  ).Notification;
-  if (!NotificationApi || !value.record) return;
-  const display = () =>
-    new NotificationApi(value.record?.trapName ?? value.record?.trapOid ?? 'SNMP notification', {
-      body: `${value.record?.sourceAddress ?? 'unknown source'} · ${value.rules?.map(({ name }) => name).join(', ') ?? 'matched rule'}`,
-    });
-  if (NotificationApi.permission === 'granted') display();
-  else if (NotificationApi.permission === 'default') {
-    void NotificationApi.requestPermission().then((permission) => {
-      if (permission === 'granted') display();
-    });
-  }
-}
-
-function showWatchNotification(payload: unknown): void {
-  const value = payload as { name?: string; value?: number; operator?: string; threshold?: number };
-  const NotificationApi = (
-    globalThis as unknown as {
-      Notification?: {
-        permission?: string;
-        new (title: string, options?: { body?: string }): unknown;
-      };
-    }
-  ).Notification;
-  if (!NotificationApi || NotificationApi.permission !== 'granted') return;
-  new NotificationApi(`Watch threshold: ${value.name ?? 'MIB Beacon'}`, {
-    body: `${value.value ?? 'value'} ${value.operator ?? ''} ${value.threshold ?? ''}`.trim(),
-  });
-}
-
-function NavigationItem({
-  item,
-  active,
-  expanded,
-  badgeCount,
-  onPress,
-}: {
-  item: NavigationTab;
-  active: boolean;
-  expanded: boolean;
-  badgeCount?: number;
-  onPress: () => void;
-}) {
-  const t = useTheme();
-  const [hovered, setHovered] = useState(false);
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={item.label}
-      accessibilityState={{ selected: active }}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={({ pressed }) => [
-        styles.navItem,
-        expanded ? styles.navItemExpanded : styles.navItemRail,
-        {
-          backgroundColor: active ? t.accentSoft : pressed ? t.surfaceAlt : 'transparent',
-          borderColor: active ? t.accent : 'transparent',
-        },
-      ]}
-    >
-      <View style={styles.navGlyphWrap}>
-        <Text style={[styles.navGlyph, { color: active ? t.accent : t.textDim }]}>
-          {item.glyph}
-        </Text>
-        {badgeCount ? (
-          <View style={[styles.badge, { backgroundColor: t.accent }]}>
-            <Text style={styles.badgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
-          </View>
-        ) : null}
-      </View>
-      {expanded ? (
-        <Text style={[styles.navLabel, { color: active ? t.text : t.textDim }]}>{item.label}</Text>
-      ) : null}
-      {!expanded && hovered ? (
-        <View style={[styles.navTooltip, { backgroundColor: t.surfaceAlt, borderColor: t.border }]}>
-          <Text style={[styles.navTooltipText, { color: t.text }]}>{item.label}</Text>
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
-
-function AppNavigation({
-  tabs,
-  expanded,
-  tab,
-  trapCount,
-  info,
-  onSelect,
-  onNewWindow,
-  onCommands,
-  onShortcuts,
-}: {
-  tabs: NavigationTab[];
-  expanded: boolean;
-  tab: Tab;
-  trapCount: number;
-  info: EngineInfo | null;
-  onSelect: (tab: Tab) => void;
-  onNewWindow?: () => void;
-  onCommands: () => void;
-  onShortcuts: () => void;
-}) {
-  const t = useTheme();
-  return (
-    <View
-      nativeID={expanded ? 'app-sidebar-navigation' : 'app-rail-navigation'}
-      style={[
-        styles.sidebar,
-        expanded ? styles.sidebarExpanded : styles.sidebarRail,
-        {
-          backgroundColor: expanded
-            ? t.workbench.sideBarBackground
-            : t.workbench.activityBarBackground,
-          borderRightColor: t.workbench.panelBorder,
-        },
-      ]}
-    >
-      <View style={expanded ? styles.brandLockup : styles.brandRail}>
-        <MibBeaconMark size={38} />
-        {expanded ? (
-          <View style={styles.brandCopy}>
-            <Text style={[styles.brandTitle, { color: t.workbench.sideBarForeground }]}>
-              MIB Beacon
-            </Text>
-            <Text style={[styles.brandKicker, { color: t.textDim }]}>Network workbench</Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.navItems}>
-        {tabs.map((item) => (
-          <NavigationItem
-            key={item.key}
-            item={item}
-            active={item.key === tab}
-            expanded={expanded}
-            badgeCount={item.key === 'traps' ? trapCount : undefined}
-            onPress={() => onSelect(item.key)}
-          />
-        ))}
-      </View>
-      <View style={styles.sidebarFooter}>
-        <View style={styles.packetLightsDesktop}>
-          <PacketActivityLights compact={!expanded} />
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Command palette"
-          onPress={onCommands}
-          style={({ pressed }) => [
-            styles.newWindow,
-            expanded ? styles.navItemExpanded : styles.navItemRail,
-            { backgroundColor: pressed ? t.surfaceAlt : 'transparent', borderColor: t.border },
-          ]}
-        >
-          <Text style={[styles.newWindowGlyph, { color: t.accent }]}>⌘</Text>
-          {expanded ? <Text style={[styles.navLabel, { color: t.text }]}>Commands</Text> : null}
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Keyboard shortcuts"
-          onPress={onShortcuts}
-          style={({ pressed }) => [
-            styles.newWindow,
-            expanded ? styles.navItemExpanded : styles.navItemRail,
-            { backgroundColor: pressed ? t.surfaceAlt : 'transparent', borderColor: t.border },
-          ]}
-        >
-          <Text style={[styles.newWindowGlyph, { color: t.accent }]}>?</Text>
-          {expanded ? <Text style={[styles.navLabel, { color: t.text }]}>Shortcuts</Text> : null}
-        </Pressable>
-        {onNewWindow ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New window"
-            onPress={onNewWindow}
-            style={({ pressed }) => [
-              styles.newWindow,
-              expanded ? styles.navItemExpanded : styles.navItemRail,
-              { backgroundColor: pressed ? t.surfaceAlt : 'transparent', borderColor: t.border },
-            ]}
-          >
-            <Text style={[styles.newWindowGlyph, { color: t.accent }]}>＋</Text>
-            {expanded ? <Text style={[styles.navLabel, { color: t.text }]}>New window</Text> : null}
-          </Pressable>
-        ) : null}
-        {expanded && info ? (
-          <View style={[styles.engineStatus, { borderTopColor: t.border }]}>
-            <View style={[styles.statusDot, { backgroundColor: t.ok }]} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.engineTitle, { color: t.text }]}>Engine ready</Text>
-              <Text style={[styles.engineMeta, { color: t.textDim }]} numberOfLines={1}>
-                {info.platform} · net-snmp {info.netSnmpVersion}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -1019,19 +1031,40 @@ function BottomNavigation({
             accessibilityLabel={item.label}
             accessibilityState={{ selected: active }}
             aria-selected={active}
-            style={styles.tab}
+            style={[
+              styles.tab,
+              active ? { backgroundColor: t.components.selected.background } : null,
+            ]}
           >
             <View>
-              <Text style={[styles.tabGlyph, { color: active ? t.accent : t.textDim }]}>
+              <Text
+                style={[
+                  styles.tabGlyph,
+                  {
+                    color: active ? t.components.selected.icon : t.workbench.activityBarForeground,
+                  },
+                ]}
+              >
                 {item.glyph}
               </Text>
               {item.key === 'traps' && trapCount > 0 ? (
-                <View style={[styles.badge, { backgroundColor: t.accent }]}>
-                  <Text style={styles.badgeText}>{trapCount > 99 ? '99+' : trapCount}</Text>
+                <View style={[styles.badge, { backgroundColor: t.components.badge.background }]}>
+                  <Text style={[styles.badgeText, { color: t.components.badge.foreground }]}>
+                    {trapCount > 99 ? '99+' : trapCount}
+                  </Text>
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.tabLabel, { color: active ? t.accent : t.textDim }]}>
+            <Text
+              style={[
+                styles.tabLabel,
+                {
+                  color: active
+                    ? t.components.selected.foreground
+                    : t.workbench.activityBarForeground,
+                },
+              ]}
+            >
               {item.label}
             </Text>
           </Pressable>
@@ -1202,56 +1235,6 @@ const styles = StyleSheet.create({
   mobileHeaderActionGlyph: { fontSize: 18, fontWeight: '800' },
   body: { flex: 1, minHeight: 0 },
   mobileBody: { paddingTop: MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE },
-  sidebar: { borderRightWidth: 1, paddingVertical: 14, alignItems: 'center', zIndex: 1 },
-  sidebarExpanded: { width: 220, paddingHorizontal: 10 },
-  sidebarRail: { width: 64, paddingHorizontal: 7 },
-  brandLockup: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-    paddingHorizontal: 5,
-  },
-  brandRail: { marginBottom: 14 },
-  brandCopy: { flex: 1, minWidth: 0 },
-  brandTitle: { fontSize: 15, fontWeight: '800' },
-  brandKicker: { fontSize: 8, fontWeight: '800', letterSpacing: 1.15, marginTop: 2 },
-  navItems: { flex: 1, alignSelf: 'stretch', gap: 5 },
-  navItem: { minHeight: 46, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
-  navItemExpanded: { borderRadius: 9, paddingHorizontal: 12, gap: 11 },
-  navItemRail: { borderRadius: 10, justifyContent: 'center', paddingHorizontal: 0 },
-  navGlyphWrap: { width: 26, alignItems: 'center' },
-  navGlyph: { fontSize: 20, lineHeight: 24, fontWeight: '700' },
-  navTooltip: {
-    position: 'absolute',
-    left: 56,
-    minHeight: 36,
-    minWidth: 96,
-    borderWidth: 1,
-    borderRadius: 7,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 20,
-  },
-  navTooltipText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
-  navLabel: { fontSize: 13, fontWeight: '700' },
-  sidebarFooter: { alignSelf: 'stretch', gap: 8 },
-  packetLightsDesktop: { minHeight: 22, alignItems: 'center', justifyContent: 'center' },
-  newWindow: { minHeight: 42, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
-  newWindowGlyph: { width: 26, textAlign: 'center', fontSize: 20, fontWeight: '700' },
-  engineStatus: {
-    borderTopWidth: 1,
-    paddingHorizontal: 5,
-    paddingTop: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  engineTitle: { fontSize: 10, fontWeight: '700' },
-  engineMeta: { fontSize: 9, marginTop: 1 },
   tabbar: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 6 },
   tab: { flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4 },
   tabGlyph: { fontSize: 20, lineHeight: 24 },

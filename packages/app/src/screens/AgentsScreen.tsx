@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Button,
@@ -15,7 +15,7 @@ import {
   useTheme,
 } from '@mibbeacon/ui';
 import type { AgentProfile, AgentTestResult, EngineInfo } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import {
   deleteAgentProfile,
   refreshAgentGroups,
@@ -28,11 +28,16 @@ import { useResponsiveLayout } from '../responsive-context';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { AgentProfileDialog } from '../components/AgentProfileDialog';
 import { agentDraftFromEditor, editAgentProfile, EMPTY_AGENT_EDITOR } from '../agent-profile-form';
+import {
+  agentCollectionStatusText,
+  agentPersistentCollectionsController,
+} from '../agent-persistent-collections';
 
 type AgentManagementSection = 'profiles' | 'groups';
 
 export function AgentsScreen({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { mode } = useResponsiveLayout();
   const profiles = useAppStore((state) => state.agentProfiles);
@@ -53,12 +58,28 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
   } | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const collections = agentPersistentCollectionsController(engine, ownsEngine);
+  const collectionState = useSyncExternalStore(
+    collections.subscribe,
+    collections.snapshot,
+    collections.snapshot,
+  );
+  const collectionBlocked = [
+    'queued',
+    'updating',
+    'error-reverted',
+    'uncertain',
+    'conflict',
+  ].includes(collectionState.phase);
 
-  const refreshGroups = useCallback(() => refreshAgentGroups(engine), [engine]);
+  const refreshGroups = useCallback(
+    () => refreshAgentGroups(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
   useEffect(() => {
-    void refreshAgentProfiles(engine);
-    void refreshGroups();
-  }, [engine, refreshGroups]);
+    void refreshAgentProfiles(engine, ownsEngine).catch(() => undefined);
+    void refreshGroups().catch(() => undefined);
+  }, [engine, ownsEngine, refreshGroups]);
 
   const reset = () => {
     setEditingId(null);
@@ -75,11 +96,13 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
   };
 
   const save = async () => {
+    if (collectionBlocked) return;
     setEditorBusy(true);
     setError(null);
     try {
       const draft = agentDraftFromEditor(editor);
-      const outcome = await saveAgentProfile(engine, editingId, draft);
+      const outcome = await saveAgentProfile(engine, editingId, draft, ownsEngine);
+      if (!ownsEngine()) return;
       const state = useAppStore.getState();
       state.pushToast({
         tone: 'success',
@@ -89,18 +112,24 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
       if (outcome.refreshError) {
         state.pushToast({
           tone: 'warn',
-          message: 'Profile saved, but the list could not be refreshed. Confirmed values are shown.',
+          message:
+            'Profile saved, but the list could not be refreshed. Confirmed values are shown.',
         });
       }
     } catch (caught) {
+      if (!ownsEngine()) return;
+      setEditor((current) => ({ ...current, community: '', authKey: '', privKey: '' }));
       const originalMessage = caught instanceof Error ? caught.message : String(caught);
       let message = editingId
         ? originalMessage
         : `${originalMessage} — The create outcome could not be confirmed. Check the list before retrying.`;
       if (editingId) {
         try {
-          const confirmed = await engine.agents.get(editingId);
-          await refreshAgentProfiles(engine);
+          await collections.reconcile();
+          if (!ownsEngine()) return;
+          const confirmed = collections
+            .snapshot()
+            .profiles.find((profile) => profile.id === editingId);
           if (confirmed) {
             setEditor(editAgentProfile(confirmed));
             message = `${originalMessage} — Restored the last confirmed profile values.`;
@@ -109,13 +138,15 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
             message = `${originalMessage} — The profile no longer exists.`;
           }
         } catch {
+          if (!ownsEngine()) return;
           message = `${originalMessage} — The save outcome could not be confirmed. Retry or reopen the profile.`;
         }
       }
+      if (!ownsEngine()) return;
       setError(message);
       useAppStore.getState().pushToast({ tone: 'error', message });
     } finally {
-      setEditorBusy(false);
+      if (ownsEngine()) setEditorBusy(false);
     }
   };
 
@@ -123,7 +154,8 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
     setTestingId(id);
     setTestState(null);
     try {
-      const { result, refreshError } = await testAgentProfile(engine, id);
+      const { result, refreshError } = await testAgentProfile(engine, id, ownsEngine);
+      if (!ownsEngine()) return;
       setTestState({ profileId: id, result, error: null });
       if (refreshError) {
         useAppStore.getState().pushToast({
@@ -132,6 +164,7 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         });
       }
     } catch (caught) {
+      if (!ownsEngine()) return;
       const detail = caught as { message?: string; hint?: string };
       setTestState({
         profileId: id,
@@ -139,7 +172,7 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         error: `${detail.message ?? String(caught)}${detail.hint ? ` — ${detail.hint}` : ''}`,
       });
     } finally {
-      setTestingId(null);
+      if (ownsEngine()) setTestingId(null);
     }
   };
 
@@ -148,19 +181,23 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
     let message: string | null = null;
     let refreshWarning = false;
     try {
-      const outcome = await deleteAgentProfile(engine, profile.id);
+      const outcome = await deleteAgentProfile(engine, profile.id, ownsEngine);
+      if (!ownsEngine()) return;
       refreshWarning = outcome.refreshErrors.length > 0;
     } catch (caught) {
+      if (!ownsEngine()) return;
       const originalMessage = caught instanceof Error ? caught.message : String(caught);
       message = `${originalMessage} — The delete outcome could not be confirmed.`;
-      await Promise.allSettled([refreshAgentProfiles(engine), refreshGroups()]);
+      await Promise.allSettled([refreshAgentProfiles(engine, ownsEngine), refreshGroups()]);
+      if (!ownsEngine()) return;
       if (!useAppStore.getState().agentProfiles.some(({ id }) => id === profile.id)) {
         message = null;
       }
     } finally {
-      setDeletingId(null);
+      if (ownsEngine()) setDeletingId(null);
     }
 
+    if (!ownsEngine()) return;
     if (message) {
       useAppStore.getState().pushToast({ tone: 'error', message });
       return;
@@ -194,6 +231,49 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         actions={<Pill text={`${profiles.length} SAVED`} color={t.accent} />}
       />
       <ScrollView contentContainerStyle={styles.content}>
+        <View accessibilityLiveRegion="polite">
+          <Label
+            tone={
+              collectionState.phase === 'error-reverted' || collectionState.phase === 'conflict'
+                ? 'error'
+                : 'dim'
+            }
+          >
+            {agentCollectionStatusText(collectionState)}
+          </Label>
+        </View>
+        {['error-reverted', 'uncertain', 'conflict'].includes(collectionState.phase) ? (
+          <Row style={styles.wrap}>
+            <Button
+              title="Reconcile"
+              small
+              variant="ghost"
+              onPress={() => void collections.reconcile().catch(() => undefined)}
+            />
+            {collectionState.phase === 'error-reverted' && collectionState.retryable ? (
+              <Button
+                title="Retry"
+                small
+                onPress={() => void collections.retryFailed().catch(() => undefined)}
+              />
+            ) : null}
+            {collectionState.phase === 'uncertain' && collectionState.canAcknowledgeUncertainty ? (
+              <Button
+                title="Acknowledge uncertainty"
+                small
+                variant="ghost"
+                onPress={() => collections.acknowledgeUncertainty()}
+              />
+            ) : collectionState.phase !== 'uncertain' ? (
+              <Button
+                title="Acknowledge"
+                small
+                variant="ghost"
+                onPress={() => collections.acknowledge()}
+              />
+            ) : null}
+          </Row>
+        ) : null}
         {compact ? (
           <View
             accessibilityRole="radiogroup"
@@ -317,6 +397,9 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
           <Card style={styles.card}>
             <SectionTitle>Agent groups</SectionTitle>
             <Field label="Group name" value={groupName} onChangeText={setGroupName} />
+            {!profiles.length ? (
+              <Label tone="dim">Create a saved profile here before assembling a group.</Label>
+            ) : null}
             <Row style={styles.wrap}>
               {profiles.map((profile) => (
                 <Chip
@@ -333,17 +416,30 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
                 />
               ))}
             </Row>
+            {!groupMembers.length ? (
+              <Label tone="warn" size={11}>
+                Select at least one saved profile before creating a group.
+              </Label>
+            ) : null}
             <Button
               title="Create group"
               small
-              disabled={!groupName.trim()}
+              disabled={!groupName.trim() || !groupMembers.length || collectionBlocked}
               onPress={() =>
-                void engine.agents.groups
-                  .create({ name: groupName, agentIds: groupMembers })
+                void collections
+                  .createGroup({ name: groupName, agentIds: groupMembers }, ownsEngine)
                   .then(async () => {
+                    if (!ownsEngine()) return;
                     setGroupName('');
                     setGroupMembers([]);
                     await refreshGroups();
+                  })
+                  .catch((caught) => {
+                    if (!ownsEngine()) return;
+                    useAppStore.getState().pushToast({
+                      tone: 'error',
+                      message: caught instanceof Error ? caught.message : String(caught),
+                    });
                   })
               }
             />
@@ -359,7 +455,19 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
                   title="Delete"
                   small
                   variant="danger"
-                  onPress={() => void engine.agents.groups.delete(group.id).then(refreshGroups)}
+                  disabled={collectionBlocked}
+                  onPress={() =>
+                    void collections
+                      .deleteGroup(group.id, ownsEngine)
+                      .then(refreshGroups)
+                      .catch((caught) => {
+                        if (!ownsEngine()) return;
+                        useAppStore.getState().pushToast({
+                          tone: 'error',
+                          message: caught instanceof Error ? caught.message : String(caught),
+                        });
+                      })
+                  }
                 />
               </View>
             ))}
@@ -372,7 +480,7 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
         editor={editor}
         error={error}
         info={info}
-        busy={editorBusy}
+        busy={editorBusy || collectionBlocked}
         onEditorChange={setEditor}
         onSubmit={() => void save()}
         onClose={closeEditor}

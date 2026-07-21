@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import {
-  StyleSheet,
-  View,
-} from 'react-native';
-import { Button, Chip, Dialog, Field, Label, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+  Button,
+  Chip,
+  Dialog,
+  Field,
+  Label,
+  Pill,
+  Row,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import type {
   AuthProtocol,
   EngineInfo,
@@ -12,15 +20,45 @@ import type {
   SnmpVersion,
 } from '@mibbeacon/core/client';
 import { validateVarbindInput } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore, type AgentForm } from '../store';
-import { sendNotification } from '../actions';
+import { refreshAgentProfiles, saveAgentProfile, sendNotification } from '../actions';
+import {
+  agentDraftFromEditor,
+  EMPTY_AGENT_EDITOR,
+  type AgentEditorState,
+} from '../agent-profile-form';
+import { AgentProfileDialog } from './AgentProfileDialog';
 import { VarbindEditor } from './VarbindEditor';
 
 const VERSIONS: SnmpVersion[] = ['v1', 'v2c', 'v3'];
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
 const AUTHS: AuthProtocol[] = ['md5', 'sha', 'sha256', 'sha512'];
 const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
+
+function editorFromNotificationTarget(target: AgentForm): AgentEditorState {
+  return {
+    ...EMPTY_AGENT_EDITOR,
+    name: target.host ? `${target.host} notifications` : 'Notification target',
+    host: target.host,
+    port: target.port,
+    transport: target.transport,
+    version: target.version,
+    timeoutMs: target.timeoutMs,
+    retries: target.retries,
+    getBulkNonRepeaters: target.getBulkNonRepeaters,
+    getBulkMaxRepetitions: target.getBulkMaxRepetitions,
+    community: target.community,
+    user: target.v3.user,
+    level: target.v3.level,
+    authProtocol: target.v3.authProtocol,
+    authKey: target.v3.authKey,
+    privProtocol: target.v3.privProtocol,
+    privKey: target.v3.privKey,
+    context: target.v3.context,
+    contextEngineId: target.v3.contextEngineId,
+  };
+}
 
 /**
  * Trap/inform composer presented as an overlay dialog so the send history
@@ -29,6 +67,7 @@ const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
  */
 export function TrapComposerDialog({ info }: { info: EngineInfo | null }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const open = useAppStore((s) => s.trapComposerOpen);
   const form = useAppStore((s) => s.notification);
@@ -37,12 +76,47 @@ export function TrapComposerDialog({ info }: { info: EngineInfo | null }) {
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const notificationAgentId = useAppStore((s) => s.notificationAgentId);
   const [trapName, setTrapName] = useState<string | null>(null);
+  const [targetEditor, setTargetEditor] = useState<AgentEditorState | null>(null);
+  const [targetBusy, setTargetBusy] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
   const update = useAppStore.getState().updateNotification;
   const setVarbinds = useAppStore.getState().setNotificationVarbinds;
   const setTarget = (patch: Partial<AgentForm>) => update({ target: { ...form.target, ...patch } });
   const setV3 = (patch: Partial<AgentForm['v3']>) =>
     setTarget({ v3: { ...form.target.v3, ...patch } });
   const close = () => useAppStore.getState().setTrapComposerOpen(false);
+  const openTargetEditor = () => {
+    setTargetEditor(editorFromNotificationTarget(form.target));
+    setTargetError(null);
+  };
+  const closeTargetEditor = () => {
+    if (targetBusy) return;
+    setTargetEditor(null);
+    setTargetError(null);
+  };
+  const createNotificationTarget = async () => {
+    if (!targetEditor || targetBusy || !ownsEngine()) return;
+    setTargetBusy(true);
+    setTargetError(null);
+    try {
+      const { profile: created } = await saveAgentProfile(
+        engine,
+        null,
+        agentDraftFromEditor(targetEditor),
+        ownsEngine,
+      );
+      if (!ownsEngine()) return;
+      await refreshAgentProfiles(engine, ownsEngine);
+      if (!ownsEngine()) return;
+      useAppStore.getState().setNotificationAgentId(created.id);
+      useAppStore.getState().pushToast({ tone: 'success', message: 'Notification target saved' });
+      setTargetEditor(null);
+    } catch (caught) {
+      if (ownsEngine()) setTargetError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (ownsEngine()) setTargetBusy(false);
+    }
+  };
 
   const trapOidError = /^\d+(?:\.\d+)+$/.test(form.trapOid.trim())
     ? null
@@ -97,260 +171,302 @@ export function TrapComposerDialog({ info }: { info: EngineInfo | null }) {
   }, [engine, form.trapOid, open, trapOidError]);
 
   const send = async () => {
-    await sendNotification(engine);
-    if (!useAppStore.getState().sendError) close();
+    await sendNotification(engine, ownsEngine);
+    if (ownsEngine() && !useAppStore.getState().sendError) close();
   };
 
   return (
-    <Dialog
-      visible={open}
-      onRequestClose={close}
-      title="Compose notification"
-      subtitle="Destination, envelope, and payload for a trap or inform."
-      dismissable={!busy}
-      footer={
-        <>
-          {error || formValidationError ? (
-            <View style={styles.footerMessages}>
-              {error ? <Label tone="error">{error}</Label> : null}
-              {formValidationError ? <Label tone="error">{formValidationError}</Label> : null}
-            </View>
-          ) : null}
-          <Button title="Cancel" variant="ghost" disabled={busy} onPress={close} />
-          <Button
-            title={`Send ${form.kind}`}
-            loading={busy}
-            loadingTitle="Transmitting…"
-            disabled={!!formValidationError}
-            onPress={() => void send()}
-          />
-        </>
-      }
-    >
-      <View style={styles.group}>
-        <View style={styles.groupTitle}>
-          <SectionTitle>Destination</SectionTitle>
-          <Pill text="UDP" color={t.accent} />
-        </View>
-        <Row style={styles.wrap}>
-          <Chip
-            label="Ad hoc"
-            active={!notificationAgentId}
-            onPress={() => useAppStore.getState().setNotificationAgentId(null)}
-          />
-          {agentProfiles.map((profile) => (
-            <Chip
-              key={profile.id}
-              label={profile.name}
-              active={notificationAgentId === profile.id}
-              onPress={() => useAppStore.getState().setNotificationAgentId(profile.id)}
-            />
-          ))}
-        </Row>
-        {notificationAgentId ? (
-          <Label tone="ok">
-            Credentials are resolved inside the engine from the saved agent profile.
-          </Label>
-        ) : (
-          <Row>
-            <Field
-              label="Host"
-              value={form.target.host}
-              placeholder="192.0.2.10"
-              onChangeText={(host) => setTarget({ host })}
-            />
-            <View style={{ width: 88 }}>
-              <Field
-                label="Port"
-                value={form.target.port}
-                keyboardType="number-pad"
-                onChangeText={(port) => setTarget({ port })}
-              />
-            </View>
-          </Row>
-        )}
-        {!notificationAgentId ? (
+    <>
+      <Dialog
+        visible={open}
+        onRequestClose={close}
+        title="Compose notification"
+        subtitle="Destination, envelope, and payload for a trap or inform."
+        dismissable={!busy}
+        footer={
           <>
-            <Row>
-              {VERSIONS.map((version) => (
-                <Chip
-                  key={version}
-                  label={version}
-                  active={form.target.version === version}
-                  onPress={() => {
-                    setTarget({ version });
-                    if (version === 'v1' && form.kind === 'inform') update({ kind: 'trap' });
-                  }}
-                />
-              ))}
-            </Row>
-            {form.target.version !== 'v3' ? (
-              <Field
-                label="Community"
-                value={form.target.community}
-                onChangeText={(community) => setTarget({ community })}
-              />
-            ) : (
-              <>
-                <Field
-                  label="User"
-                  value={form.target.v3.user}
-                  onChangeText={(user) => setV3({ user })}
-                />
-                <Row style={styles.wrap}>
-                  {LEVELS.map((level) => (
-                    <Chip
-                      key={level}
-                      label={level}
-                      active={form.target.v3.level === level}
-                      onPress={() => setV3({ level })}
-                    />
-                  ))}
-                </Row>
-                {form.target.v3.level !== 'noAuthNoPriv' ? (
-                  <>
-                    <Row style={styles.wrap}>
-                      {AUTHS.map((authProtocol) => (
-                        <Chip
-                          key={authProtocol}
-                          label={authProtocol}
-                          active={form.target.v3.authProtocol === authProtocol}
-                          onPress={() => setV3({ authProtocol })}
-                        />
-                      ))}
-                    </Row>
-                    <Field
-                      label="Auth key"
-                      secureTextEntry
-                      value={form.target.v3.authKey}
-                      onChangeText={(authKey) => setV3({ authKey })}
-                    />
-                  </>
-                ) : null}
-                {form.target.v3.level === 'authPriv' ? (
-                  <>
-                    <Row style={styles.wrap}>
-                      {PRIVS.map((privProtocol) => {
-                        const disabled = privProtocol === 'des' && desOff;
-                        return (
-                          <Chip
-                            key={privProtocol}
-                            label={disabled ? 'des (n/a)' : privProtocol}
-                            active={form.target.v3.privProtocol === privProtocol}
-                            onPress={disabled ? undefined : () => setV3({ privProtocol })}
-                          />
-                        );
-                      })}
-                    </Row>
-                    <Field
-                      label="Privacy key"
-                      secureTextEntry
-                      value={form.target.v3.privKey}
-                      onChangeText={(privKey) => setV3({ privKey })}
-                    />
-                  </>
-                ) : null}
-              </>
-            )}
+            {error || formValidationError ? (
+              <View style={styles.footerMessages}>
+                {error ? <Label tone="error">{error}</Label> : null}
+                {formValidationError ? <Label tone="error">{formValidationError}</Label> : null}
+              </View>
+            ) : null}
+            <Button title="Cancel" variant="ghost" disabled={busy} onPress={close} />
+            <Button
+              title={`Send ${form.kind}`}
+              loading={busy}
+              loadingTitle="Transmitting…"
+              disabled={!!formValidationError}
+              onPress={() => void send()}
+            />
           </>
-        ) : null}
-      </View>
-
-      <View style={styles.group}>
-        <SectionTitle>Notification envelope</SectionTitle>
-        <Row>
-          <Chip label="Trap" active={form.kind === 'trap'} onPress={() => update({ kind: 'trap' })} />
-          <Chip
-            label={form.target.version === 'v1' ? 'Inform · v2+' : 'Inform'}
-            active={form.kind === 'inform'}
-            onPress={form.target.version === 'v1' ? undefined : () => update({ kind: 'inform' })}
-          />
-        </Row>
-        <Field
-          label="Trap OID"
-          value={form.trapOid}
-          onChangeText={(trapOid) => update({ trapOid })}
-          placeholder="1.3.6.1.6.3.1.1.5.3"
-        />
-        {trapName ? (
-          <Label tone="ok" size={11}>
-            Resolved as {trapName}
-          </Label>
-        ) : null}
-        <Row>
-          <Field
-            label="sysUpTime ticks (optional)"
-            value={form.upTime}
-            keyboardType="number-pad"
-            onChangeText={(upTime) => update({ upTime })}
-          />
-          {form.target.version === 'v1' ? (
+        }
+      >
+        <View style={styles.group}>
+          <View style={styles.groupTitle}>
+            <SectionTitle>Destination</SectionTitle>
+            <Pill text="UDP" color={t.accent} />
+          </View>
+          <Row style={styles.wrap}>
+            <Chip
+              label="Ad hoc"
+              active={!notificationAgentId}
+              onPress={() => useAppStore.getState().setNotificationAgentId(null)}
+            />
+            {agentProfiles.map((profile) => (
+              <Chip
+                key={profile.id}
+                label={profile.name}
+                active={notificationAgentId === profile.id}
+                onPress={() => useAppStore.getState().setNotificationAgentId(profile.id)}
+              />
+            ))}
+          </Row>
+          <Row style={styles.wrap}>
+            <Button
+              title="Save and use notification target"
+              small
+              variant="ghost"
+              onPress={openTargetEditor}
+            />
+          </Row>
+          {!agentProfiles.length ? (
+            <Label tone="dim">
+              No saved notification targets yet. Create one here to keep composing.
+            </Label>
+          ) : null}
+          {notificationAgentId ? (
+            <Label tone="ok">
+              Credentials are resolved inside the engine from the saved agent profile.
+            </Label>
+          ) : (
+            <Row>
+              <Field
+                label="Host"
+                value={form.target.host}
+                placeholder="192.0.2.10"
+                onChangeText={(host) => setTarget({ host })}
+              />
+              <View style={{ width: 88 }}>
+                <Field
+                  label="Port"
+                  value={form.target.port}
+                  keyboardType="number-pad"
+                  onChangeText={(port) => setTarget({ port })}
+                />
+              </View>
+            </Row>
+          )}
+          {!notificationAgentId ? (
             <>
-              <Field
-                label="v1 agent address"
-                value={form.agentAddress}
-                onChangeText={(agentAddress) => update({ agentAddress })}
-              />
-              <Field
-                label="v1 enterprise OID"
-                value={form.v1Enterprise}
-                onChangeText={(v1Enterprise) => update({ v1Enterprise })}
-              />
-              <Field
-                label="v1 generic (0–6)"
-                value={form.v1Generic}
-                keyboardType="number-pad"
-                onChangeText={(v1Generic) => update({ v1Generic })}
-              />
-              <Field
-                label="v1 specific"
-                value={form.v1Specific}
-                keyboardType="number-pad"
-                onChangeText={(v1Specific) => update({ v1Specific })}
-              />
+              <Row>
+                {VERSIONS.map((version) => (
+                  <Chip
+                    key={version}
+                    label={version}
+                    active={form.target.version === version}
+                    onPress={() => {
+                      setTarget({ version });
+                      if (version === 'v1' && form.kind === 'inform') update({ kind: 'trap' });
+                    }}
+                  />
+                ))}
+              </Row>
+              {form.target.version !== 'v3' ? (
+                <Field
+                  label="Community"
+                  value={form.target.community}
+                  onChangeText={(community) => setTarget({ community })}
+                />
+              ) : (
+                <>
+                  <Field
+                    label="User"
+                    value={form.target.v3.user}
+                    onChangeText={(user) => setV3({ user })}
+                  />
+                  <Row style={styles.wrap}>
+                    {LEVELS.map((level) => (
+                      <Chip
+                        key={level}
+                        label={level}
+                        active={form.target.v3.level === level}
+                        onPress={() => setV3({ level })}
+                      />
+                    ))}
+                  </Row>
+                  {form.target.v3.level !== 'noAuthNoPriv' ? (
+                    <>
+                      <Row style={styles.wrap}>
+                        {AUTHS.map((authProtocol) => (
+                          <Chip
+                            key={authProtocol}
+                            label={authProtocol}
+                            active={form.target.v3.authProtocol === authProtocol}
+                            onPress={() => setV3({ authProtocol })}
+                          />
+                        ))}
+                      </Row>
+                      <Field
+                        label="Auth key"
+                        secureTextEntry
+                        value={form.target.v3.authKey}
+                        onChangeText={(authKey) => setV3({ authKey })}
+                      />
+                    </>
+                  ) : null}
+                  {form.target.v3.level === 'authPriv' ? (
+                    <>
+                      <Row style={styles.wrap}>
+                        {PRIVS.map((privProtocol) => {
+                          const disabled = privProtocol === 'des' && desOff;
+                          return (
+                            <Chip
+                              key={privProtocol}
+                              label={disabled ? 'des (n/a)' : privProtocol}
+                              active={form.target.v3.privProtocol === privProtocol}
+                              onPress={disabled ? undefined : () => setV3({ privProtocol })}
+                            />
+                          );
+                        })}
+                      </Row>
+                      <Field
+                        label="Privacy key"
+                        secureTextEntry
+                        value={form.target.v3.privKey}
+                        onChangeText={(privKey) => setV3({ privKey })}
+                      />
+                    </>
+                  ) : null}
+                </>
+              )}
             </>
           ) : null}
-        </Row>
-        <Label tone="dim" size={11}>
-          Tip: open a NOTIFICATION-TYPE node in Browse and choose “Send this trap” to prefill its
-          OID and OBJECTS payload.
-        </Label>
-      </View>
+        </View>
 
-      <View style={styles.group}>
-        <View style={styles.payloadHead}>
-          <View>
-            <SectionTitle>Payload varbinds</SectionTitle>
-            <Text style={{ color: t.textDim, fontSize: 11 }}>
-              {form.varbinds.length} custom fields
-            </Text>
-          </View>
-          <Button
-            title="Add varbind"
-            small
-            variant="ghost"
-            onPress={() =>
-              setVarbinds([...form.varbinds, { oid: '', type: 'OctetString', value: '' }])
-            }
-          />
-        </View>
-        <View style={styles.payloadList}>
-          {form.varbinds.map((varbind, index) => (
-            <VarbindEditor
-              key={index}
-              compact
-              value={varbind}
-              onChange={(patch) =>
-                setVarbinds(
-                  form.varbinds.map((item, i) => (i === index ? { ...item, ...patch } : item)),
-                )
-              }
-              onRemove={() => setVarbinds(form.varbinds.filter((_item, i) => i !== index))}
+        <View style={styles.group}>
+          <SectionTitle>Notification envelope</SectionTitle>
+          <Row>
+            <Chip
+              label="Trap"
+              active={form.kind === 'trap'}
+              onPress={() => update({ kind: 'trap' })}
             />
-          ))}
+            <Chip
+              label={form.target.version === 'v1' ? 'Inform · v2+' : 'Inform'}
+              active={form.kind === 'inform'}
+              onPress={form.target.version === 'v1' ? undefined : () => update({ kind: 'inform' })}
+            />
+          </Row>
+          <Field
+            label="Trap OID"
+            value={form.trapOid}
+            onChangeText={(trapOid) => update({ trapOid })}
+            placeholder="1.3.6.1.6.3.1.1.5.3"
+          />
+          {trapName ? (
+            <Label tone="ok" size={11}>
+              Resolved as {trapName}
+            </Label>
+          ) : null}
+          <Row style={styles.v1EnvelopeRow}>
+            <View style={styles.v1EnvelopeField}>
+              <Field
+                label="sysUpTime ticks (optional)"
+                value={form.upTime}
+                keyboardType="number-pad"
+                onChangeText={(upTime) => update({ upTime })}
+              />
+            </View>
+            {form.target.version === 'v1' ? (
+              <>
+                <View style={styles.v1EnvelopeField}>
+                  <Field
+                    label="v1 agent address"
+                    value={form.agentAddress}
+                    onChangeText={(agentAddress) => update({ agentAddress })}
+                  />
+                </View>
+                <View style={styles.v1EnvelopeField}>
+                  <Field
+                    label="v1 enterprise OID"
+                    value={form.v1Enterprise}
+                    onChangeText={(v1Enterprise) => update({ v1Enterprise })}
+                  />
+                </View>
+                <View style={styles.v1EnvelopeFieldSmall}>
+                  <Field
+                    label="v1 generic (0–6)"
+                    value={form.v1Generic}
+                    keyboardType="number-pad"
+                    onChangeText={(v1Generic) => update({ v1Generic })}
+                  />
+                </View>
+                <View style={styles.v1EnvelopeFieldSmall}>
+                  <Field
+                    label="v1 specific"
+                    value={form.v1Specific}
+                    keyboardType="number-pad"
+                    onChangeText={(v1Specific) => update({ v1Specific })}
+                  />
+                </View>
+              </>
+            ) : null}
+          </Row>
+          <Label tone="dim" size={11}>
+            Tip: open a NOTIFICATION-TYPE node in Browse and choose “Send this trap” to prefill its
+            OID and OBJECTS payload.
+          </Label>
         </View>
-      </View>
-    </Dialog>
+
+        <View style={styles.group}>
+          <View style={styles.payloadHead}>
+            <View>
+              <SectionTitle>Payload varbinds</SectionTitle>
+              <Text style={{ color: t.textDim, fontSize: 11 }}>
+                {form.varbinds.length} custom fields
+              </Text>
+            </View>
+            <Button
+              title="Add varbind"
+              small
+              variant="ghost"
+              onPress={() =>
+                setVarbinds([...form.varbinds, { oid: '', type: 'OctetString', value: '' }])
+              }
+            />
+          </View>
+          <View style={styles.payloadList}>
+            {form.varbinds.map((varbind, index) => (
+              <VarbindEditor
+                key={index}
+                compact
+                value={varbind}
+                onChange={(patch) =>
+                  setVarbinds(
+                    form.varbinds.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+                  )
+                }
+                onRemove={() => setVarbinds(form.varbinds.filter((_item, i) => i !== index))}
+              />
+            ))}
+          </View>
+        </View>
+      </Dialog>
+      <AgentProfileDialog
+        visible={targetEditor !== null}
+        editor={targetEditor ?? EMPTY_AGENT_EDITOR}
+        error={targetError}
+        info={info}
+        busy={targetBusy}
+        title="Create notification target"
+        subtitle="Save this SNMP destination and return to the trap composer."
+        submitTitle="Save and use notification target"
+        onEditorChange={setTargetEditor}
+        onSubmit={() => void createNotificationTarget()}
+        onClose={closeTargetEditor}
+      />
+    </>
   );
 }
 
@@ -365,5 +481,8 @@ const styles = StyleSheet.create({
   },
   payloadList: { gap: 8 },
   footerMessages: { flexBasis: '100%', flexShrink: 1, gap: 2 },
+  v1EnvelopeRow: { flexWrap: 'wrap', alignItems: 'flex-start' },
+  v1EnvelopeField: { flexGrow: 1, flexBasis: 180, minWidth: 0 },
+  v1EnvelopeFieldSmall: { flexGrow: 1, flexBasis: 120, minWidth: 0 },
   wrap: { flexWrap: 'wrap' },
 });

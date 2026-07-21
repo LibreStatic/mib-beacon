@@ -93,6 +93,30 @@ describe('Browse search state', () => {
     expect(useAppStore.getState().hits).toEqual([]);
     expect(useAppStore.getState().searchPhase).toBe('idle');
   });
+
+  it('suppresses stale search success and errors after engine ownership changes', async () => {
+    let resolve!: (value: MibSearchHit[]) => void;
+    let owns = true;
+    const engine = {
+      mibs: { search: () => new Promise((done) => (resolve = done)) },
+    } as unknown as EngineAPI;
+    const searching = runSearch(engine, 'sysdescr', () => owns);
+    owns = false;
+    resolve([hit]);
+    await searching;
+    expect(useAppStore.getState().hits).toEqual([]);
+    expect(useAppStore.getState().searchPhase).toBe('searching');
+
+    useAppStore.setState({ searchPhase: 'idle', searchError: null });
+    await runSearch(
+      {
+        mibs: { search: vi.fn().mockRejectedValue(new Error('old failure')) },
+      } as unknown as EngineAPI,
+      'sysdescr',
+      () => false,
+    );
+    expect(useAppStore.getState()).toMatchObject({ searchPhase: 'idle', searchError: null });
+  });
 });
 
 describe('OID reveal', () => {

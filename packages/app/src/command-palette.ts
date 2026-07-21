@@ -1,5 +1,6 @@
 import type { NavigationTab } from './navigation';
 import type { QueryOperation, Tab, TrapMode } from './store';
+import type { AppAction } from './action-registry';
 
 export const PALETTE_HISTORY_KEY = 'mibbeacon:command-palette:recents:v1';
 export const PALETTE_HISTORY_LIMIT = 10;
@@ -20,7 +21,15 @@ export type PaletteCommandId =
   | 'query:prepare-walk'
   | 'query:prepare-set'
   | 'traps:receive'
-  | 'traps:send';
+  | 'traps:send'
+  | 'query:get'
+  | 'query:get-next'
+  | 'query:get-bulk'
+  | 'query:walk'
+  | 'query:stage-set'
+  | 'query:run-current'
+  | 'query:repeat'
+  | 'query:stop';
 
 export type PaletteCommandEffect =
   | { kind: 'navigate'; tab: Tab }
@@ -45,7 +54,7 @@ export interface PaletteCommand {
 }
 
 export type PaletteRecentItem =
-  | { kind: 'command'; commandId: PaletteCommandId }
+  | { kind: 'command'; commandId: string }
   | {
       kind: 'oid';
       oid: string;
@@ -105,10 +114,10 @@ export function applyPaletteCommandEffect(
 
 export type PaletteEntry =
   | {
-      key: `command:${PaletteCommandId}`;
+      key: `command:${string}`;
       kind: 'command';
-      section: 'Recents' | PaletteCommand['group'];
-      command: PaletteCommand;
+      section: 'Recents' | string;
+      command: AppAction;
       recent: boolean;
     }
   | {
@@ -184,22 +193,6 @@ const STATIC_COMMANDS: readonly PaletteCommand[] = [
     keywords: ['desktop', 'open'],
     effect: { kind: 'new-window' },
   },
-  ...(
-    [
-      ['get', 'Prepare Get', 'get'],
-      ['get-next', 'Prepare Get Next', 'getNext'],
-      ['get-bulk', 'Prepare Get Bulk', 'getBulk'],
-      ['walk', 'Prepare Walk', 'walk'],
-      ['set', 'Prepare Set', 'set'],
-    ] as const
-  ).map(([id, label, operation]): PaletteCommand => ({
-    id: `query:prepare-${id}` as PaletteCommandId,
-    label,
-    group: 'Query',
-    glyph: '⇄',
-    keywords: ['query', 'snmp', operation.toLowerCase()],
-    effect: { kind: 'prepare-query', operation },
-  })),
   {
     id: 'traps:receive',
     label: 'Open Trap receiver',
@@ -217,17 +210,6 @@ const STATIC_COMMANDS: readonly PaletteCommand[] = [
     effect: { kind: 'open-traps', mode: 'send' },
   },
 ];
-
-const KNOWN_STATIC_IDS = new Set(STATIC_COMMANDS.map(({ id }) => id));
-const NAVIGATION_TABS = new Set<Tab>([
-  'browse',
-  'liveMibs',
-  'query',
-  'agents',
-  'traps',
-  'tools',
-  'settings',
-]);
 
 export function getPaletteCommands(
   tabs: readonly NavigationTab[],
@@ -247,9 +229,9 @@ export function getPaletteCommands(
 }
 
 export function filterPaletteCommands(
-  commands: readonly PaletteCommand[],
+  commands: readonly AppAction[],
   query: string,
-): PaletteCommand[] {
+): AppAction[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [...commands];
   return commands
@@ -268,7 +250,7 @@ export function filterPaletteCommands(
       return { command, index, score };
     })
     .filter(
-      (entry): entry is { command: PaletteCommand; index: number; score: number } =>
+      (entry): entry is { command: AppAction; index: number; score: number } =>
         entry.score !== null,
     )
     .sort((left, right) => left.score - right.score || left.index - right.index)
@@ -286,7 +268,7 @@ export function parsePaletteQuery(input: string): {
 }
 
 export function buildPaletteEntries(
-  commands: readonly PaletteCommand[],
+  commands: readonly AppAction[],
   recents: readonly PaletteRecentItem[],
   input: string,
 ): PaletteEntry[] {
@@ -315,7 +297,7 @@ export function buildPaletteEntries(
   }
 
   const recentEntries: PaletteEntry[] = [];
-  const recentCommandIds = new Set<PaletteCommandId>();
+  const recentCommandIds = new Set<string>();
   for (const item of recents) {
     if (item.kind === 'command') {
       const command = byId.get(item.commandId);
@@ -387,11 +369,12 @@ export async function validatePaletteRecentOids(
   return stale;
 }
 
-function isPaletteCommandId(value: unknown): value is PaletteCommandId {
-  if (typeof value !== 'string') return false;
-  if (KNOWN_STATIC_IDS.has(value as PaletteCommandId)) return true;
-  if (!value.startsWith('navigate:')) return false;
-  return NAVIGATION_TABS.has(value.slice('navigate:'.length) as Tab);
+function isPaletteCommandId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 160 &&
+    /^[A-Za-z][A-Za-z0-9._-]{0,63}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,63})+$/.test(value)
+  );
 }
 
 function parseRecentItem(value: unknown): PaletteRecentItem | null {

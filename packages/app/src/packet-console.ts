@@ -23,7 +23,7 @@ export function getPacketConsoleLayout(
   return {
     edge: compact ? 'top' : 'bottom',
     overlay: compact,
-    collapsedSize: compact ? MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE : 20,
+    collapsedSize: MOBILE_PACKET_CONSOLE_COLLAPSED_SIZE,
     minSize,
     maxSize,
     size: Math.max(minSize, Math.min(maxSize, Math.round(viewportHeight * ratio))),

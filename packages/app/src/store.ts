@@ -55,6 +55,10 @@ export type Tab =
   'browse' | 'liveMibs' | 'query' | 'agents' | 'traps' | 'tools' | 'mibs' | 'settings';
 export type AppThemeMode = 'system' | 'light' | 'dark';
 export type AppDensityMode = 'auto' | 'compact' | 'comfortable';
+export interface AppNotificationPreferences {
+  trapRules: boolean;
+  watchAlerts: boolean;
+}
 
 const RESULTS_CAP = 5000;
 const TRAPS_CAP = 200;
@@ -157,6 +161,8 @@ export interface AppState {
   setDensityMode: (mode: AppDensityMode) => void;
   patternTraceColor: string;
   setPatternTraceColor: (color: string) => void;
+  notificationPreferences: AppNotificationPreferences;
+  setNotificationPreference: (key: keyof AppNotificationPreferences, enabled: boolean) => void;
 
   packetConsoleOpen: boolean;
   packetFeedPaused: boolean;
@@ -166,7 +172,7 @@ export interface AppState {
   setPacketFeedPaused: (paused: boolean) => void;
   setPacketEvents: (events: PacketTraceEvent[]) => void;
   addPacketEvent: (event: PacketTraceEvent) => void;
-  setPacketStatus: (status: PacketTraceServiceStatus) => void;
+  setPacketStatus: (status: PacketTraceServiceStatus | null) => void;
   clearPacketEvents: () => void;
 
   // --- browse ---
@@ -350,6 +356,7 @@ export interface AppState {
   dismissToast: (id: string) => void;
   beginVendorMibBrowse: (oid: string, handleId: string) => void;
   finishVendorMibBrowse: (oid: string, state: VendorMibBrowseState) => void;
+  resetEngineSessionTransientState: () => void;
 }
 
 export interface ResolverProgressItem {
@@ -472,14 +479,17 @@ async function storedValue(storage: ThemeStorageAdapter | undefined, key: string
 export async function configureThemeStorage(storage?: ThemeStorageAdapter): Promise<void> {
   configuredThemeStorage = storage ?? browserThemeStorage();
   const revision = themePreferenceRevision;
-  const [mode, light, dark, density, installed, openVsxEnabled] = await Promise.all([
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.mode),
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.light),
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.dark),
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.density),
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.installed),
-    storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.openVsxEnabled),
-  ]);
+  const [mode, light, dark, density, installed, openVsxEnabled, notifyTraps, notifyWatches] =
+    await Promise.all([
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.mode),
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.light),
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.dark),
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.density),
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.installed),
+      storedValue(configuredThemeStorage, THEME_STORAGE_KEYS.openVsxEnabled),
+      storedValue(configuredThemeStorage, 'mibbeacon:notifications:trap-rules'),
+      storedValue(configuredThemeStorage, 'mibbeacon:notifications:watch-alerts'),
+    ]);
   const themes = parseStoredThemes(installed);
   const installedIds = new Set(themes.map(({ id }) => id));
   const validLight =
@@ -501,6 +511,10 @@ export async function configureThemeStorage(storage?: ThemeStorageAdapter): Prom
           lightThemeId: validLight ? light! : DEFAULT_LIGHT_THEME_ID,
           darkThemeId: validDark ? dark! : DEFAULT_DARK_THEME_ID,
           openVsxThemeCatalogEnabled: isOpenVsxCatalogEnabled(openVsxEnabled),
+          notificationPreferences: {
+            trapRules: notifyTraps === 'true',
+            watchAlerts: notifyWatches === 'true',
+          },
         }
       : {}),
   });
@@ -544,6 +558,10 @@ export const useAppStore = create<AppState>((set) => ({
   patternTraceColor: normalizePatternTraceColor(
     readStoredPreference('mibbeacon:pattern-trace-color'),
   ),
+  notificationPreferences: {
+    trapRules: readStoredPreference('mibbeacon:notifications:trap-rules') === 'true',
+    watchAlerts: readStoredPreference('mibbeacon:notifications:watch-alerts') === 'true',
+  },
   setThemeMode: (themeMode) => {
     themePreferenceRevision += 1;
     writeUiPreference('mibbeacon:theme', themeMode);
@@ -595,6 +613,15 @@ export const useAppStore = create<AppState>((set) => ({
     const normalized = normalizePatternTraceColor(color);
     writeUiPreference('mibbeacon:pattern-trace-color', normalized);
     set({ patternTraceColor: normalized });
+  },
+  setNotificationPreference: (key, enabled) => {
+    writeUiPreference(
+      `mibbeacon:notifications:${key === 'trapRules' ? 'trap-rules' : 'watch-alerts'}`,
+      String(enabled),
+    );
+    set((state) => ({
+      notificationPreferences: { ...state.notificationPreferences, [key]: enabled },
+    }));
   },
   packetConsoleOpen: false,
   packetFeedPaused: false,
@@ -957,6 +984,50 @@ export const useAppStore = create<AppState>((set) => ({
   oidLookups: {},
   vendorMibBrowseHandles: {},
   vendorMibBrowses: {},
+  resetEngineSessionTransientState: () =>
+    set((state) => ({
+      running: null,
+      walkStart: 0,
+      moduleFocus: null,
+      selected: null,
+      expanded: {},
+      hits: [],
+      childrenCache: {},
+      searchPhase: 'idle',
+      searchError: null,
+      agentOperationStatuses: {},
+      operationPduLog: [],
+      results: [],
+      stats: { count: 0, batches: 0, ms: 0 },
+      queryError: null,
+      sendBusy: false,
+      sendError: null,
+      sendHistory: [],
+      oidName: null,
+      setPreviousValues: [],
+      setReview: false,
+      tableView: null,
+      importBusy: false,
+      lastImport: null,
+      importHandle: null,
+      importStatus: null,
+      importProgress: [],
+      importCompleted: 0,
+      importTotal: 0,
+      fileImportDraft: state.fileImportDraft
+        ? { ...state.fileImportDraft, handleId: null, visible: true }
+        : null,
+      consent: null,
+      consentQueue: [],
+      sourceTestHandles: {},
+      sourceTestResults: {},
+      sourcePreviewHandle: null,
+      sourcePreview: null,
+      lookupHandles: {},
+      oidLookups: {},
+      vendorMibBrowseHandles: {},
+      vendorMibBrowses: {},
+    })),
   setResolverSettings: (resolverSettings) => set({ resolverSettings }),
   setResolverSources: (resolverSources) => set({ resolverSources }),
   setResolverCache: (resolverCache) => set({ resolverCache }),

@@ -10,13 +10,9 @@ import {
   View,
 } from 'react-native';
 import { Button, Card, Label, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
-import {
-  importReviewedFiles,
-  presentFileImportReview,
-  updateResolverSettings,
-} from '../actions';
+import { importReviewedFiles, presentFileImportReview, updateResolverSettings } from '../actions';
 import {
   createInitialFileSelection,
   acquireWithVisibleFailure,
@@ -39,6 +35,7 @@ const formatBytes = (bytes: number) =>
 
 export function FileImportFlow({ busy }: { busy: boolean }) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const adapter = useFileImportAdapter();
   const modules = useAppStore((state) => state.modules);
   const t = useTheme();
@@ -46,6 +43,7 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
   const [staging, setStaging] = useState(false);
 
   const stage = async (result: AcquisitionResult) => {
+    if (!ownsEngine()) return;
     if (result.status === 'cancelled') return;
     if (result.status === 'unsupported') {
       setMessage(result.message);
@@ -57,17 +55,22 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
       const next = await stageAcquiredFileImport(result, modules, (module) =>
         engine.mibs.replacementGroup(module),
       );
-      await presentFileImportReview({
-        review: next,
-        selected: [...createInitialFileSelection(next)],
-        replacements: [],
-        handleId: null,
-        visible: true,
-      });
+      if (!ownsEngine()) return;
+      await presentFileImportReview(
+        {
+          review: next,
+          selected: [...createInitialFileSelection(next)],
+          replacements: [],
+          handleId: null,
+          visible: true,
+        },
+        undefined,
+        ownsEngine,
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      if (ownsEngine()) setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setStaging(false);
+      if (ownsEngine()) setStaging(false);
     }
   };
 
@@ -83,10 +86,11 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
           if (busy || staging) return;
           const transfer = event.dataTransfer ?? event.nativeEvent?.dataTransfer;
           if (transfer)
-            void acquireWithVisibleFailure(
-              () => adapter.acquireDrop!(transfer),
-              'Dropped files',
-            ).then(stage);
+            void acquireWithVisibleFailure(() => adapter.acquireDrop!(transfer), 'Dropped files')
+              .then((result) => {
+                if (ownsEngine()) return stage(result);
+              })
+              .catch(() => undefined);
         },
       }
     : {};
@@ -106,7 +110,11 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
           small
           disabled={busy || staging}
           onPress={() =>
-            void acquireWithVisibleFailure(adapter.acquireFiles, 'File picker').then(stage)
+            void acquireWithVisibleFailure(adapter.acquireFiles, 'File picker')
+              .then((result) => {
+                if (ownsEngine()) return stage(result);
+              })
+              .catch(() => undefined)
           }
         />
         <Button
@@ -115,7 +123,11 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
           variant="ghost"
           disabled={busy || staging}
           onPress={() =>
-            void acquireWithVisibleFailure(adapter.acquireDirectory, 'Folder picker').then(stage)
+            void acquireWithVisibleFailure(adapter.acquireDirectory, 'Folder picker')
+              .then((result) => {
+                if (ownsEngine()) return stage(result);
+              })
+              .catch(() => undefined)
           }
         />
       </View>
@@ -141,6 +153,7 @@ export function FileImportFlow({ busy }: { busy: boolean }) {
 /** Mounted once at the app shell so OS associations can open review from any route. */
 export function FileImportReviewModal() {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const adapter = useFileImportAdapter();
   const draft = useAppStore((state) => state.fileImportDraft);
   const setDraft = useAppStore((state) => state.setFileImportDraft);
@@ -171,10 +184,7 @@ export function FileImportReviewModal() {
     () => (review ? selectedExternalMissingImports(review, selected) : []),
     [review, selected],
   );
-  const resolverGate = dependencyResolverGate(
-    selectedMissingImports.length,
-    resolverSettings,
-  );
+  const resolverGate = dependencyResolverGate(selectedMissingImports.length, resolverSettings);
 
   const focusReviewHeading = () => {
     focusFileImportReviewHeading(
@@ -216,18 +226,19 @@ export function FileImportReviewModal() {
         validation.files,
         validation.replaceModules,
         `File import (${validation.files.length} source${validation.files.length === 1 ? '' : 's'})`,
+        ownsEngine,
       );
-      if (handleId) acceptDraft(handleId);
+      if (ownsEngine() && handleId) acceptDraft(handleId);
     } finally {
-      setSubmitting(false);
+      if (ownsEngine()) setSubmitting(false);
     }
   };
   const enableDependencyResolver = async () => {
     setEnablingResolver(true);
     try {
-      await updateResolverSettings(engine, { enabled: true, autoResolveImports: true });
+      await updateResolverSettings(engine, { enabled: true, autoResolveImports: true }, ownsEngine);
     } finally {
-      setEnablingResolver(false);
+      if (ownsEngine()) setEnablingResolver(false);
     }
   };
 

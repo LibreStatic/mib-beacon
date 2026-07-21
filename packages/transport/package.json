@@ -1,6 +1,6 @@
 {
   "name": "@mibbeacon/transport",
-  "version": "0.1.0-beta.1",
+  "version": "0.6.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "type": "module",
@@ -23,12 +23,26 @@
     "react-native-udp": "*"
   },
   "peerDependenciesMeta": {
-    "buffer": { "optional": true },
-    "expo-file-system": { "optional": true },
-    "expo-secure-store": { "optional": true },
-    "expo-sqlite": { "optional": true },
-    "react-native-quick-crypto": { "optional": true },
-    "react-native-tcp-socket": { "optional": true },
-    "react-native-udp": { "optional": true }
+    "buffer": {
+      "optional": true
+    },
+    "expo-file-system": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    },
+    "expo-sqlite": {
+      "optional": true
+    },
+    "react-native-quick-crypto": {
+      "optional": true
+    },
+    "react-native-tcp-socket": {
+      "optional": true
+    },
+    "react-native-udp": {
+      "optional": true
+    }
   }
 }

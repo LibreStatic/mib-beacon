@@ -13,7 +13,11 @@ import type {
 } from '../snmp/types';
 import type { RowStatusCreateResult } from '../ops/row-status';
 import type { TrapReceiverConfig, TrapRecord } from '../snmp/receiver';
-import type { PacketTraceEvent, PacketTraceServiceStatus, PacketTraceSettings } from '../packet-trace';
+import type {
+  PacketTraceEvent,
+  PacketTraceServiceStatus,
+  PacketTraceSettings,
+} from '../packet-trace';
 import type {
   ImportResult,
   MibFilesInspection,
@@ -550,6 +554,8 @@ export type PatternTraceSessionStatus = 'running' | 'completed' | 'cancelled' | 
 export type PatternTraceEventStatus = 'success' | 'error' | 'skipped' | 'annotated';
 export interface PatternTraceSession {
   id: string;
+  requestId?: string;
+  operationHandleId?: string;
   name: string;
   mode: PatternTraceMode;
   seriesIds: string[];
@@ -655,6 +661,7 @@ export interface ToolsAPI {
     list(input?: { seriesIds?: string[] }): Promise<PatternTraceSession[]>;
     events(sessionId: string): Promise<PatternTraceEvent[]>;
     start(input: {
+      requestId?: string;
       name?: string;
       seriesIds: string[];
       cadenceMs: number;
@@ -663,6 +670,7 @@ export interface ToolsAPI {
       chartId?: string;
     }): Promise<PatternTraceStartResult>;
     annotate(input: {
+      requestId?: string;
       name?: string;
       seriesIds: string[];
       cadenceMs: number;
@@ -822,13 +830,7 @@ export type LiveMibScanRequest = AgentTarget & {
   preferredOids?: string[];
 };
 
-export type LiveMibScanState =
-  | 'started'
-  | 'running'
-  | 'done'
-  | 'partial'
-  | 'error'
-  | 'cancelled';
+export type LiveMibScanState = 'started' | 'running' | 'done' | 'partial' | 'error' | 'cancelled';
 
 export interface LiveMibScanStatus {
   handleId: string;
@@ -901,10 +903,7 @@ export interface LiveMibsAPI {
   };
   agentOverrides: {
     get(agentId: string): Promise<Partial<LiveMibSettings> | null>;
-    update(
-      agentId: string,
-      patch: Partial<LiveMibSettings>,
-    ): Promise<Partial<LiveMibSettings>>;
+    update(agentId: string, patch: Partial<LiveMibSettings>): Promise<Partial<LiveMibSettings>>;
     reset(agentId: string): Promise<void>;
   };
   scan: {
@@ -940,7 +939,11 @@ export interface EngineAPI {
     clear(): Promise<void>;
     export: {
       create(): Promise<{ id: string; fileName: string; byteLength: number }>;
-      readChunk(id: string, offset: number, limit?: number): Promise<{ base64: string; nextOffset: number; done: boolean }>;
+      readChunk(
+        id: string,
+        offset: number,
+        limit?: number,
+      ): Promise<{ base64: string; nextOffset: number; done: boolean }>;
       dispose(id: string): Promise<void>;
     };
   };

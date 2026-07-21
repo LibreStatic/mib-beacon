@@ -23,13 +23,16 @@ import type {
   SourceConfig,
   SnmpVarbindInput,
 } from '@mibbeacon/core/client';
-import {
-  useAppStore,
-  type AgentForm,
-  type FileImportDraft,
-  type QueryOperation,
-} from './store';
+import { useAppStore, type AgentForm, type FileImportDraft, type QueryOperation } from './store';
 import { replaceRouteForTab } from './routes';
+import { engineStartArbitration } from './engine-start-arbitration';
+import {
+  ResolverSourceCollectionController,
+  redactResolverSourceError,
+  resolverSourceCollectionStatusText,
+} from './resolver-source-collection';
+import { agentPersistentCollectionsController } from './agent-persistent-collections';
+import { ResolverCacheClearController } from './resolver-cache-transaction';
 
 let notificationSeq = 0;
 
@@ -124,7 +127,13 @@ async function numericSetVarbinds(
 // Query
 // --------------------------------------------------------------------------
 
-async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext' | 'getBulk'): Promise<void> {
+async function runOneShot(
+  engine: EngineAPI,
+  kind: 'get' | 'getNext' | 'getBulk',
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'query-operation');
   const s = useAppStore.getState();
   const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
   const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
@@ -138,6 +147,7 @@ async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext' | 'getBulk'
   const t0 = Date.now();
   try {
     const oid = await numericOid(engine, s.oid);
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     s.clearAgentOperationStatuses();
     s.clearOperationPduLog();
     s.setResults([]);
@@ -152,18 +162,33 @@ async function runOneShot(engine: EngineAPI, kind: 'get' | 'getNext' | 'getBulk'
           }
         : { ...target, kind, oids: [oid] };
     const { handleId } = await engine.ops.start(request);
-    s.setRunning(handleId, t0);
+    await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.ops.cancel(id),
+      (id) => s.setRunning(id, t0),
+    );
   } catch (e) {
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     s.setResults([]);
     s.setQueryError(describeError(e));
   }
 }
 
-export const runGet = (engine: EngineAPI) => runOneShot(engine, 'get');
-export const runGetNext = (engine: EngineAPI) => runOneShot(engine, 'getNext');
-export const runGetBulk = (engine: EngineAPI) => runOneShot(engine, 'getBulk');
+export const runGet = (engine: EngineAPI, owns?: StoreWriteOwnership) =>
+  runOneShot(engine, 'get', owns);
+export const runGetNext = (engine: EngineAPI, owns?: StoreWriteOwnership) =>
+  runOneShot(engine, 'getNext', owns);
+export const runGetBulk = (engine: EngineAPI, owns?: StoreWriteOwnership) =>
+  runOneShot(engine, 'getBulk', owns);
 
-export async function runSet(engine: EngineAPI): Promise<void> {
+export async function runSet(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'query-operation');
   const s = useAppStore.getState();
   const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
   const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
@@ -180,11 +205,19 @@ export async function runSet(engine: EngineAPI): Promise<void> {
       engine,
       s.setStaging.length > 0 ? s.setStaging : [s.setDraft],
     );
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     s.clearAgentOperationStatuses();
     s.clearOperationPduLog();
     s.setResults([]);
     const { handleId } = await engine.ops.start({ ...target, kind: 'set', varbinds });
-    s.setRunning(handleId, t0);
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.ops.cancel(id),
+      (id) => s.setRunning(id, t0),
+    );
+    if (!accepted) return;
     s.setSetReview(false);
     s.clearSetStaging();
     s.pushToast({
@@ -192,6 +225,7 @@ export async function runSet(engine: EngineAPI): Promise<void> {
       message: `Set request sent (${varbinds.length} varbind${varbinds.length === 1 ? '' : 's'})`,
     });
   } catch (e) {
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     const error = describeError(e);
     s.setResults([]);
     s.setQueryError(error);
@@ -199,7 +233,12 @@ export async function runSet(engine: EngineAPI): Promise<void> {
   }
 }
 
-export async function prepareSetReview(engine: EngineAPI): Promise<void> {
+export async function prepareSetReview(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'query-operation');
   const state = useAppStore.getState();
   const varbinds = state.setStaging.length > 0 ? state.setStaging : [state.setDraft];
   const validationError = varbinds.map(validateVarbindInput).find(Boolean);
@@ -215,19 +254,26 @@ export async function prepareSetReview(engine: EngineAPI): Promise<void> {
   }
   try {
     const target = buildAgentTarget(state.agent, state.selectedAgentId);
-    state.setSetPreviousValues(
-      await engine.ops.get({
-        ...target,
-        oids: await Promise.all(varbinds.map(({ oid }) => numericOid(engine, oid))),
-      }),
-    );
+    const previousValues = await engine.ops.get({
+      ...target,
+      oids: await Promise.all(varbinds.map(({ oid }) => numericOid(engine, oid))),
+    });
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
+    state.setSetPreviousValues(previousValues);
   } catch {
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     state.setSetPreviousValues([]);
   }
+  if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
   state.setSetReview(true);
 }
 
-export async function runWalk(engine: EngineAPI): Promise<void> {
+export async function runWalk(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'query-operation');
   const s = useAppStore.getState();
   const groupId = s.queryGroupMode ? s.selectedAgentGroupId : null;
   const agentTarget = buildAgentTarget(s.agent, s.selectedAgentId);
@@ -243,24 +289,43 @@ export async function runWalk(engine: EngineAPI): Promise<void> {
   s.setStats({ count: 0, batches: 0, ms: 0 });
   try {
     const baseOid = await numericOid(engine, s.oid);
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     const { handleId } = groupId
       ? await engine.ops.start({ ...target, kind: 'walk', baseOid })
       : await engine.ops.startWalk({ ...agentTarget, baseOid });
-    s.setRunning(handleId, Date.now());
+    await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.ops.cancel(id),
+      (id) => s.setRunning(id, Date.now()),
+    );
   } catch (e) {
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     s.setQueryError(describeError(e));
   }
 }
 
-export async function stopWalk(engine: EngineAPI): Promise<void> {
+export async function stopWalk(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  engineStartArbitration.begin(engine, 'query-operation');
   const { running, setRunning } = useAppStore.getState();
   if (running) {
     await engine.ops.cancel(running);
+    if (!owns() || useAppStore.getState().running !== running) return;
     setRunning(null);
   }
 }
 
-export async function openTableView(engine: EngineAPI, node: MibNodeDetail): Promise<void> {
+export async function openTableView(
+  engine: EngineAPI,
+  node: MibNodeDetail,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   let entry: MibNodeDetail | null = node;
   if (node.kind === 'table') {
     const child = (await engine.mibs.tree(node.oid)).find((item) => item.kind === 'entry');
@@ -268,11 +333,17 @@ export async function openTableView(engine: EngineAPI, node: MibNodeDetail): Pro
   } else if (node.kind === 'column') {
     entry = await engine.mibs.node(node.oid.split('.').slice(0, -1).join('.'), node.module);
   }
+  if (!owns()) return;
   if (!entry || entry.kind !== 'entry') throw new Error(`${node.name} is not a table or entry`);
   openLiveMibScope(entry.oid);
 }
 
-export async function runTableView(engine: EngineAPI): Promise<void> {
+export async function runTableView(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'query-operation');
   const state = useAppStore.getState();
   const view = state.tableView;
   if (!view) return;
@@ -282,40 +353,71 @@ export async function runTableView(engine: EngineAPI): Promise<void> {
   state.setResults([]);
   state.clearOperationPduLog();
   state.clearAgentOperationStatuses();
-  const { handleId } = await engine.ops.start({
-    ...target,
-    kind: 'table-fetch',
-    baseOid: view.entryOid,
-    columnOids: view.selectedColumnOids,
-  });
-  state.setRunning(handleId, Date.now());
+  try {
+    const { handleId } = await engine.ops.start({
+      ...target,
+      kind: 'table-fetch',
+      baseOid: view.entryOid,
+      columnOids: view.selectedColumnOids,
+    });
+    await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.ops.cancel(id),
+      (id) => state.setRunning(id, Date.now()),
+    );
+  } catch (error) {
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      state.setQueryError(describeError(error));
+  }
 }
 
 const agentProfileRefreshGenerations = new WeakMap<EngineAPI, number>();
 const agentGroupRefreshGenerations = new WeakMap<EngineAPI, number>();
+export type StoreWriteOwnership = () => boolean;
+const alwaysOwnsStoreWrite: StoreWriteOwnership = () => true;
 
-export async function refreshAgentProfiles(engine: EngineAPI): Promise<void> {
-  const generation = (agentProfileRefreshGenerations.get(engine) ?? 0) + 1;
-  agentProfileRefreshGenerations.set(engine, generation);
-  const profiles = await engine.agents.list();
-  if (agentProfileRefreshGenerations.get(engine) !== generation) return;
+export async function openQuerySnapshot(
+  engine: EngineAPI,
+  snapshotId: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const loaded = await engine.ops.snapshots.get(snapshotId);
+  if (!owns() || !loaded) return;
   const state = useAppStore.getState();
-  state.setAgentProfiles(profiles);
-  if (state.selectedAgentId && !profiles.some(({ id }) => id === state.selectedAgentId)) {
-    state.selectAgentProfile(null);
-  }
+  state.setResults(loaded.results);
+  state.setStats({ count: loaded.results.length, batches: 1, ms: 0 });
+  state.saveQueryResultTab(`${loaded.agentName} · snapshot · ${loaded.baseOid}`);
 }
 
-export async function refreshAgentGroups(engine: EngineAPI): Promise<void> {
+export async function refreshAgentProfiles(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const generation = (agentProfileRefreshGenerations.get(engine) ?? 0) + 1;
+  agentProfileRefreshGenerations.set(engine, generation);
+  const controller = agentPersistentCollectionsController(engine, owns);
+  await controller.refresh(
+    'refresh',
+    () => owns() && agentProfileRefreshGenerations.get(engine) === generation,
+  );
+}
+
+export async function refreshAgentGroups(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const generation = (agentGroupRefreshGenerations.get(engine) ?? 0) + 1;
   agentGroupRefreshGenerations.set(engine, generation);
-  const groups = await engine.agents.groups.list();
-  if (agentGroupRefreshGenerations.get(engine) !== generation) return;
-  const state = useAppStore.getState();
-  state.setAgentGroups(groups);
-  if (state.selectedAgentGroupId && !groups.some(({ id }) => id === state.selectedAgentGroupId)) {
-    state.selectAgentGroup(null);
-  }
+  const controller = agentPersistentCollectionsController(engine, owns);
+  await controller.refresh(
+    'refresh',
+    () => owns() && agentGroupRefreshGenerations.get(engine) === generation,
+  );
 }
 
 export interface AgentProfileSaveOutcome {
@@ -328,20 +430,16 @@ export async function saveAgentProfile(
   engine: EngineAPI,
   editingId: string | null,
   draft: AgentCreateDraft,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<AgentProfileSaveOutcome> {
+  if (!owns()) throw new Error('Agent command lost engine ownership');
+  const controller = agentPersistentCollectionsController(engine, owns);
   const profile = editingId
-    ? await engine.agents.update(editingId, draft)
-    : await engine.agents.create(draft);
-  const state = useAppStore.getState();
-  const exists = state.agentProfiles.some(({ id }) => id === profile.id);
-  state.setAgentProfiles(
-    exists
-      ? state.agentProfiles.map((candidate) => (candidate.id === profile.id ? profile : candidate))
-      : [...state.agentProfiles, profile],
-  );
-  if (state.selectedAgentId === profile.id) state.selectAgentProfile(profile);
+    ? await controller.updateProfile(editingId, draft, owns)
+    : await controller.createProfile(draft, owns);
+  if (!owns()) return { profile, refreshError: null };
   try {
-    await refreshAgentProfiles(engine);
+    await refreshAgentProfiles(engine, owns);
     return { profile, refreshError: null };
   } catch (refreshError) {
     return { profile, refreshError };
@@ -357,10 +455,13 @@ export interface AgentProfileTestOutcome {
 export async function testAgentProfile(
   engine: EngineAPI,
   id: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<AgentProfileTestOutcome> {
+  if (!owns()) throw new Error('Agent test lost engine ownership');
   const result = await engine.agents.test(id);
+  if (!owns()) throw new Error('Agent test lost engine ownership');
   try {
-    await refreshAgentProfiles(engine);
+    await refreshAgentProfiles(engine, owns);
     return { result, refreshError: null };
   } catch (refreshError) {
     return { result, refreshError };
@@ -375,20 +476,14 @@ export interface AgentProfileDeleteOutcome {
 export async function deleteAgentProfile(
   engine: EngineAPI,
   id: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<AgentProfileDeleteOutcome> {
-  await engine.agents.delete(id);
-  const state = useAppStore.getState();
-  state.setAgentProfiles(state.agentProfiles.filter((profile) => profile.id !== id));
-  state.setAgentGroups(
-    state.agentGroups.map((group) => ({
-      ...group,
-      agentIds: group.agentIds.filter((agentId) => agentId !== id),
-    })),
-  );
-  if (state.selectedAgentId === id) state.selectAgentProfile(null);
+  if (!owns()) return { refreshErrors: [] };
+  await agentPersistentCollectionsController(engine, owns).deleteProfile(id, owns);
+  if (!owns()) return { refreshErrors: [] };
   const refreshes = await Promise.allSettled([
-    refreshAgentProfiles(engine),
-    refreshAgentGroups(engine),
+    refreshAgentProfiles(engine, owns),
+    refreshAgentGroups(engine, owns),
   ]);
   return {
     refreshErrors: refreshes.flatMap((refresh) =>
@@ -398,7 +493,12 @@ export async function deleteAgentProfile(
 }
 
 /** Live OID → name hint for the query field. */
-export async function resolveOidHint(engine: EngineAPI, oid: string): Promise<void> {
+export async function resolveOidHint(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   const normalized = normalizeNumericOid(oid);
   if (!normalized) {
@@ -407,17 +507,19 @@ export async function resolveOidHint(engine: EngineAPI, oid: string): Promise<vo
   }
   try {
     const r = await engine.mibs.resolve(normalized);
+    if (!owns()) return;
     // Only apply if the field hasn't changed underneath us.
     if (useAppStore.getState().oid === oid) {
       s.setOidName(r?.name ?? null);
       if (r && useAppStore.getState().queryOperation === 'set') {
         const node = await engine.mibs.node(r.definitionOid, s.moduleFocus?.module.name);
-        if (useAppStore.getState().oid === oid && node) {
+        if (owns() && useAppStore.getState().oid === oid && node) {
           s.updateSetDraft({ type: inferWireType(node.syntax) });
         }
       }
     }
   } catch {
+    if (!owns()) return;
     s.setOidName(null);
   }
 }
@@ -425,6 +527,73 @@ export async function resolveOidHint(engine: EngineAPI, oid: string): Promise<vo
 // --------------------------------------------------------------------------
 // Traps
 // --------------------------------------------------------------------------
+
+const receiverTransitions = new WeakMap<EngineAPI, Promise<void>>();
+const receiverTransitionGeneration = new WeakMap<EngineAPI, number>();
+const trapRecordRefreshGeneration = new WeakMap<EngineAPI, number>();
+interface TrapRecordMutationQueue {
+  tail: Promise<void>;
+  exact: Map<string, { resource: string; promise: Promise<void> }>;
+}
+const trapRecordMutations = new WeakMap<EngineAPI, TrapRecordMutationQueue>();
+
+export function invalidateTrapRecordAuthority(engine: EngineAPI): number {
+  const generation = (trapRecordRefreshGeneration.get(engine) ?? 0) + 1;
+  trapRecordRefreshGeneration.set(engine, generation);
+  return generation;
+}
+
+export function performTrapRecordMutation(
+  engine: EngineAPI,
+  resource: string,
+  intent: string,
+  remote: () => Promise<unknown>,
+  apply: () => void,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return Promise.resolve();
+  let queue = trapRecordMutations.get(engine);
+  if (!queue) {
+    queue = { tail: Promise.resolve(), exact: new Map() };
+    trapRecordMutations.set(engine, queue);
+  }
+  const existing = queue.exact.get(intent);
+  if (existing) return existing.promise;
+  invalidateTrapRecordAuthority(engine);
+  const mutation = queue.tail
+    .catch(() => undefined)
+    .then(async () => {
+      if (!owns()) throw new Error('Trap record mutation lost engine ownership');
+      await remote();
+      if (!owns()) throw new Error('Trap record mutation lost engine ownership');
+      invalidateTrapRecordAuthority(engine);
+      apply();
+    })
+    .finally(() => {
+      if (queue?.exact.get(intent)?.promise === mutation) queue.exact.delete(intent);
+    });
+  queue.exact.set(intent, { resource, promise: mutation });
+  queue.tail = mutation;
+  return mutation;
+}
+
+export async function refreshTrapReceiverStatus(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const generation = (receiverTransitionGeneration.get(engine) ?? 0) + 1;
+  receiverTransitionGeneration.set(engine, generation);
+  const status = await engine.traps.status();
+  if (!owns() || receiverTransitionGeneration.get(engine) !== generation) return;
+  useAppStore.getState().setReceiver({
+    running: status.running,
+    ...(status.port ? { port: status.port } : {}),
+    count: status.count,
+    drops: status.drops,
+    ...(status.transports ? { transports: status.transports } : {}),
+  });
+}
 
 export async function toggleReceiver(
   engine: EngineAPI,
@@ -434,49 +603,99 @@ export async function toggleReceiver(
     communities?: string[];
     transport?: 'udp4' | 'udp6' | 'dual';
   } = {},
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
-  const s = useAppStore.getState();
-  if (s.receiver.running) {
-    await engine.traps.stopReceiver();
-    s.setReceiver({ running: false });
-  } else {
-    try {
-      const status = await engine.traps.startReceiver({
-        ...(port.trim() ? { port: Number(port) } : {}),
-        disableAuthorization: options.disableAuthorization ?? true,
-        communities: options.communities ?? ['public'],
-        transport: options.transport ?? 'dual',
-      });
-      s.setReceiver({
-        running: status.running,
-        port: status.port,
-        count: status.count,
-        drops: status.drops,
-        transports: status.transports,
-      });
-    } catch (e) {
+  if (!owns()) return;
+  const pending = receiverTransitions.get(engine);
+  if (pending) return pending;
+  const generation = (receiverTransitionGeneration.get(engine) ?? 0) + 1;
+  receiverTransitionGeneration.set(engine, generation);
+  const accepts = () => owns() && receiverTransitionGeneration.get(engine) === generation;
+  const transition = (async () => {
+    const s = useAppStore.getState();
+    if (s.receiver.running) {
+      await engine.traps.stopReceiver();
+      if (!accepts()) return;
       s.setReceiver({ running: false });
-      throw e;
+    } else {
+      try {
+        const status = await engine.traps.startReceiver({
+          ...(port.trim() ? { port: Number(port) } : {}),
+          disableAuthorization: options.disableAuthorization ?? true,
+          communities: options.communities ?? ['public'],
+          transport: options.transport ?? 'dual',
+        });
+        if (!accepts()) return;
+        s.setReceiver({
+          running: status.running,
+          port: status.port,
+          count: status.count,
+          drops: status.drops,
+          transports: status.transports,
+        });
+      } catch (e) {
+        if (!accepts()) return;
+        s.setReceiver({ running: false });
+        throw e;
+      }
     }
-  }
+  })().finally(() => {
+    if (receiverTransitions.get(engine) === transition) receiverTransitions.delete(engine);
+  });
+  receiverTransitions.set(engine, transition);
+  return transition;
 }
 
-export async function refreshTrapRecords(engine: EngineAPI, query: TrapQuery = {}): Promise<void> {
-  useAppStore.getState().setTrapRecords(await engine.traps.query({ ...query, limit: 10_000 }));
+export async function refreshTrapRecords(
+  engine: EngineAPI,
+  query: TrapQuery = {},
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const generation = invalidateTrapRecordAuthority(engine);
+  const records = await engine.traps.query({ ...query, limit: 10_000 });
+  if (owns() && trapRecordRefreshGeneration.get(engine) === generation)
+    useAppStore.getState().setTrapRecords(records);
 }
 
-export async function markTrapRead(engine: EngineAPI, id: string, read = true): Promise<void> {
-  await engine.traps.markRead([id], read);
-  useAppStore.getState().markTrapRead(id, read);
+export async function markTrapRead(
+  engine: EngineAPI,
+  id: string,
+  read = true,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  return performTrapRecordMutation(
+    engine,
+    id,
+    `mark:${id}:${read}`,
+    () => engine.traps.markRead([id], read),
+    () => useAppStore.getState().markTrapRead(id, read),
+    owns,
+  );
 }
 
-export async function deleteTrap(engine: EngineAPI, id: string): Promise<void> {
-  await engine.traps.delete([id]);
-  useAppStore.getState().removeTrap(id);
+export async function deleteTrap(
+  engine: EngineAPI,
+  id: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  return performTrapRecordMutation(
+    engine,
+    id,
+    `delete:${id}`,
+    () => engine.traps.delete([id]),
+    () => useAppStore.getState().removeTrap(id),
+    owns,
+  );
 }
 
-export async function sendNotification(engine: EngineAPI): Promise<void> {
+export async function sendNotification(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
+  if (s.sendBusy) return;
   const form = s.notification;
   const target = buildAgentSpec(form.target, 162);
   const selectedProfile = s.agentProfiles.find((profile) => profile.id === s.notificationAgentId);
@@ -507,35 +726,42 @@ export async function sendNotification(engine: EngineAPI): Promise<void> {
   const id = `sent-${Date.now()}-${notificationSeq++}`;
   try {
     const result = await engine.traps.send(request);
+    if (!owns()) return;
     s.addSendHistory({ id, request, result });
     s.pushToast({ tone: 'success', message: `${form.kind === 'inform' ? 'Inform' : 'Trap'} sent` });
   } catch (e) {
+    if (!owns()) return;
     const error = describeError(e);
     s.setSendError(error);
     s.addSendHistory({ id, request, error });
     s.pushToast({ tone: 'error', message: error });
   } finally {
-    s.setSendBusy(false);
+    if (owns()) s.setSendBusy(false);
   }
 }
 
 export async function repeatNotification(
   engine: EngineAPI,
   request: NotificationSendRequest | NotificationAgentSendRequest,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
+  if (s.sendBusy) return;
   s.setSendBusy(true);
   s.setSendError(null);
   const id = `sent-${Date.now()}-${notificationSeq++}`;
   try {
     const result = await engine.traps.send(request);
+    if (!owns()) return;
     s.addSendHistory({ id, request, result });
   } catch (e) {
+    if (!owns()) return;
     const error = describeError(e);
     s.setSendError(error);
     s.addSendHistory({ id, request, error });
   } finally {
-    s.setSendBusy(false);
+    if (owns()) s.setSendBusy(false);
   }
 }
 
@@ -543,9 +769,13 @@ export async function repeatNotification(
 // MIBs
 // --------------------------------------------------------------------------
 
-export async function refreshModules(engine: EngineAPI): Promise<void> {
-  const s = useAppStore.getState();
-  s.setModules(await engine.mibs.list());
+export async function refreshModules(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  const modules = await engine.mibs.list();
+  if (!owns()) return;
+  useAppStore.getState().setModules(modules);
 }
 
 function waitForImporterDismissal(): Promise<void> {
@@ -591,27 +821,48 @@ async function dismissBrowserImporterBeforeStart(
 export async function presentFileImportReview(
   draft: FileImportDraft,
   waitForDismissal: () => Promise<void> = waitForImporterDismissal,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   await dismissBrowserImporterBeforeStart(waitForDismissal);
-  useAppStore.getState().setFileImportDraft(draft);
+  if (owns()) useAppStore.getState().setFileImportDraft(draft);
 }
 
 export async function importPastedText(
   engine: EngineAPI,
   name: string,
   content: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'mib-import');
   const priorHandle = useAppStore.getState().importHandle;
   const priorStatusHandle = useAppStore.getState().importStatus?.handleId;
   try {
     await dismissBrowserImporterBeforeStart();
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     const { handleId } = await engine.mibs.startImport({
       files: [{ name: name || 'pasted.mib', content }],
     });
-    useAppStore.getState().beginImport(handleId);
-    await syncImportOrCancel(engine, handleId, name || 'pasted.mib');
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.resolver.cancel(id),
+      (id) => useAppStore.getState().beginImport(id),
+    );
+    if (!accepted) return;
+    await syncImportOrCancel(engine, handleId, name || 'pasted.mib', owns);
   } catch (e) {
-    await handleStartImportFailure(engine, priorHandle, priorStatusHandle, name || 'pasted.mib', e);
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      await handleStartImportFailure(
+        engine,
+        priorHandle,
+        priorStatusHandle,
+        name || 'pasted.mib',
+        e,
+        owns,
+      );
   }
 }
 
@@ -621,41 +872,72 @@ export async function importReviewedFiles(
   files: MibTextFile[],
   replaceModules: string[],
   batchLabel: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<string | null> {
+  if (!owns()) return null;
+  const startClaim = engineStartArbitration.begin(engine, 'mib-import');
   const priorHandle = useAppStore.getState().importHandle;
   const priorStatusHandle = useAppStore.getState().importStatus?.handleId;
   try {
     const { handleId } = await engine.mibs.startImport({ files, replaceModules, batchLabel });
     const state = useAppStore.getState();
-    if (state.importHandle !== handleId && state.importStatus?.handleId !== handleId) {
-      state.beginImport(handleId);
-    }
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.resolver.cancel(id),
+      (id) => {
+        if (state.importHandle !== id && state.importStatus?.handleId !== id) state.beginImport(id);
+      },
+    );
+    if (!accepted) return null;
     // Ownership transfers as soon as the handle is accepted. Resolver status,
     // consent, progress, cancellation and terminal events remain in the existing UI.
-    void syncImportOrCancel(engine, handleId, batchLabel);
+    void syncImportOrCancel(engine, handleId, batchLabel, owns);
     return handleId;
   } catch (e) {
-    await handleStartImportFailure(engine, priorHandle, priorStatusHandle, batchLabel, e);
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      await handleStartImportFailure(engine, priorHandle, priorStatusHandle, batchLabel, e, owns);
     return null;
   }
 }
 
-export async function importUrl(engine: EngineAPI, url: string): Promise<void> {
+export async function importUrl(
+  engine: EngineAPI,
+  url: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'mib-import');
   const priorHandle = useAppStore.getState().importHandle;
   const priorStatusHandle = useAppStore.getState().importStatus?.handleId;
   try {
     await dismissBrowserImporterBeforeStart();
+    if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
     const { handleId } = await engine.mibs.startImport({ url: url.trim() });
-    useAppStore.getState().beginImport(handleId);
-    await syncImportOrCancel(engine, handleId, url);
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.resolver.cancel(id),
+      (id) => useAppStore.getState().beginImport(id),
+    );
+    if (!accepted) return;
+    await syncImportOrCancel(engine, handleId, url, owns);
   } catch (e) {
-    await handleStartImportFailure(engine, priorHandle, priorStatusHandle, url, e);
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      await handleStartImportFailure(engine, priorHandle, priorStatusHandle, url, e, owns);
   }
 }
 
-export async function cancelImport(engine: EngineAPI): Promise<void> {
+export async function cancelImport(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  engineStartArbitration.begin(engine, 'mib-import');
   const handleId = useAppStore.getState().importHandle;
-  if (handleId) await engine.resolver.cancel(handleId);
+  if (handleId && owns()) await engine.resolver.cancel(handleId);
 }
 
 // --------------------------------------------------------------------------
@@ -664,38 +946,145 @@ export async function cancelImport(engine: EngineAPI): Promise<void> {
 
 const TERMINAL_STATES = new Set(['done', 'partial', 'error', 'cancelled', 'expired']);
 
-const resolverRefreshes = new WeakMap<EngineAPI, Promise<void>>();
-const vendorBrowseStarts = new Set<string>();
-let lookupCandidateStartPending = false;
+type ResolverRefreshSnapshot = readonly [
+  Awaited<ReturnType<EngineAPI['resolver']['settings']['get']>>,
+  Awaited<ReturnType<EngineAPI['resolver']['sources']['list']>>,
+  Awaited<ReturnType<EngineAPI['resolver']['cache']['stats']>>,
+  Awaited<ReturnType<EngineAPI['resolver']['history']['list']>>,
+];
+interface ResolverRefreshEntry {
+  generation: number;
+  sourceAuthorityToken: number;
+  cacheAuthorityToken: number;
+  promise: Promise<ResolverRefreshSnapshot>;
+}
+const resolverRefreshes = new WeakMap<EngineAPI, ResolverRefreshEntry>();
+const resolverRefreshGenerations = new WeakMap<EngineAPI, number>();
+interface ResolverSourceControllerEntry {
+  controller: ResolverSourceCollectionController;
+  owns: StoreWriteOwnership;
+}
+const resolverSourceControllers = new WeakMap<EngineAPI, ResolverSourceControllerEntry>();
+interface ResolverCacheControllerEntry {
+  controller: ResolverCacheClearController;
+  owns: StoreWriteOwnership;
+}
+const resolverCacheControllers = new WeakMap<EngineAPI, ResolverCacheControllerEntry>();
+const vendorBrowseStartsByEngine = new WeakMap<EngineAPI, Set<string>>();
+const lookupCandidateStarts = new WeakSet<EngineAPI>();
 
-export function refreshResolverState(engine: EngineAPI): Promise<void> {
-  const current = resolverRefreshes.get(engine);
-  if (current) return current;
-  const refresh = (async () => {
-    const [settings, sources, cache, history] = await Promise.all([
+export function resolverSourceController(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+  load = true,
+): ResolverSourceCollectionController {
+  let entry = resolverSourceControllers.get(engine);
+  if (!entry) {
+    entry = {
+      owns,
+      controller: undefined as unknown as ResolverSourceCollectionController,
+    };
+    entry.controller = new ResolverSourceCollectionController(engine, (sources) => {
+      if (entry?.owns()) useAppStore.getState().setResolverSources(sources);
+    });
+    resolverSourceControllers.set(engine, entry);
+  }
+  entry.owns = owns;
+  if (owns()) entry.controller.activate();
+  if (owns() && load && entry.controller.snapshot().readiness.phase === 'unloaded')
+    void entry.controller.load().catch(() => undefined);
+  return entry.controller;
+}
+
+export function disposeResolverSourceController(engine: EngineAPI): void {
+  const entry = resolverSourceControllers.get(engine);
+  entry?.controller.dispose();
+}
+
+export function resolverCacheClearController(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): ResolverCacheClearController {
+  let entry = resolverCacheControllers.get(engine);
+  if (!entry) {
+    entry = {
+      owns,
+      controller: new ResolverCacheClearController(engine.resolver.cache, (stats) => {
+        if (entry?.owns()) useAppStore.getState().setResolverCache(stats);
+      }),
+    };
+    resolverCacheControllers.set(engine, entry);
+  }
+  entry.owns = owns;
+  if (owns()) entry.controller.activate();
+  return entry.controller;
+}
+
+export function disposeResolverCacheClearController(engine: EngineAPI): void {
+  resolverCacheControllers.get(engine)?.controller.dispose();
+}
+
+export function refreshResolverState(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+  force = false,
+): Promise<void> {
+  let entry = resolverRefreshes.get(engine);
+  if (!entry || force) {
+    const generation = (resolverRefreshGenerations.get(engine) ?? 0) + 1;
+    resolverRefreshGenerations.set(engine, generation);
+    const sourceAuthorityToken = resolverSourceController(engine, owns, false).beginAuthorityRead();
+    const cacheAuthorityToken = resolverCacheClearController(engine, owns).beginAuthorityRead();
+    const promise = Promise.all([
       engine.resolver.settings.get(),
       engine.resolver.sources.list(),
       engine.resolver.cache.stats(),
       engine.resolver.history.list(30),
-    ]);
+    ]).finally(() => {
+      if (resolverRefreshes.get(engine) === createdEntry) resolverRefreshes.delete(engine);
+    });
+    const createdEntry: ResolverRefreshEntry = {
+      generation,
+      sourceAuthorityToken,
+      cacheAuthorityToken,
+      promise,
+    };
+    entry = createdEntry;
+    resolverRefreshes.set(engine, entry);
+  }
+  const { generation, sourceAuthorityToken, cacheAuthorityToken, promise } = entry;
+  return promise.then(([settings, sources, cache, history]) => {
+    if (resolverRefreshGenerations.get(engine) !== generation || !owns()) return;
     const s = useAppStore.getState();
+    if (!owns()) return;
     s.setResolverSettings(settings);
-    s.setResolverSources(sources);
-    s.setResolverCache(cache);
+    if (!owns()) return;
+    resolverSourceController(engine, owns, false).applyAuthority(
+      sources,
+      'refresh',
+      sourceAuthorityToken,
+    );
+    if (!owns()) return;
+    resolverCacheClearController(engine, owns).applyAuthority(cache, cacheAuthorityToken);
+    if (!owns()) return;
     s.setResolverHistory(history);
-  })().finally(() => resolverRefreshes.delete(engine));
-  resolverRefreshes.set(engine, refresh);
-  return refresh;
+  });
 }
 
-async function syncResolverOperation(engine: EngineAPI, handleId: string): Promise<void> {
+async function syncResolverOperation(
+  engine: EngineAPI,
+  handleId: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
   const status = await engine.resolver.status(handleId);
+  if (!owns()) return;
   if (!status) throw new Error(`Resolver operation status is unavailable: ${handleId}`);
   const s = useAppStore.getState();
   if (status.state === 'awaiting-consent') {
     s.setBrowserImportOpen(false);
     dismissFileImportReviewForOperation(handleId);
     await waitForFileImportReviewDismissal();
+    if (!owns()) return;
     if (useAppStore.getState().importHandle !== handleId) return;
     s.enqueueConsent({
       handleId,
@@ -705,12 +1094,16 @@ async function syncResolverOperation(engine: EngineAPI, handleId: string): Promi
     });
   }
   if (TERMINAL_STATES.has(status.state)) {
-    await handleResolverEvent(engine, {
-      channel: 'resolver',
-      handleId,
-      kind: status.state === 'expired' ? 'error' : status.state,
-      payload: { status, result: status.result },
-    });
+    await handleResolverEvent(
+      engine,
+      {
+        channel: 'resolver',
+        handleId,
+        kind: status.state === 'expired' ? 'error' : status.state,
+        payload: { status, result: status.result },
+      },
+      owns,
+    );
   } else if (handleId === s.importHandle) {
     s.setImportStatus(status);
   }
@@ -720,15 +1113,17 @@ async function syncImportOrCancel(
   engine: EngineAPI,
   handleId: string,
   requestName: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
   try {
-    await syncResolverOperation(engine, handleId);
+    await syncResolverOperation(engine, handleId, owns);
   } catch (error) {
     try {
       await engine.resolver.cancel(handleId);
     } catch {
       // The status transport failed too; local ownership still must be released.
     }
+    if (!owns()) return;
     const s = useAppStore.getState();
     if (s.importHandle !== handleId) return;
     const message = `Import started but its resolver status could not be synchronized: ${describeError(error)}`;
@@ -756,7 +1151,9 @@ async function handleStartImportFailure(
   priorStatusHandle: string | undefined,
   requestName: string,
   error: unknown,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const state = useAppStore.getState();
   const claimedHandle = state.importHandle;
   const message = describeError(error);
@@ -780,6 +1177,7 @@ async function handleStartImportFailure(
       { loaded: [], errors: [{ name: requestName, message }] },
     );
     await waitForFileImportReviewDismissal();
+    if (!owns()) return;
     state.settleFileImportDraft(claimedHandle, 'error');
     state.dismissConsent(claimedHandle);
     try {
@@ -810,7 +1208,13 @@ async function handleStartImportFailure(
 }
 
 /** Route one resolver event to its owning operation. Events for stale handles are ignored. */
-export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent): Promise<void> {
+export async function handleResolverEvent(
+  engine: EngineAPI,
+  event: EngineEvent,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+  deferPostTerminalRefresh = false,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   const payload = (event.payload ?? {}) as Record<string, unknown>;
 
@@ -827,18 +1231,25 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
   const sourceId = Object.entries(s.sourceTestHandles).find(([, id]) => id === event.handleId)?.[0];
   const isSourcePreview = Boolean(event.handleId && event.handleId === s.sourcePreviewHandle);
   const lookupOid = Object.entries(s.lookupHandles).find(([, id]) => id === event.handleId)?.[0];
-  const vendorBrowseOid = Object.entries(s.vendorMibBrowseHandles).find(([, id]) => id === event.handleId)?.[0];
+  const vendorBrowseOid = Object.entries(s.vendorMibBrowseHandles).find(
+    ([, id]) => id === event.handleId,
+  )?.[0];
   const isImport = Boolean(
     event.handleId && event.handleId === useAppStore.getState().importHandle,
   );
 
   if (event.kind === 'consent-required' && event.handleId) {
     const active =
-      isImport || Boolean(sourceId) || isSourcePreview || Boolean(lookupOid) || Boolean(vendorBrowseOid);
+      isImport ||
+      Boolean(sourceId) ||
+      isSourcePreview ||
+      Boolean(lookupOid) ||
+      Boolean(vendorBrowseOid);
     if (active) {
       if (isImport) {
         s.setBrowserImportOpen(false);
         await waitForFileImportReviewDismissal();
+        if (!owns()) return;
         if (useAppStore.getState().importHandle !== event.handleId) return;
       }
       const current = useAppStore.getState();
@@ -893,12 +1304,16 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
     const finalResult = extractImportResult(payload) ?? useAppStore.getState().lastImport;
     s.finishImport(status, finalResult);
     if (status.state !== 'done') await waitForFileImportReviewDismissal();
+    if (!owns()) return;
     s.settleFileImportDraft(status.handleId, status.state);
-    await Promise.all([refreshModules(engine), refreshResolverState(engine)]);
-    await refreshLoadedOidLookups(engine);
+    if (deferPostTerminalRefresh) return;
+    await Promise.all([refreshModules(engine, owns), refreshResolverState(engine, owns)]);
+    if (!owns()) return;
+    await refreshLoadedOidLookups(engine, owns);
+    if (!owns()) return;
     const fresh = useAppStore.getState();
     fresh.clearChildrenCache();
-    await loadChildren(engine, '');
+    await loadChildren(engine, '', owns);
     return;
   }
 
@@ -913,7 +1328,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
       responseExcerpt: stringValue(result.responseExcerpt),
       httpStatus: typeof result.httpStatus === 'number' ? result.httpStatus : undefined,
     });
-    await refreshResolverState(engine);
+    if (!deferPostTerminalRefresh) await refreshResolverState(engine, owns);
     return;
   }
 
@@ -924,7 +1339,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
       result: result?.kind === 'source-preview' ? result : undefined,
       error: status.failures[0]?.message,
     });
-    await refreshResolverState(engine);
+    if (!deferPostTerminalRefresh) await refreshResolverState(engine, owns);
     return;
   }
 
@@ -935,7 +1350,7 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
       result,
       error: status.failures[0]?.message,
     });
-    await refreshResolverState(engine);
+    if (!deferPostTerminalRefresh) await refreshResolverState(engine, owns);
   }
 
   if (vendorBrowseOid) {
@@ -945,24 +1360,25 @@ export async function handleResolverEvent(engine: EngineAPI, event: EngineEvent)
       result,
       error: status.failures[0]?.message,
     });
-    await refreshResolverState(engine);
+    if (!deferPostTerminalRefresh) await refreshResolverState(engine, owns);
   }
 }
 
-async function refreshLoadedOidLookups(engine: EngineAPI): Promise<void> {
+export async function refreshLoadedOidLookups(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
   const snapshot = useAppStore.getState();
   const unresolved = Object.entries(snapshot.oidLookups).filter(
-    ([oid, lookup]) =>
-      lookup.result &&
-      !lookup.result.loaded &&
-      !snapshot.lookupHandles[oid],
+    ([oid, lookup]) => lookup.result && !lookup.result.loaded && !snapshot.lookupHandles[oid],
   );
   await Promise.all(
     unresolved.map(async ([oid]) => {
       const loaded = await engine.mibs.resolve(oid);
-      if (!loaded) return;
+      if (!loaded || !owns()) return;
       const current = useAppStore.getState().oidLookups[oid];
       if (!current?.result || current.result.loaded) return;
+      if (!owns()) return;
       useAppStore.getState().finishOidLookup(oid, {
         ...current,
         state: 'done',
@@ -976,21 +1392,27 @@ export async function respondResolverConsent(
   engine: EngineAPI,
   allow: boolean,
   askAgain: boolean,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const prompt = useAppStore.getState().consent;
   if (!prompt) return;
   try {
     await engine.resolver.respondConsent(prompt.handleId, { allow, askAgain });
+    if (!owns()) return;
     useAppStore.getState().dismissConsent(prompt.handleId);
     if (!allow) await engine.resolver.cancel(prompt.handleId);
   } catch (e) {
+    if (!owns()) return;
     const state = useAppStore.getState();
     state.setResolverError(describeError(e));
     try {
       const status = await engine.resolver.status(prompt.handleId);
+      if (!owns()) return;
       if (status?.state === 'awaiting-consent') state.enqueueConsent(prompt);
       else state.dismissConsent(prompt.handleId);
     } catch {
+      if (!owns()) return;
       // If status is also unreachable, preserve/re-enqueue the disclosure rather
       // than silently advancing to a later queued prompt.
       state.enqueueConsent(prompt);
@@ -1001,12 +1423,15 @@ export async function respondResolverConsent(
 export async function updateResolverSettings(
   engine: EngineAPI,
   patch: Partial<ResolverSettings>,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   useAppStore.getState().setResolverError(null);
   try {
-    useAppStore.getState().setResolverSettings(await engine.resolver.settings.update(patch));
+    const settings = await engine.resolver.settings.update(patch);
+    if (owns()) useAppStore.getState().setResolverSettings(settings);
   } catch (e) {
-    useAppStore.getState().setResolverError(describeError(e));
+    if (owns()) useAppStore.getState().setResolverError(describeError(e));
   }
 }
 
@@ -1014,128 +1439,189 @@ export async function saveResolverSource(
   engine: EngineAPI,
   draft: ResolverSourceDraft,
   existingId?: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+  retry = false,
 ): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   s.setResolverError(null);
   try {
-    if (existingId) await engine.resolver.sources.update(existingId, draft);
-    else await engine.resolver.sources.create(draft);
-    await refreshResolverState(engine);
-    s.pushToast({ tone: 'success', message: existingId ? 'Source updated' : 'Source added' });
+    const controller = resolverSourceController(engine, owns);
+    if (existingId) await controller.update(existingId, draft, retry, owns);
+    else await controller.create(draft, retry, owns);
+    assertResolverSourceMutationSettled(controller);
+    if (owns())
+      s.pushToast({ tone: 'success', message: existingId ? 'Source updated' : 'Source added' });
   } catch (e) {
-    s.setResolverError(describeError(e));
+    if (owns()) s.setResolverError(describeError(e));
     throw e;
   }
 }
 
-export async function removeResolverSource(engine: EngineAPI, sourceId: string): Promise<void> {
+export async function removeResolverSource(
+  engine: EngineAPI,
+  sourceId: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+  retry = false,
+): Promise<void> {
+  if (!owns()) return;
   try {
-    await engine.resolver.sources.remove(sourceId);
-    await refreshResolverState(engine);
+    const controller = resolverSourceController(engine, owns);
+    await controller.remove(sourceId, retry, owns);
+    assertResolverSourceMutationSettled(controller);
   } catch (e) {
-    useAppStore.getState().setResolverError(describeError(e));
+    if (owns()) useAppStore.getState().setResolverError(describeError(e));
     throw e;
   }
 }
 
-export async function toggleResolverSource(engine: EngineAPI, source: SourceConfig): Promise<void> {
-  await saveResolverSource(engine, { config: { ...source, enabled: !source.enabled } }, source.id);
+function assertResolverSourceMutationSettled(controller: ResolverSourceCollectionController): void {
+  const state = controller.snapshot();
+  if (state.phase === 'uncertain' || state.phase === 'conflict')
+    throw new Error(resolverSourceCollectionStatusText(state));
+}
+
+export async function toggleResolverSource(
+  engine: EngineAPI,
+  source: SourceConfig,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  await resolverSourceController(engine, owns).toggle(source.id, owns);
 }
 
 export async function moveResolverSource(
   engine: EngineAPI,
   sourceId: string,
   direction: -1 | 1,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
-  const sources = useAppStore.getState().resolverSources;
-  const fixed = sources.filter((source) => source.kind === 'cache');
-  const movable = sources.filter((source) => source.kind !== 'cache');
-  const index = movable.findIndex((source) => source.id === sourceId);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= movable.length) return;
-  const ids = movable.map((source) => source.id);
-  [ids[index], ids[target]] = [ids[target]!, ids[index]!];
-  useAppStore
-    .getState()
-    .setResolverSources(
-      await engine.resolver.sources.reorder([...fixed.map((source) => source.id), ...ids]),
-    );
+  if (!owns()) return;
+  await resolverSourceController(engine, owns).move(sourceId, direction, owns);
 }
 
 export async function dragResolverSource(
   engine: EngineAPI,
   sourceId: string,
   targetIndex: number,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
-  const sources = useAppStore.getState().resolverSources;
-  const fixed = sources.filter((source) => source.kind === 'cache');
-  const movable = sources.filter((source) => source.kind !== 'cache');
-  const from = movable.findIndex((source) => source.id === sourceId);
-  const to = Math.max(0, Math.min(movable.length - 1, Math.trunc(targetIndex)));
-  if (from < 0 || from === to) return;
-  const [moved] = movable.splice(from, 1);
-  if (!moved) return;
-  movable.splice(to, 0, moved);
-  useAppStore
-    .getState()
-    .setResolverSources(
-      await engine.resolver.sources.reorder([
-        ...fixed.map((source) => source.id),
-        ...movable.map((source) => source.id),
-      ]),
-    );
+  if (!owns()) return;
+  await resolverSourceController(engine, owns).drag(sourceId, targetIndex, owns);
 }
 
 export async function testResolverSource(
   engine: EngineAPI,
   sourceId: string,
   module: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, `resolver-source-test:${sourceId}`);
+  const priorHandle = useAppStore.getState().sourceTestHandles[sourceId];
   try {
+    if (priorHandle) {
+      await engine.resolver.cancel(priorHandle).catch(() => undefined);
+      if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
+      if (useAppStore.getState().sourceTestHandles[sourceId] === priorHandle)
+        useAppStore.getState().finishSourceTest(sourceId, {
+          state: 'cancelled',
+          message: 'Superseded by a newer source test.',
+        });
+    }
     const { handleId } = await engine.resolver.sources.test(sourceId, module.trim());
-    useAppStore.getState().setSourceTestHandle(sourceId, handleId);
-    await syncResolverOperation(engine, handleId);
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.resolver.cancel(id),
+      (id) => useAppStore.getState().setSourceTestHandle(sourceId, id),
+    );
+    if (!accepted) return;
+    await syncResolverOperation(engine, handleId, owns);
   } catch (e) {
-    useAppStore.getState().finishSourceTest(sourceId, {
-      state: 'error',
-      message: describeError(e),
-    });
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      useAppStore.getState().finishSourceTest(sourceId, {
+        state: 'error',
+        message: describeError(e),
+      });
   }
 }
 
 export async function previewResolverSource(
   engine: EngineAPI,
   draft: ResolverSourceDraft,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
+  const startClaim = engineStartArbitration.begin(engine, 'resolver-source-preview');
   const s = useAppStore.getState();
+  const priorHandle = s.sourcePreviewHandle;
   try {
+    if (priorHandle) {
+      await engine.resolver.cancel(priorHandle).catch(() => undefined);
+      if (!engineStartArbitration.isCurrent(startClaim, owns)) return;
+      if (useAppStore.getState().sourcePreviewHandle === priorHandle)
+        useAppStore.getState().clearSourcePreview();
+    }
     const { handleId } = await engine.resolver.sources.preview(draft);
-    s.beginSourcePreview(handleId);
-    await syncResolverOperation(engine, handleId);
+    const accepted = await engineStartArbitration.accept(
+      startClaim,
+      handleId,
+      owns,
+      (id) => engine.resolver.cancel(id),
+      (id) => s.beginSourcePreview(id),
+    );
+    if (!accepted) return;
+    await syncResolverOperation(engine, handleId, owns);
   } catch (e) {
-    s.finishSourcePreview({ state: 'error', error: describeError(e) });
+    if (engineStartArbitration.isCurrent(startClaim, owns))
+      s.finishSourcePreview({ state: 'error', error: redactResolverSourceError(e, draft) });
   }
 }
 
-export async function clearResolverCache(engine: EngineAPI): Promise<void> {
-  await engine.resolver.cache.clear();
-  await refreshResolverState(engine);
+export async function cancelResolverSourcePreview(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
+  engineStartArbitration.begin(engine, 'resolver-source-preview');
+  const state = useAppStore.getState();
+  const handleId = state.sourcePreviewHandle;
+  state.clearSourcePreview();
+  if (handleId) await engine.resolver.cancel(handleId).catch(() => undefined);
 }
 
-export async function lookupUnknownOid(engine: EngineAPI, oid: string): Promise<void> {
+export async function clearResolverCache(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  const controller = resolverCacheClearController(engine, owns);
+  await controller.clear(owns);
+  if (owns()) useAppStore.getState().setResolverCache(controller.snapshot().confirmed ?? null);
+}
+
+export async function lookupUnknownOid(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const normalized = normalizeNumericOid(oid);
   if (!normalized) return;
   const current = useAppStore.getState().lookupHandles[normalized];
   if (current) return;
   try {
     const { handleId } = await engine.resolver.lookupOid({ oid: normalized, network: true });
+    if (!owns()) return;
     useAppStore.getState().beginOidLookup(normalized, handleId);
-    await syncResolverOperation(engine, handleId);
+    await syncResolverOperation(engine, handleId, owns);
   } catch (e) {
-    useAppStore.getState().finishOidLookup(normalized, {
-      state: 'error',
-      error: describeError(e),
-    });
+    if (owns())
+      useAppStore.getState().finishOidLookup(normalized, {
+        state: 'error',
+        error: describeError(e),
+      });
   }
 }
 
@@ -1143,28 +1629,38 @@ export async function browseVendorMibs(
   engine: EngineAPI,
   oid: string,
   vendor: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const normalized = normalizeNumericOid(oid);
   if (!normalized) return;
   const state = useAppStore.getState();
-  if (state.vendorMibBrowseHandles[normalized] || vendorBrowseStarts.has(normalized)) return;
-  vendorBrowseStarts.add(normalized);
+  let pendingStarts = vendorBrowseStartsByEngine.get(engine);
+  if (!pendingStarts) {
+    pendingStarts = new Set<string>();
+    vendorBrowseStartsByEngine.set(engine, pendingStarts);
+  }
+  if (state.vendorMibBrowseHandles[normalized] || pendingStarts.has(normalized)) return;
+  pendingStarts.add(normalized);
   try {
     const settings = await engine.resolver.settings.get();
+    if (!owns()) return;
     const { handleId } = await engine.resolver.browseVendorMibs({
       oid: normalized,
       vendor,
       network: settings.enabled,
     });
+    if (!owns()) return;
     useAppStore.getState().beginVendorMibBrowse(normalized, handleId);
-    await syncResolverOperation(engine, handleId);
+    await syncResolverOperation(engine, handleId, owns);
   } catch (error) {
-    useAppStore.getState().finishVendorMibBrowse(normalized, {
-      state: 'error',
-      error: describeError(error),
-    });
+    if (owns())
+      useAppStore.getState().finishVendorMibBrowse(normalized, {
+        state: 'error',
+        error: describeError(error),
+      });
   } finally {
-    vendorBrowseStarts.delete(normalized);
+    pendingStarts.delete(normalized);
   }
 }
 
@@ -1174,20 +1670,23 @@ export async function loadLookupCandidate(
   module: string,
   cachedOnly = false,
   preferredSourceId?: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const state = useAppStore.getState();
-  if (state.importHandle || lookupCandidateStartPending) return;
-  lookupCandidateStartPending = true;
+  if (state.importHandle || lookupCandidateStarts.has(engine)) return;
+  lookupCandidateStarts.add(engine);
   try {
     const { handleId } = cachedOnly
       ? await engine.resolver.loadCachedModules([module])
       : await engine.resolver.resolveModules([module], { preferredSourceId });
+    if (!owns()) return;
     state.beginImport(handleId);
-    await syncResolverOperation(engine, handleId);
+    await syncResolverOperation(engine, handleId, owns);
   } catch (error) {
-    state.setResolverError(describeError(error));
+    if (owns()) state.setResolverError(describeError(error));
   } finally {
-    lookupCandidateStartPending = false;
+    lookupCandidateStarts.delete(engine);
   }
 }
 
@@ -1254,16 +1753,21 @@ function extractImportResult(payload: Record<string, unknown>): ImportResult | n
   return null;
 }
 
-export async function unloadModule(engine: EngineAPI, name: string): Promise<void> {
+export async function unloadModule(
+  engine: EngineAPI,
+  name: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
   await engine.mibs.unload(name);
-  await refreshModules(engine);
+  await refreshModules(engine, owns);
+  if (!owns()) return;
   const s = useAppStore.getState();
   if (s.moduleFocus?.module.name === name) {
     s.setModuleFocus(null);
     s.setSelected(null);
   }
   s.clearChildrenCache();
-  await loadChildren(engine, '');
+  await loadChildren(engine, '', owns);
 }
 
 // --------------------------------------------------------------------------
@@ -1271,47 +1775,66 @@ export async function unloadModule(engine: EngineAPI, name: string): Promise<voi
 // --------------------------------------------------------------------------
 
 /** Fetch (and cache) the children of an OID; '' loads the tree roots. */
-export async function loadChildren(engine: EngineAPI, oid: string): Promise<void> {
+export async function loadChildren(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
   const s = useAppStore.getState();
   if (s.childrenCache[oid]) return;
   const children = s.moduleFocus
     ? await engine.mibs.moduleTree(s.moduleFocus.module.name, oid || undefined)
     : await engine.mibs.tree(oid || undefined);
-  s.setChildren(oid, children);
+  if (!owns()) return;
+  useAppStore.getState().setChildren(oid, children);
 }
 
-export async function selectModuleInPlace(engine: EngineAPI, moduleName: string): Promise<void> {
+export async function selectModuleInPlace(
+  engine: EngineAPI,
+  moduleName: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
   const s = useAppStore.getState();
   const focus = await engine.mibs.module(moduleName);
-  if (!focus) return;
+  if (!focus || !owns()) return;
   s.setModuleFocus(focus);
   s.setSelected(null);
   s.setSearch('');
   s.setHits([]);
   s.clearChildrenCache();
-  await loadChildren(engine, '');
+  await loadChildren(engine, '', owns);
 }
 
-export async function focusModule(engine: EngineAPI, moduleName: string): Promise<void> {
-  await selectModuleInPlace(engine, moduleName);
-  useAppStore.getState().setTab('browse');
+export async function focusModule(
+  engine: EngineAPI,
+  moduleName: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  await selectModuleInPlace(engine, moduleName, owns);
+  if (owns()) useAppStore.getState().setTab('browse');
 }
 
-export async function clearModuleFocus(engine: EngineAPI): Promise<void> {
+export async function clearModuleFocus(
+  engine: EngineAPI,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   s.setModuleFocus(null);
   s.setSelected(null);
   s.clearChildrenCache();
-  await loadChildren(engine, '');
+  await loadChildren(engine, '', owns);
 }
 
 export async function selectNode(
   engine: EngineAPI,
   oidOrName: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<MibNodeDetail | null> {
   const s = useAppStore.getState();
   const detail = await engine.mibs.node(oidOrName, s.moduleFocus?.module.name);
-  s.setSelected(detail);
+  if (!owns()) return null;
+  useAppStore.getState().setSelected(detail);
   return detail;
 }
 
@@ -1321,16 +1844,26 @@ export function getOidAncestorPrefixes(oid: string): string[] {
   return arcs.slice(0, -1).map((_arc, index) => arcs.slice(0, index + 1).join('.'));
 }
 
-export async function revealOid(engine: EngineAPI, oid: string): Promise<void> {
+export async function revealOid(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   const prefixes = getOidAncestorPrefixes(oid);
   for (const prefix of prefixes) {
     s.setExpanded(prefix, true);
   }
-  await Promise.all(prefixes.map((prefix) => loadChildren(engine, prefix)));
+  await Promise.all(prefixes.map((prefix) => loadChildren(engine, prefix, owns)));
 }
 
-export async function runSearch(engine: EngineAPI, query: string): Promise<void> {
+export async function runSearch(
+  engine: EngineAPI,
+  query: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   if (!query.trim()) {
     s.setHits([]);
@@ -1346,37 +1879,43 @@ export async function runSearch(engine: EngineAPI, query: string): Promise<void>
       ? await engine.mibs.moduleSearch(s.moduleFocus.module.name, normalizedQuery, 40)
       : await engine.mibs.search(normalizedQuery, 40);
     const current = useAppStore.getState();
-    if (current.search === query) {
+    if (owns() && current.search === query) {
       current.setHits(hits);
       current.setSearchPhase('idle');
     }
   } catch (error) {
     const current = useAppStore.getState();
-    if (current.search === query) {
+    if (owns() && current.search === query) {
       current.setSearchPhase('error');
       current.setSearchError(describeError(error));
     }
   }
 }
 
-export async function openSearchHit(engine: EngineAPI, oid: string): Promise<void> {
+export async function openSearchHit(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const initial = useAppStore.getState();
   const activeQuery = initial.search;
   initial.setSearchPhase('opening');
   initial.setSearchError(null);
   try {
-    const detail = await selectNode(engine, oid);
+    const detail = await selectNode(engine, oid, owns);
+    if (!owns()) return;
     if (!detail) throw new Error(`MIB object is no longer available: ${oid}`);
-    await revealOid(engine, oid);
+    await revealOid(engine, oid, owns);
     const current = useAppStore.getState();
-    if (current.search === activeQuery) {
+    if (owns() && current.search === activeQuery) {
       current.setSearch('');
       current.setHits([]);
       current.setSearchPhase('idle');
     }
   } catch (error) {
     const current = useAppStore.getState();
-    if (current.search === activeQuery) {
+    if (owns() && current.search === activeQuery) {
       current.setSearchPhase('error');
       current.setSearchError(describeError(error));
     }
@@ -1396,8 +1935,11 @@ export class MibObjectNotFoundError extends Error {
 export async function openGlobalCatalogObject(
   engine: EngineAPI,
   oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<MibNodeDetail> {
+  if (!owns()) return undefined as never;
   const detail = await engine.mibs.node(oid);
+  if (!owns()) return detail as MibNodeDetail;
   if (!detail) throw new MibObjectNotFoundError(oid);
 
   const prefixes = getOidAncestorPrefixes(detail.oid);
@@ -1405,6 +1947,7 @@ export async function openGlobalCatalogObject(
     engine.mibs.tree(undefined),
     ...prefixes.map((prefix) => engine.mibs.tree(prefix)),
   ]);
+  if (!owns()) return detail;
 
   const state = useAppStore.getState();
   state.setModuleFocus(null);
@@ -1498,7 +2041,9 @@ export async function prepareNodeOperation(
   detail: MibNodeDetail,
   operation: QueryOperation,
   options: { instanceSuffix?: string; execute?: boolean } = {},
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
 ): Promise<void> {
+  if (!owns()) return;
   const s = useAppStore.getState();
   const plan = getNodeOperationPlan(detail, operation, options.instanceSuffix);
   s.setBrowserConsoleOpen(true);
@@ -1514,27 +2059,37 @@ export async function prepareNodeOperation(
     s.updateSetDraft({ oid: plan.oid, type: inferWireType(detail.syntax), value: '' });
   }
   if (!plan.allowed || options.execute === false || operation === 'set') return;
-  if (operation === 'get') await runGet(engine);
-  else if (operation === 'getNext') await runGetNext(engine);
-  else await runWalk(engine);
+  if (operation === 'get') await runGet(engine, owns);
+  else if (operation === 'getNext') await runGetNext(engine, owns);
+  else await runWalk(engine, owns);
 }
 
 /** Send the browse selection into the Query tab and run it. */
-export function walkFromNode(engine: EngineAPI, oid: string): void {
+export function walkFromNode(
+  engine: EngineAPI,
+  oid: string,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): void {
+  if (!owns()) return;
   const s = useAppStore.getState();
   s.setOid(oid);
   s.setOidName(null);
   s.setTab('query');
-  void runWalk(engine);
+  void runWalk(engine, owns);
 }
 
-export function getFromNode(engine: EngineAPI, detail: MibNodeDetail): void {
+export function getFromNode(
+  engine: EngineAPI,
+  detail: MibNodeDetail,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): void {
+  if (!owns()) return;
   const s = useAppStore.getState();
   const oid = detail.kind === 'scalar' ? `${detail.oid}.0` : detail.oid;
   s.setOid(oid);
   s.setOidName(detail.name);
   s.setTab('query');
-  void runGet(engine);
+  void runGet(engine, owns);
 }
 
 export function setFromNode(detail: MibNodeDetail): void {
@@ -1547,10 +2102,16 @@ export function setFromNode(detail: MibNodeDetail): void {
   s.setTab('query');
 }
 
-export async function trapFromNode(engine: EngineAPI, detail: MibNodeDetail): Promise<void> {
+export async function trapFromNode(
+  engine: EngineAPI,
+  detail: MibNodeDetail,
+  owns: StoreWriteOwnership = alwaysOwnsStoreWrite,
+): Promise<void> {
+  if (!owns()) return;
   const varbinds = [];
   for (const objectName of detail.objects ?? []) {
     const node = await engine.mibs.node(objectName);
+    if (!owns()) return;
     if (!node) continue;
     varbinds.push({
       oid: node.kind === 'scalar' ? `${node.oid}.0` : `${node.oid}.`,
@@ -1558,6 +2119,7 @@ export async function trapFromNode(engine: EngineAPI, detail: MibNodeDetail): Pr
       value: '',
     });
   }
+  if (!owns()) return;
   const s = useAppStore.getState();
   s.updateNotification({ trapOid: detail.oid, varbinds });
   s.setTrapMode('send');

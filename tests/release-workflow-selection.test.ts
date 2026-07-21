@@ -79,8 +79,9 @@ describe('release workflow output selection', () => {
     );
   });
 
-  it('leaves Android emulator smoke testing to the local host', () => {
-    expect(workflow).not.toContain('reactivecircus/android-emulator-runner');
+  it('launches the signed APK in an Android emulator without an external SNMP fixture', () => {
+    expect(workflow).toContain('reactivecircus/android-emulator-runner@v2');
+    expect(workflow).toContain('adb install -r');
     expect(workflow).not.toContain('Start Android SNMP fixture');
   });
 

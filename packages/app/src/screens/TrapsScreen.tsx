@@ -1,27 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
+import { View, Pressable, FlatList, StyleSheet, Share, ScrollView } from 'react-native';
 import {
-  View,
-  Pressable,
-  FlatList,
-  StyleSheet,
-  Share,
-  ScrollView,
-} from 'react-native';
-import { Button, Card, Chip, EmptyState, Field, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Label,
+  Mono,
+  Pill,
+  Row,
+  SectionTitle,
+  Text,
+  useTheme,
+} from '@mibbeacon/ui';
 import type {
   AuthProtocol,
-  EngineAPI,
   EngineInfo,
   PrivProtocol,
   SecurityLevel,
   TrapRecord,
   TrapQuery,
-  TrapSavedFilter,
-  TrapV3UserProfile,
-  TrapRule,
-  TrapSendPreset,
 } from '@mibbeacon/core/client';
-import { useEngine } from '../engine-context';
+import { useEngine, useEngineOwnership } from '../engine-context';
+import { clearTrapCapture } from '../engine-manual-actions';
 import { useAppStore, type NotificationHistoryItem } from '../store';
 import {
   markTrapRead,
@@ -32,20 +35,43 @@ import {
 } from '../actions';
 import { OidLookupPanel } from '../components/OidLookupPanel';
 import { TrapComposerDialog } from '../components/TrapComposerDialog';
-import { SplitWorkspace } from '../components/SplitWorkspace';
+import { ContainerAwareSplitWorkspace } from '../components/SplitWorkspace';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useResponsiveLayout } from '../responsive-context';
+import { TRAP_SPLIT_MINIMUMS } from '../responsive-layout';
 import { serializeTraps, trapToNotificationPayload } from '../trap-export';
 import { SwipeActionRow } from '../components/SwipeActionRow';
+import {
+  trapCollectionStatusText,
+  trapPersistentCollectionsController,
+  type TrapPersistentCollectionsController,
+  type TrapPersistentCollectionsSnapshot,
+} from '../trap-persistent-collections';
+import { buildTrapV3UserDraft, type TrapCredentialIntent } from '../trap-v3-user-draft';
 
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
 const AUTHS: AuthProtocol[] = ['md5', 'sha', 'sha256', 'sha512'];
 const PRIVS: PrivProtocol[] = ['des', 'aes', 'aes256b', 'aes256r'];
 
 export function TrapsScreen({ info }: { info: EngineInfo | null }) {
+  const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const mode = useAppStore((s) => s.trapMode);
+  const controller = useMemo(
+    () => trapPersistentCollectionsController(engine, ownsEngine),
+    [engine, ownsEngine],
+  );
+  const collection = useSyncExternalStore(
+    (listener) => controller.subscribe(listener),
+    () => controller.snapshot(),
+    () => controller.snapshot(),
+  );
+  useEffect(() => {
+    controller.activate();
+    void controller.load().catch(() => undefined);
+  }, [controller]);
   return (
     <View style={styles.root}>
       {supportsSplitView ? (
@@ -79,14 +105,17 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
           />
         </Row>
       </View>
-      {mode === 'receive' ? <ReceiveWorkspace /> : <SendWorkspace />}
+      {mode === 'receive' ? (
+        <ReceiveWorkspace controller={controller} collection={collection} />
+      ) : (
+        <SendWorkspace controller={controller} collection={collection} />
+      )}
       <TrapComposerDialog info={info} />
     </View>
   );
 }
 
 function TrapCaptureTools({
-  engine,
   records,
   query,
   setQuery,
@@ -96,26 +125,32 @@ function TrapCaptureTools({
   savedFilters,
   v3Users,
   rules,
-  refreshArtifacts,
+  controller,
+  collection,
+  ownsEngine,
 }: {
-  engine: EngineAPI;
   records: TrapRecord[];
   query: TrapQuery;
   setQuery: (query: TrapQuery) => void;
   applyQuery: (query?: TrapQuery) => Promise<void>;
   filterName: string;
-  setFilterName: (name: string) => void;
-  savedFilters: TrapSavedFilter[];
-  v3Users: TrapV3UserProfile[];
-  rules: TrapRule[];
-  refreshArtifacts: () => Promise<void>;
+  setFilterName: Dispatch<SetStateAction<string>>;
+  savedFilters: TrapPersistentCollectionsSnapshot['savedFilters'];
+  v3Users: TrapPersistentCollectionsSnapshot['v3Users'];
+  rules: TrapPersistentCollectionsSnapshot['rules'];
+  controller: TrapPersistentCollectionsController;
+  collection: TrapPersistentCollectionsSnapshot;
+  ownsEngine: () => boolean;
 }) {
   const [userName, setUserName] = useState('');
   const [userLevel, setUserLevel] = useState<SecurityLevel>('noAuthNoPriv');
   const [authProtocol, setAuthProtocol] = useState<AuthProtocol>('sha');
   const [authKey, setAuthKey] = useState('');
+  const [authIntent, setAuthIntent] = useState<TrapCredentialIntent>('retain');
   const [privProtocol, setPrivProtocol] = useState<PrivProtocol>('aes');
   const [privKey, setPrivKey] = useState('');
+  const [privIntent, setPrivIntent] = useState<TrapCredentialIntent>('retain');
+  const [credentialError, setCredentialError] = useState<string | null>(null);
   const [ruleName, setRuleName] = useState('');
   const [ruleOid, setRuleOid] = useState('*');
   const [ruleSources, setRuleSources] = useState('');
@@ -124,13 +159,79 @@ function TrapCaptureTools({
   const [ruleColor, setRuleColor] = useState('#f59e0b');
   const [ruleNotify, setRuleNotify] = useState(false);
   const updateQuery = (patch: Partial<TrapQuery>) => setQuery({ ...query, ...patch });
+  const blocked =
+    collection.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(collection.phase);
+  const selectedV3User = v3Users.find((user) => user.name === userName.trim());
+  const credentialRequirementError =
+    userLevel !== 'noAuthNoPriv' &&
+    (authIntent === 'clear' || (authIntent === 'retain' && !selectedV3User?.hasAuthKey))
+      ? 'This security level requires an authentication key; choose Replace.'
+      : userLevel === 'authPriv' &&
+          (privIntent === 'clear' || (privIntent === 'retain' && !selectedV3User?.hasPrivKey))
+        ? 'This security level requires a privacy key; choose Replace.'
+        : null;
   const share = (format: 'csv' | 'json') =>
     void Share.share({
       message: serializeTraps(records, format),
       title: `mibbeacon-traps.${format}`,
-    });
+    }).catch(() => undefined);
   return (
     <View style={styles.captureToolStack}>
+      <Card style={styles.card}>
+        <Label
+          tone={
+            ['error-reverted', 'uncertain', 'conflict'].includes(collection.phase) ? 'error' : 'dim'
+          }
+        >
+          {trapCollectionStatusText(collection)}
+        </Label>
+        {['error-reverted', 'conflict'].includes(collection.phase) ? (
+          <Row style={styles.wrap}>
+            {collection.phase === 'error-reverted' && collection.retryable ? (
+              <Button
+                title="Retry failed change"
+                small
+                onPress={() => void controller.retryFailed().catch(() => undefined)}
+              />
+            ) : null}
+            <Button
+              title="Acknowledge"
+              small
+              variant="ghost"
+              onPress={() => controller.acknowledge()}
+            />
+            <Button
+              title="Reconcile"
+              small
+              variant="ghost"
+              onPress={() => void controller.reconcile().catch(() => undefined)}
+            />
+          </Row>
+        ) : collection.phase === 'uncertain' ? (
+          <Row style={styles.wrap}>
+            <Button
+              title="Reconcile with engine"
+              small
+              onPress={() => void controller.reconcile().catch(() => undefined)}
+            />
+            {collection.canAcknowledgeUncertainty ? (
+              <Button
+                title="Accept public state and re-enter keys"
+                small
+                variant="ghost"
+                onPress={() => controller.acknowledgeUncertainty()}
+              />
+            ) : null}
+          </Row>
+        ) : collection.readiness.phase === 'error' ? (
+          <Button
+            title="Retry load"
+            small
+            onPress={() => void controller.load().catch(() => undefined)}
+          />
+        ) : null}
+      </Card>
       <Card style={styles.card}>
         <SectionTitle>Persisted filters & export</SectionTitle>
         <Row style={styles.wrap}>
@@ -185,8 +286,13 @@ function TrapCaptureTools({
           />
         </Row>
         <Row style={styles.wrap}>
-          <Button title="Apply" small onPress={() => void applyQuery()} />
-          <Button title="Reset" small variant="ghost" onPress={() => void applyQuery({})} />
+          <Button title="Apply" small onPress={() => void applyQuery().catch(() => undefined)} />
+          <Button
+            title="Reset"
+            small
+            variant="ghost"
+            onPress={() => void applyQuery({}).catch(() => undefined)}
+          />
           <Button title="CSV" small variant="ghost" onPress={() => share('csv')} />
           <Button title="JSON" small variant="ghost" onPress={() => share('json')} />
         </Row>
@@ -195,13 +301,21 @@ function TrapCaptureTools({
           <Button
             title="Save filter"
             small
-            disabled={!filterName.trim()}
-            onPress={() =>
-              void engine.traps.savedFilters.save(filterName, query).then(async () => {
-                setFilterName('');
-                await refreshArtifacts();
-              })
+            disabled={
+              !filterName.trim() ||
+              blocked ||
+              Boolean(controller.statusFor(`filter:save:${filterName.trim()}`))
             }
+            onPress={() => {
+              const submittedName = filterName;
+              void controller
+                .saveFilter(submittedName, query, ownsEngine)
+                .then(async () => {
+                  if (ownsEngine())
+                    setFilterName((current) => (current === submittedName ? '' : current));
+                })
+                .catch(() => undefined);
+            }}
           />
         </Row>
         {savedFilters.map((filter) => (
@@ -209,14 +323,20 @@ function TrapCaptureTools({
             <Chip
               label={filter.name}
               active={false}
-              onPress={() => void applyQuery(filter.query)}
+              onPress={() => void applyQuery(filter.query).catch(() => undefined)}
             />
+            {controller.statusFor(`filter:remove:${filter.id}`) ? (
+              <Label tone="dim" size={10}>
+                {controller.statusFor(`filter:remove:${filter.id}`)}
+              </Label>
+            ) : null}
             <Button
               title="×"
               small
               variant="ghost"
+              disabled={blocked || Boolean(controller.statusFor(`filter:remove:${filter.id}`))}
               onPress={() =>
-                void engine.traps.savedFilters.remove(filter.id).then(refreshArtifacts)
+                void controller.removeFilter(filter.id, ownsEngine).catch(() => undefined)
               }
             />
           </Row>
@@ -232,7 +352,27 @@ function TrapCaptureTools({
               key={level}
               label={level}
               active={userLevel === level}
-              onPress={() => setUserLevel(level)}
+              onPress={() => {
+                setUserLevel(level);
+                if (level === 'noAuthNoPriv' && authIntent === 'replace') setAuthIntent('retain');
+                if (level !== 'authPriv' && privIntent === 'replace') setPrivIntent('retain');
+              }}
+            />
+          ))}
+        </Row>
+        <Label tone="dim" size={10}>
+          Authentication credential
+        </Label>
+        <Row style={styles.wrap}>
+          {(['retain', 'replace', 'clear'] as const).map((intent) => (
+            <Chip
+              key={`auth-${intent}`}
+              label={
+                intent === 'retain' ? 'Retain stored' : intent === 'replace' ? 'Replace' : 'Clear'
+              }
+              active={authIntent === intent}
+              disabled={intent === 'replace' && userLevel === 'noAuthNoPriv'}
+              onPress={() => setAuthIntent(intent)}
             />
           ))}
         </Row>
@@ -248,14 +388,32 @@ function TrapCaptureTools({
                 />
               ))}
             </Row>
-            <Field
-              label="Auth key (write-only)"
-              value={authKey}
-              secureTextEntry
-              onChangeText={setAuthKey}
-            />
+            {authIntent === 'replace' ? (
+              <Field
+                label="Replacement auth key (write-only)"
+                value={authKey}
+                secureTextEntry
+                onChangeText={setAuthKey}
+              />
+            ) : null}
           </>
         ) : null}
+        <Label tone="dim" size={10}>
+          Privacy credential
+        </Label>
+        <Row style={styles.wrap}>
+          {(['retain', 'replace', 'clear'] as const).map((intent) => (
+            <Chip
+              key={`priv-${intent}`}
+              label={
+                intent === 'retain' ? 'Retain stored' : intent === 'replace' ? 'Replace' : 'Clear'
+              }
+              active={privIntent === intent}
+              disabled={intent === 'replace' && userLevel !== 'authPriv'}
+              onPress={() => setPrivIntent(intent)}
+            />
+          ))}
+        </Row>
         {userLevel === 'authPriv' ? (
           <>
             <Row style={styles.wrap}>
@@ -268,48 +426,90 @@ function TrapCaptureTools({
                 />
               ))}
             </Row>
-            <Field
-              label="Privacy key (write-only)"
-              value={privKey}
-              secureTextEntry
-              onChangeText={setPrivKey}
-            />
+            {privIntent === 'replace' ? (
+              <Field
+                label="Replacement privacy key (write-only)"
+                value={privKey}
+                secureTextEntry
+                onChangeText={setPrivKey}
+              />
+            ) : null}
           </>
         ) : null}
+        {selectedV3User ? (
+          <Label tone="dim" size={10}>
+            Editing confirmed profile {selectedV3User.name}; stored keys remain write-only.
+          </Label>
+        ) : null}
+        {credentialRequirementError ? (
+          <Label tone="error">{credentialRequirementError}</Label>
+        ) : null}
+        {credentialError ? <Label tone="error">{credentialError}</Label> : null}
         <Button
           title="Save v3 user"
           small
-          disabled={!userName.trim()}
-          onPress={() =>
-            void engine.traps.v3Users
-              .upsert({
+          disabled={
+            !userName.trim() ||
+            blocked ||
+            (userLevel !== 'noAuthNoPriv' && authIntent === 'replace' && !authKey.trim()) ||
+            (userLevel === 'authPriv' && privIntent === 'replace' && !privKey.trim()) ||
+            Boolean(credentialRequirementError) ||
+            Boolean(controller.statusFor(`v3:upsert:${userName.trim()}`))
+          }
+          onPress={() => {
+            setCredentialError(null);
+            let draft: ReturnType<typeof buildTrapV3UserDraft>;
+            try {
+              draft = buildTrapV3UserDraft({
                 name: userName,
                 level: userLevel,
-                ...(userLevel === 'noAuthNoPriv'
-                  ? {}
-                  : { authProtocol, ...(authKey ? { authKey } : {}) }),
-                ...(userLevel === 'authPriv'
-                  ? { privProtocol, ...(privKey ? { privKey } : {}) }
-                  : {}),
-              })
-              .then(async () => {
-                setAuthKey('');
-                setPrivKey('');
-                await refreshArtifacts();
-              })
-          }
+                authProtocol,
+                privProtocol,
+                authIntent,
+                privIntent,
+                authKey,
+                privKey,
+                hasAuthKey: selectedV3User?.hasAuthKey,
+                hasPrivKey: selectedV3User?.hasPrivKey,
+              });
+            } catch (cause) {
+              setCredentialError(cause instanceof Error ? cause.message : String(cause));
+              return;
+            }
+            setAuthKey('');
+            setPrivKey('');
+            void controller.upsertV3User(draft, ownsEngine).catch(() => undefined);
+          }}
         />
         {v3Users.map((user) => (
           <Row key={user.name} style={styles.savedToolRow}>
-            <Label>
-              {user.name} · {user.level} · auth {user.hasAuthKey ? 'stored' : 'none'} · priv{' '}
-              {user.hasPrivKey ? 'stored' : 'none'}
-            </Label>
+            <Chip
+              label={`${user.name} · ${user.level} · auth ${user.hasAuthKey ? 'stored' : 'none'} · priv ${user.hasPrivKey ? 'stored' : 'none'}`}
+              active={selectedV3User?.name === user.name}
+              onPress={() => {
+                setUserName(user.name);
+                setUserLevel(user.level);
+                if (user.authProtocol) setAuthProtocol(user.authProtocol);
+                if (user.privProtocol) setPrivProtocol(user.privProtocol);
+                setAuthIntent('retain');
+                setPrivIntent('retain');
+                setAuthKey('');
+                setPrivKey('');
+              }}
+            />
+            {controller.statusFor(`v3:remove:${user.name}`) ? (
+              <Label tone="dim" size={10}>
+                {controller.statusFor(`v3:remove:${user.name}`)}
+              </Label>
+            ) : null}
             <Button
               title="Delete"
               small
               variant="danger"
-              onPress={() => void engine.traps.v3Users.remove(user.name).then(refreshArtifacts)}
+              disabled={blocked || Boolean(controller.statusFor(`v3:remove:${user.name}`))}
+              onPress={() =>
+                void controller.removeV3User(user.name, ownsEngine).catch(() => undefined)
+              }
             />
           </Row>
         ))}
@@ -344,49 +544,79 @@ function TrapCaptureTools({
         <Button
           title="Create rule"
           small
-          disabled={!ruleName.trim()}
-          onPress={() =>
-            void engine.traps.rules
-              .create({
-                name: ruleName,
-                enabled: true,
-                priority: rules.length * 10 + 10,
-                condition: {
-                  ...(ruleOid.trim() ? { trapOidGlob: ruleOid.trim() } : {}),
-                  ...(ruleSources.trim()
-                    ? {
-                        sourcePrefixes: ruleSources
-                          .split(',')
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      }
-                    : {}),
-                  ...(ruleText.trim() ? { varbindSubstrings: [ruleText.trim()] } : {}),
-                },
-                actions: { severity: ruleSeverity, color: ruleColor, notify: ruleNotify },
-              })
-              .then(async () => {
-                setRuleName('');
-                await refreshArtifacts();
-              })
+          disabled={
+            !ruleName.trim() ||
+            blocked ||
+            Boolean(controller.statusFor(`rule:create:${ruleName.trim()}`))
           }
+          onPress={() => {
+            const submittedName = ruleName;
+            void controller
+              .createRule(
+                {
+                  name: ruleName,
+                  enabled: true,
+                  priority: rules.length * 10 + 10,
+                  condition: {
+                    ...(ruleOid.trim() ? { trapOidGlob: ruleOid.trim() } : {}),
+                    ...(ruleSources.trim()
+                      ? {
+                          sourcePrefixes: ruleSources
+                            .split(',')
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        }
+                      : {}),
+                    ...(ruleText.trim() ? { varbindSubstrings: [ruleText.trim()] } : {}),
+                  },
+                  actions: { severity: ruleSeverity, color: ruleColor, notify: ruleNotify },
+                },
+                ownsEngine,
+              )
+              .then(async () => {
+                if (ownsEngine())
+                  setRuleName((current) => (current === submittedName ? '' : current));
+              })
+              .catch(() => undefined);
+          }}
         />
         {rules.map((rule) => (
           <Row key={rule.id} style={styles.savedToolRow}>
             <Chip
               label={`${rule.priority} · ${rule.name}`}
               active={rule.enabled}
+              disabled={
+                blocked ||
+                Boolean(
+                  controller.statusFor(`rule:update:${rule.id}`) ??
+                  controller.statusFor(`rule:remove:${rule.id}`),
+                )
+              }
               onPress={() =>
-                void engine.traps.rules
-                  .update(rule.id, { enabled: !rule.enabled })
-                  .then(refreshArtifacts)
+                void controller
+                  .updateRule(rule.id, { enabled: !rule.enabled }, ownsEngine)
+                  .catch(() => undefined)
               }
             />
+            {(controller.statusFor(`rule:update:${rule.id}`) ??
+            controller.statusFor(`rule:remove:${rule.id}`)) ? (
+              <Label tone="dim" size={10}>
+                {controller.statusFor(`rule:update:${rule.id}`) ??
+                  controller.statusFor(`rule:remove:${rule.id}`)}
+              </Label>
+            ) : null}
             <Button
               title="Delete"
               small
               variant="danger"
-              onPress={() => void engine.traps.rules.remove(rule.id).then(refreshArtifacts)}
+              disabled={
+                blocked ||
+                Boolean(
+                  controller.statusFor(`rule:update:${rule.id}`) ??
+                  controller.statusFor(`rule:remove:${rule.id}`),
+                )
+              }
+              onPress={() => void controller.removeRule(rule.id, ownsEngine).catch(() => undefined)}
             />
           </Row>
         ))}
@@ -398,8 +628,15 @@ function TrapCaptureTools({
   );
 }
 
-function ReceiveWorkspace() {
+function ReceiveWorkspace({
+  controller,
+  collection,
+}: {
+  controller: TrapPersistentCollectionsController;
+  collection: TrapPersistentCollectionsSnapshot;
+}) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const receiver = useAppStore((s) => s.receiver);
@@ -409,61 +646,85 @@ function ReceiveWorkspace() {
   const [labMode, setLabMode] = useState(true);
   const [communities, setCommunities] = useState('public');
   const [err, setErr] = useState<string | null>(null);
+  const [receiverPending, setReceiverPending] = useState<'starting' | 'stopping' | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState<TrapQuery>({});
   const [filterName, setFilterName] = useState('');
-  const [savedFilters, setSavedFilters] = useState<TrapSavedFilter[]>([]);
-  const [v3Users, setV3Users] = useState<TrapV3UserProfile[]>([]);
-  const [rules, setRules] = useState<TrapRule[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const refreshArtifacts = useCallback(async () => {
-    const [nextFilters, nextUsers, nextRules] = await Promise.all([
-      engine.traps.savedFilters.list(),
-      engine.traps.v3Users.list(),
-      engine.traps.rules.list(),
-    ]);
-    setSavedFilters(nextFilters);
-    setV3Users(nextUsers);
-    setRules(nextRules);
-  }, [engine]);
-  useEffect(() => {
-    void refreshArtifacts();
-  }, [refreshArtifacts]);
+  const [pendingRecordIds, setPendingRecordIds] = useState<string[]>([]);
+  const pendingRecordIdsRef = useRef(new Set<string>());
+  const [clearPending, setClearPending] = useState(false);
+  const clearPendingRef = useRef(false);
   const onToggle = async () => {
+    if (receiverPending) return;
     setErr(null);
+    setReceiverPending(receiver.running ? 'stopping' : 'starting');
     try {
-      await toggleReceiver(engine, port, {
-        transport,
-        disableAuthorization: labMode,
-        communities: communities
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
-      });
+      await toggleReceiver(
+        engine,
+        port,
+        {
+          transport,
+          disableAuthorization: labMode,
+          communities: communities
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+        },
+        ownsEngine,
+      );
     } catch (e) {
+      if (!ownsEngine()) return;
       const x = e as { message?: string; hint?: string };
       setErr(`${x.message ?? String(e)}${x.hint ? ' — ' + x.hint : ''}`);
+    } finally {
+      if (ownsEngine()) setReceiverPending(null);
     }
   };
   const clearCapture = async () => {
-    await engine.traps.clear();
-    useAppStore.getState().clearTraps();
-    setSelectedId(null);
+    if (pendingRecordIdsRef.current.size || clearPendingRef.current) return;
+    clearPendingRef.current = true;
+    setClearPending(true);
+    try {
+      await clearTrapCapture(engine, ownsEngine);
+      if (ownsEngine()) setSelectedId(null);
+    } finally {
+      if (ownsEngine()) {
+        clearPendingRef.current = false;
+        setClearPending(false);
+      }
+    }
+  };
+  const runRecordMutation = async (id: string, operation: () => Promise<void>) => {
+    if (clearPendingRef.current || pendingRecordIdsRef.current.has(id)) return;
+    pendingRecordIdsRef.current.add(id);
+    setPendingRecordIds((current) => [...current, id]);
+    try {
+      await operation();
+    } finally {
+      if (ownsEngine()) {
+        pendingRecordIdsRef.current.delete(id);
+        setPendingRecordIds((current) => current.filter((pendingId) => pendingId !== id));
+      }
+    }
   };
   const applyQuery = async (next = query) => {
     setQuery(next);
-    await refreshTrapRecords(engine, next);
+    await refreshTrapRecords(engine, next, ownsEngine);
   };
   const selectRecord = (record: TrapRecord) => {
     setSelectedId(record.id);
-    if (!record.readAt) void markTrapRead(engine, record.id);
+    if (!record.readAt)
+      void runRecordMutation(record.id, () =>
+        markTrapRead(engine, record.id, true, ownsEngine),
+      ).catch(() => undefined);
   };
   const refreshRecords = async () => {
     setRefreshing(true);
     try {
-      await refreshTrapRecords(engine, query);
+      await refreshTrapRecords(engine, query, ownsEngine);
     } finally {
-      setRefreshing(false);
+      if (ownsEngine()) setRefreshing(false);
     }
   };
   const receiverCard = (
@@ -471,8 +732,10 @@ function ReceiveWorkspace() {
       <View style={styles.cardTitle}>
         <SectionTitle>Trap receiver</SectionTitle>
         <Pill
-          text={receiver.running ? 'LIVE' : 'OFFLINE'}
-          color={receiver.running ? t.ok : t.textDim}
+          text={
+            receiverPending ? receiverPending.toUpperCase() : receiver.running ? 'LIVE' : 'OFFLINE'
+          }
+          color={receiverPending ? t.accent : receiver.running ? t.ok : t.textDim}
         />
       </View>
       <Row style={styles.receiverControls}>
@@ -481,12 +744,21 @@ function ReceiveWorkspace() {
           value={port}
           onChangeText={setPort}
           keyboardType="number-pad"
-          editable={!receiver.running}
+          editable={!receiver.running && !receiverPending}
         />
         <View style={styles.receiverAction}>
           <Button
-            title={receiver.running ? `Stop (:${receiver.port})` : 'Start receiver'}
+            title={
+              receiverPending === 'starting'
+                ? 'Starting…'
+                : receiverPending === 'stopping'
+                  ? 'Stopping…'
+                  : receiver.running
+                    ? `Stop (:${receiver.port})`
+                    : 'Start receiver'
+            }
             variant={receiver.running ? 'danger' : 'primary'}
+            disabled={Boolean(receiverPending)}
             onPress={() => void onToggle()}
           />
         </View>
@@ -497,15 +769,22 @@ function ReceiveWorkspace() {
             key={value}
             label={value}
             active={transport === value}
+            disabled={Boolean(receiverPending)}
             onPress={() => setTransport(value)}
           />
         ))}
-        <Chip label="Lab accept-all" active={labMode} onPress={() => setLabMode(!labMode)} />
+        <Chip
+          label="Lab accept-all"
+          active={labMode}
+          disabled={Boolean(receiverPending)}
+          onPress={() => setLabMode(!labMode)}
+        />
       </Row>
       {!labMode ? (
         <Field
           label="Allowed communities (comma-separated)"
           value={communities}
+          editable={!receiverPending}
           onChangeText={setCommunities}
         />
       ) : null}
@@ -522,131 +801,130 @@ function ReceiveWorkspace() {
   );
   const toolsCard = (
     <TrapCaptureTools
-      engine={engine}
       records={records}
       query={query}
       setQuery={setQuery}
       applyQuery={applyQuery}
       filterName={filterName}
       setFilterName={setFilterName}
-      savedFilters={savedFilters}
-      v3Users={v3Users}
-      rules={rules}
-      refreshArtifacts={refreshArtifacts}
+      savedFilters={collection.savedFilters}
+      v3Users={collection.v3Users}
+      rules={collection.rules}
+      controller={controller}
+      collection={collection}
+      ownsEngine={ownsEngine}
     />
   );
 
-  if (supportsSplitView) {
-    const selected = records.find((record) => record.id === selectedId) ?? null;
-    return (
-      <SplitWorkspace
-        workspace="traps"
-        minPrimary={340}
-        minSecondary={400}
-        primary={
-          <View style={styles.capturePane}>
-            <ScrollView
-              style={styles.captureToolsScroll}
-              contentContainerStyle={styles.captureControls}
-            >
-              {receiverCard}
-              {toolsCard}
-            </ScrollView>
-            <View
-              style={[
-                styles.captureHead,
-                { backgroundColor: t.surface, borderBottomColor: t.border },
-              ]}
-            >
-              <View>
-                <SectionTitle>Captured notifications</SectionTitle>
-                <Label tone="dim" size={10}>
-                  {records.length} in this session
-                </Label>
-              </View>
-              {records.length ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear captured traps"
-                  onPress={() => void clearCapture()}
-                  style={styles.clearAction}
-                >
-                  <Text style={{ color: t.accent, fontSize: 11, fontWeight: '700' }}>Clear</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <FlatList
-              style={styles.captureList}
-              data={records}
-              refreshing={refreshing}
-              onRefresh={() => void refreshRecords()}
-              keyExtractor={(record) => record.id}
-              ListEmptyComponent={
-                <EmptyState
-                  title={receiver.running ? 'Listening for traps…' : 'No traps received'}
-                  hint="Start the receiver, then send a test notification to this host."
-                />
-              }
-              renderItem={({ item }) => (
-                <SwipeActionRow
-                  accessibilityLabel={item.trapName ?? item.trapOid ?? 'trap'}
-                  leftLabel="Delete"
-                  rightLabel={item.readAt ? 'Unread' : 'Read'}
-                  onSwipeLeft={() => void deleteTrap(engine, item.id)}
-                  onSwipeRight={() => void markTrapRead(engine, item.id, !item.readAt)}
-                >
-                  <TrapSummaryRow
-                    rec={item}
-                    selected={item.id === selected?.id}
-                    onPress={() => selectRecord(item)}
-                  />
-                </SwipeActionRow>
-              )}
-            />
-          </View>
-        }
-        secondary={selected ? <TrapDetail rec={selected} /> : <TrapInspectorEmpty />}
-      />
-    );
-  }
-
+  const selected = records.find((record) => record.id === selectedId) ?? null;
   return (
-    <FlatList
-      style={styles.list}
-      contentContainerStyle={styles.content}
-      data={records}
-      refreshing={refreshing}
-      onRefresh={() => void refreshRecords()}
-      keyExtractor={(record) => record.id}
-      ListHeaderComponent={
-        <>
-          {receiverCard}
-          {toolsCard}
-          {records.length ? (
-            <Row style={styles.listHead}>
-              <Text style={{ color: t.textDim, fontSize: 12 }}>{records.length} received</Text>
+    <ContainerAwareSplitWorkspace
+      workspace="traps"
+      {...TRAP_SPLIT_MINIMUMS}
+      splitEnabled={supportsSplitView}
+      preservePrimary
+      stackOnFallback={Boolean(selected)}
+      primary={
+        <View style={styles.capturePane}>
+          <ScrollView
+            style={styles.captureToolsScroll}
+            contentContainerStyle={styles.captureControls}
+          >
+            {receiverCard}
+            {toolsCard}
+          </ScrollView>
+          <View
+            style={[
+              styles.captureHead,
+              { backgroundColor: t.surface, borderBottomColor: t.border },
+            ]}
+          >
+            <View>
+              <SectionTitle>Captured notifications</SectionTitle>
+              <Label tone="dim" size={10}>
+                {records.length} in this session
+              </Label>
+            </View>
+            {records.length ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Clear captured traps"
-                onPress={() => void clearCapture()}
+                accessibilityLabel={
+                  clearPending
+                    ? 'Clearing captured traps'
+                    : pendingRecordIds.length
+                      ? 'Record action pending; clear is unavailable'
+                      : 'Clear captured traps'
+                }
+                accessibilityState={{ disabled: clearPending || pendingRecordIds.length > 0 }}
+                disabled={clearPending || pendingRecordIds.length > 0}
+                onPress={() => void clearCapture().catch(() => undefined)}
                 style={styles.clearAction}
               >
-                <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>
-                  Clear capture
+                <Text style={{ color: t.accent, fontSize: 11, fontWeight: '700' }}>
+                  {clearPending
+                    ? 'Clearing…'
+                    : pendingRecordIds.length
+                      ? 'Record action pending'
+                      : 'Clear'}
                 </Text>
               </Pressable>
-            </Row>
-          ) : null}
-          {!records.length ? (
-            <EmptyState
-              title={receiver.running ? 'Listening for traps…' : 'No traps received'}
-              hint="Start the receiver, then send a test notification to this host."
-            />
-          ) : null}
-        </>
+            ) : null}
+          </View>
+          <FlatList
+            style={styles.captureList}
+            data={records}
+            refreshing={refreshing}
+            onRefresh={() => void refreshRecords().catch(() => undefined)}
+            keyExtractor={(record) => record.id}
+            ListEmptyComponent={
+              <EmptyState
+                title={receiver.running ? 'Listening for traps…' : 'No traps received'}
+                hint="Start the receiver, then send a test notification to this host."
+              />
+            }
+            renderItem={({ item }) => (
+              <SwipeActionRow
+                accessibilityLabel={item.trapName ?? item.trapOid ?? 'trap'}
+                leftLabel="Delete"
+                rightLabel={item.readAt ? 'Unread' : 'Read'}
+                disabled={clearPending || pendingRecordIds.includes(item.id)}
+                onSwipeLeft={() =>
+                  void runRecordMutation(item.id, () =>
+                    deleteTrap(engine, item.id, ownsEngine),
+                  ).catch(() => undefined)
+                }
+                onSwipeRight={() =>
+                  void runRecordMutation(item.id, () =>
+                    markTrapRead(engine, item.id, !item.readAt, ownsEngine),
+                  ).catch(() => undefined)
+                }
+              >
+                <TrapSummaryRow
+                  rec={item}
+                  selected={item.id === selected?.id}
+                  onPress={() => selectRecord(item)}
+                />
+              </SwipeActionRow>
+            )}
+          />
+        </View>
       }
-      renderItem={({ item }) => <TrapRow rec={item} />}
-      ListFooterComponent={<View style={{ height: 20 }} />}
+      secondary={
+        selected ? (
+          <TrapDetail
+            rec={selected}
+            disabled={clearPending}
+            pending={pendingRecordIds.includes(selected.id)}
+            onMark={(read) =>
+              runRecordMutation(selected.id, () =>
+                markTrapRead(engine, selected.id, read, ownsEngine),
+              )
+            }
+          />
+        ) : (
+          <TrapInspectorEmpty />
+        )
+      }
     />
   );
 }
@@ -731,9 +1009,18 @@ function TrapSummaryRow({
   );
 }
 
-function TrapDetail({ rec }: { rec: TrapRecord }) {
+function TrapDetail({
+  rec,
+  disabled,
+  pending,
+  onMark,
+}: {
+  rec: TrapRecord;
+  disabled: boolean;
+  pending: boolean;
+  onMark: (read: boolean) => Promise<void>;
+}) {
   const t = useTheme();
-  const engine = useEngine();
   const replay = () => {
     const payload = trapToNotificationPayload(rec);
     const state = useAppStore.getState();
@@ -764,7 +1051,9 @@ function TrapDetail({ rec }: { rec: TrapRecord }) {
           small
           variant="ghost"
           onPress={() =>
-            void Share.share({ message: serializeTraps([rec], 'json'), title: 'trap.json' })
+            void Share.share({ message: serializeTraps([rec], 'json'), title: 'trap.json' }).catch(
+              () => undefined,
+            )
           }
         />
         <Button
@@ -772,14 +1061,17 @@ function TrapDetail({ rec }: { rec: TrapRecord }) {
           small
           variant="ghost"
           onPress={() =>
-            void Share.share({ message: serializeTraps([rec], 'text'), title: 'trap.txt' })
+            void Share.share({ message: serializeTraps([rec], 'text'), title: 'trap.txt' }).catch(
+              () => undefined,
+            )
           }
         />
         <Button
-          title={rec.readAt ? 'Unread' : 'Read'}
+          title={pending ? 'Updating…' : rec.readAt ? 'Unread' : 'Read'}
           small
           variant="ghost"
-          onPress={() => void markTrapRead(engine, rec.id, !rec.readAt)}
+          disabled={disabled || pending}
+          onPress={() => void onMark(!rec.readAt).catch(() => undefined)}
         />
       </View>
       <FlatList
@@ -854,8 +1146,15 @@ function TrapDetail({ rec }: { rec: TrapRecord }) {
   );
 }
 
-function SendWorkspace() {
+function SendWorkspace({
+  controller,
+  collection,
+}: {
+  controller: TrapPersistentCollectionsController;
+  collection: TrapPersistentCollectionsSnapshot;
+}) {
   const engine = useEngine();
+  const ownsEngine = useEngineOwnership();
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const form = useAppStore((s) => s.notification);
@@ -864,7 +1163,6 @@ function SendWorkspace() {
   const history = useAppStore((s) => s.sendHistory);
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const notificationAgentId = useAppStore((s) => s.notificationAgentId);
-  const [presets, setPresets] = useState<TrapSendPreset[]>([]);
   const [presetName, setPresetName] = useState('');
   const openComposer = () => useAppStore.getState().setTrapComposerOpen(true);
   const destinationAgent = agentProfiles.find((profile) => profile.id === notificationAgentId);
@@ -874,10 +1172,9 @@ function SendWorkspace() {
       ? `${form.target.host}:${form.target.port || '162'} · ${form.target.version}`
       : 'No destination yet';
 
-  const refreshPresets = useCallback(() => engine.traps.presets.list().then(setPresets), [engine]);
-  useEffect(() => {
-    void refreshPresets();
-  }, [refreshPresets]);
+  const blocked =
+    collection.readiness.phase !== 'ready' ||
+    ['error-reverted', 'uncertain', 'conflict'].includes(collection.phase);
 
   return (
     <FlatList
@@ -910,35 +1207,101 @@ function SendWorkspace() {
           </Card>
           <Card style={styles.card}>
             <SectionTitle>Saved sender presets</SectionTitle>
+            <Label
+              tone={
+                ['error-reverted', 'uncertain', 'conflict'].includes(collection.phase)
+                  ? 'error'
+                  : 'dim'
+              }
+            >
+              {trapCollectionStatusText(collection)}
+            </Label>
+            {['error-reverted', 'conflict'].includes(collection.phase) ? (
+              <Row style={styles.wrap}>
+                {collection.phase === 'error-reverted' && collection.retryable ? (
+                  <Button
+                    title="Retry failed change"
+                    small
+                    onPress={() => void controller.retryFailed().catch(() => undefined)}
+                  />
+                ) : null}
+                <Button
+                  title="Acknowledge"
+                  small
+                  variant="ghost"
+                  onPress={() => controller.acknowledge()}
+                />
+                <Button
+                  title="Reconcile"
+                  small
+                  variant="ghost"
+                  onPress={() => void controller.reconcile().catch(() => undefined)}
+                />
+              </Row>
+            ) : collection.phase === 'uncertain' ? (
+              <Row style={styles.wrap}>
+                <Button
+                  title="Reconcile with engine"
+                  small
+                  onPress={() => void controller.reconcile().catch(() => undefined)}
+                />
+                {collection.canAcknowledgeUncertainty ? (
+                  <Button
+                    title="Accept public state and re-enter keys"
+                    small
+                    variant="ghost"
+                    onPress={() => controller.acknowledgeUncertainty()}
+                  />
+                ) : null}
+              </Row>
+            ) : collection.readiness.phase === 'error' ? (
+              <Button
+                title="Retry load"
+                small
+                onPress={() => void controller.load().catch(() => undefined)}
+              />
+            ) : null}
             <Row style={styles.wrap}>
               <Field label="Preset name" value={presetName} onChangeText={setPresetName} />
               <Button
                 title="Save preset"
                 small
-                disabled={!presetName.trim() || !notificationAgentId}
-                onPress={() =>
-                  void engine.traps.presets
-                    .save(presetName, notificationAgentId!, {
-                      kind: form.kind,
-                      trapOid: form.trapOid,
-                      varbinds: form.varbinds,
-                      ...(form.upTime.trim() ? { upTime: Number(form.upTime) } : {}),
-                      ...(form.agentAddress.trim()
-                        ? { agentAddress: form.agentAddress.trim() }
-                        : {}),
-                      ...(form.target.version === 'v1'
-                        ? {
-                            v1Enterprise: form.v1Enterprise,
-                            v1Generic: Number(form.v1Generic),
-                            v1Specific: Number(form.v1Specific),
-                          }
-                        : {}),
-                    })
-                    .then(async () => {
-                      setPresetName('');
-                      await refreshPresets();
-                    })
+                disabled={
+                  !presetName.trim() ||
+                  !notificationAgentId ||
+                  blocked ||
+                  Boolean(controller.statusFor(`preset:save:${presetName.trim()}`))
                 }
+                onPress={() => {
+                  const submittedName = presetName;
+                  void controller
+                    .savePreset(
+                      submittedName,
+                      notificationAgentId!,
+                      {
+                        kind: form.kind,
+                        trapOid: form.trapOid,
+                        varbinds: form.varbinds,
+                        ...(form.upTime.trim() ? { upTime: Number(form.upTime) } : {}),
+                        ...(form.agentAddress.trim()
+                          ? { agentAddress: form.agentAddress.trim() }
+                          : {}),
+                        ...(form.target.version === 'v1'
+                          ? {
+                              v1Enterprise: form.v1Enterprise,
+                              v1Generic: Number(form.v1Generic),
+                              v1Specific: Number(form.v1Specific),
+                            }
+                          : {}),
+                      },
+                      ownsEngine,
+                    )
+                    .then(async () => {
+                      if (!ownsEngine()) return;
+                      setPresetName((current) => (current === submittedName ? '' : current));
+                    })
+                    .catch(() => undefined);
+                }}
               />
             </Row>
             {!notificationAgentId ? (
@@ -946,7 +1309,7 @@ function SendWorkspace() {
                 Choose a saved agent before saving; credentials are never stored in presets.
               </Label>
             ) : null}
-            {presets.map((preset) => (
+            {collection.presets.map((preset) => (
               <Row key={preset.id} style={styles.savedToolRow}>
                 <Chip
                   label={preset.name}
@@ -967,11 +1330,19 @@ function SendWorkspace() {
                     useAppStore.getState().setTrapComposerOpen(true);
                   }}
                 />
+                {controller.statusFor(`preset:remove:${preset.id}`) ? (
+                  <Label tone="dim" size={10}>
+                    {controller.statusFor(`preset:remove:${preset.id}`)}
+                  </Label>
+                ) : null}
                 <Button
                   title="Delete"
                   small
                   variant="danger"
-                  onPress={() => void engine.traps.presets.remove(preset.id).then(refreshPresets)}
+                  disabled={blocked || Boolean(controller.statusFor(`preset:remove:${preset.id}`))}
+                  onPress={() =>
+                    void controller.removePreset(preset.id, ownsEngine).catch(() => undefined)
+                  }
                 />
               </Row>
             ))}
@@ -994,7 +1365,7 @@ function SendWorkspace() {
         <HistoryRow
           item={item}
           busy={busy}
-          onRepeat={() => void repeatNotification(engine, item.request)}
+          onRepeat={() => void repeatNotification(engine, item.request, ownsEngine)}
         />
       )}
       ListFooterComponent={<View style={{ height: 20 }} />}
@@ -1028,94 +1399,6 @@ function HistoryRow({
       </View>
       <Button title="Send again" small variant="ghost" disabled={busy} onPress={onRepeat} />
     </View>
-  );
-}
-
-function TrapRow({ rec }: { rec: TrapRecord }) {
-  const t = useTheme();
-  const engine = useEngine();
-  const [open, setOpen] = useState(false);
-  return (
-    <SwipeActionRow
-      accessibilityLabel={rec.trapName ?? rec.trapOid ?? 'trap'}
-      leftLabel="Delete"
-      rightLabel={rec.readAt ? 'Unread' : 'Read'}
-      onSwipeLeft={() => void deleteTrap(engine, rec.id)}
-      onSwipeRight={() => void markTrapRead(engine, rec.id, !rec.readAt)}
-    >
-      <Pressable
-        onPress={() => {
-          setOpen((value) => !value);
-          if (!rec.readAt) void markTrapRead(engine, rec.id);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel={`${open ? 'Collapse' : 'Expand'} ${rec.trapName ?? rec.trapOid ?? 'trap'}`}
-        accessibilityState={{ expanded: open }}
-        style={[styles.trapRow, { borderBottomColor: t.border, backgroundColor: t.bg }]}
-      >
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Text style={{ color: t.text, fontWeight: '700', flex: 1 }} numberOfLines={1}>
-            {rec.trapName ?? rec.trapOid ?? 'trap'}
-          </Text>
-          <Text style={{ color: t.textDim, fontSize: 11 }}>
-            {new Date(rec.receivedAt).toLocaleTimeString()}
-          </Text>
-        </Row>
-        <Row style={{ justifyContent: 'space-between', marginTop: 2 }}>
-          <Mono dim size={11}>
-            {rec.sourceAddress}:{rec.sourcePort}
-          </Mono>
-          <Text style={{ color: t.textDim, fontSize: 11 }}>
-            {rec.varbinds.length} vb {open ? '▾' : '▸'}
-          </Text>
-        </Row>
-        {open ? (
-          <View style={[styles.vbs, { borderLeftColor: t.accent }]}>
-            <Row style={styles.wrap}>
-              <Button
-                title="Replay"
-                small
-                variant="ghost"
-                onPress={() => {
-                  const payload = trapToNotificationPayload(rec);
-                  const state = useAppStore.getState();
-                  state.updateNotification({
-                    kind: payload.kind,
-                    trapOid: payload.trapOid,
-                    upTime: payload.upTime === undefined ? '' : String(payload.upTime),
-                    varbinds: payload.varbinds,
-                  });
-                  state.setTrapMode('send');
-                  state.setTrapComposerOpen(true);
-                }}
-              />
-              <Button
-                title="Copy JSON"
-                small
-                variant="ghost"
-                onPress={() => void Share.share({ message: serializeTraps([rec], 'json') })}
-              />
-            </Row>
-            {rec.parseError ? <Label tone="error">{rec.parseError}</Label> : null}
-            {rec.rawPduHex ? (
-              <Mono dim size={9}>
-                {rec.rawPduHex}
-              </Mono>
-            ) : null}
-            {rec.trapOid && !rec.trapName ? <OidLookupPanel oid={rec.trapOid} compact /> : null}
-            {rec.varbinds.map((vb, i) => (
-              <View key={i} style={{ marginTop: 4 }}>
-                <Mono size={11}>{vb.name ?? vb.oid}</Mono>
-                <Text style={{ color: t.text, fontSize: 12 }}>
-                  {vb.isError ? vb.errorText : String(vb.value)}
-                </Text>
-                {!vb.name ? <OidLookupPanel oid={vb.oid} compact /> : null}
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </Pressable>
-    </SwipeActionRow>
   );
 }
 
@@ -1168,14 +1451,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  trapRow: {
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  vbs: { marginTop: 6, paddingLeft: 8, borderLeftWidth: 2 },
   capturePane: { flex: 1, minWidth: 0, minHeight: 0 },
-  captureToolsScroll: { maxHeight: 440 },
+  captureToolsScroll: { maxHeight: '55%', flexShrink: 1 },
   captureControls: { padding: 12, paddingBottom: 0 },
   captureToolStack: { gap: 8 },
   savedToolRow: { justifyContent: 'space-between', alignItems: 'center', gap: 8 },

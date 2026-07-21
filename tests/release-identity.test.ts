@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const APP_ID = 'com.librestatic.mibbeacon';
 const PRODUCT_NAME = 'MIB Beacon';
-const RELEASE_VERSION = '0.1.0-beta.1';
+const RELEASE_VERSION = '0.6.0';
 
 function read(path: string): string {
   return readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -99,13 +99,15 @@ describe('release identity', () => {
 
   it('uses the packaged MIB Beacon mark in the application chrome', () => {
     const appRoot = read('packages/app/src/AppRoot.tsx');
+    const appNavigation = read('packages/app/src/components/AppNavigation.tsx');
     const markComponent = read('packages/app/src/components/MibBeaconMark.tsx');
     const markSource = read('packages/app/src/mib-beacon-mark.ts');
     const packagedMark = read('assets/brand/mib-beacon.svg').trim();
 
     expect(appRoot).toContain("import { MibBeaconMark } from './components/MibBeaconMark';");
-    expect(appRoot).toContain('<MibBeaconMark size={38} />');
+    expect(appNavigation).toContain('<MibBeaconMark size={38} />');
     expect(appRoot).not.toContain('>◉</Text>');
+    expect(appNavigation).not.toContain('>◉</Text>');
     expect(markComponent).toContain('MIB_BEACON_MARK_SVG');
     expect(markSource).toContain(packagedMark);
   });
@@ -270,7 +272,10 @@ describe('release identity', () => {
     };
     expect(mobile.expo.runtimeVersion?.policy).toBe('appVersion');
     expect(mobile.expo.updates).toMatchObject({ enabled: false, checkAutomatically: 'NEVER' });
-    expect(mobile.expo.android.permissions).toEqual(['android.permission.INTERNET']);
+    expect(mobile.expo.android.permissions).toEqual([
+      'android.permission.INTERNET',
+      'android.permission.POST_NOTIFICATIONS',
+    ]);
     expect(mobile.expo.android.blockedPermissions).toContain(
       'android.permission.ACCESS_FINE_LOCATION',
     );
@@ -286,8 +291,10 @@ describe('release identity', () => {
     expect(workflow).toContain('pnpm verify:licenses');
     expect(workflow).toContain('scan-release-artifacts.mjs');
     expect(workflow).toContain('SMOKE_MAIN_WINDOW_READY');
-    expect(workflow).not.toContain('reactivecircus/android-emulator-runner@v2');
-    expect(read('dev/audit/android-release-smoke/run.sh')).toContain('Android release smoke passed');
+    expect(workflow).toContain('reactivecircus/android-emulator-runner@v2');
+    expect(read('dev/audit/android-release-smoke/run.sh')).toContain(
+      'Android release smoke passed',
+    );
     expect(workflow).toContain('verify-android-permissions.mjs');
     expect(workflow).toContain('ANDROID_KEYSTORE_BASE64');
     expect(workflow).toContain('prepare-flatpak-release.mjs');
@@ -313,8 +320,10 @@ describe('release identity', () => {
     expect(read('docs/user/custom-sources.md')).toContain('Name JSONPath');
     expect(read('docs/user/faq.md')).toContain('Expo Go');
     expect(read('docs/user/updates-signing-and-stores.md')).toContain('Automatic checks are off');
-    expect(read('docs/releases/v0.1.0-beta.1.md')).toContain('First feature beta release');
-    expect(read('packages/app/src/generated/release-info.ts')).toContain('/tree/v0.1.0-beta.1');
+    expect(read('docs/releases/v0.6.0.md')).toContain(
+      'Reliability, accessibility, and cross-platform workflow release',
+    );
+    expect(read('packages/app/src/generated/release-info.ts')).toContain('/tree/v0.6.0');
     expect(read('packages/app/src/screens/SettingsScreen.tsx')).toContain('Dependency licenses');
     expect(readme).toContain(
       'The tag workflow distributes a clearly named unsigned Windows beta installer by default.',

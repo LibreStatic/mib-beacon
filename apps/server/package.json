@@ -1,9 +1,9 @@
 {
   "name": "@mibbeacon/server",
-  "version": "0.1.0-beta.1",
+  "version": "0.6.0",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "description": "MIB Beacon — SNMP toolkit LAN server (headless engine + web UI)",
+  "description": "MIB Beacon \u2014 SNMP toolkit LAN server (headless engine + web UI)",
   "type": "module",
   "scripts": {
     "build": "pnpm build:web && pnpm build:server",

@@ -312,60 +312,114 @@ export class TrapStore {
     }
     let authRef = draft.clearAuthKey ? null : (current?.auth_ref ?? null);
     let privRef = draft.clearPrivKey ? null : (current?.priv_ref ?? null);
-    if (draft.clearAuthKey && current?.auth_ref)
-      await this.transport.secrets.delete(current.auth_ref);
-    if (draft.clearPrivKey && current?.priv_ref)
-      await this.transport.secrets.delete(current.priv_ref);
     if (draft.authKey !== undefined) {
       if (draft.authKey) {
-        await this.transport.secrets.set(refs.auth, draft.authKey);
         authRef = refs.auth;
-      } else if (authRef) {
-        await this.transport.secrets.delete(authRef);
-        authRef = null;
-      }
+      } else authRef = null;
     }
     if (draft.privKey !== undefined) {
       if (draft.privKey) {
-        await this.transport.secrets.set(refs.priv, draft.privKey);
         privRef = refs.priv;
-      } else if (privRef) {
-        await this.transport.secrets.delete(privRef);
-        privRef = null;
-      }
+      } else privRef = null;
     }
+    // Validate the complete prospective profile before touching write-only
+    // credentials. A rejected metadata change must never partially replace or
+    // delete the last-confirmed secrets.
     validateV3User(draft, authRef, privRef);
-    const timestamp = this.now();
-    this.db.run(
-      `INSERT INTO trap_v3_users
-       (name, security_json, auth_ref, priv_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(name) DO UPDATE SET security_json = excluded.security_json,
-         auth_ref = excluded.auth_ref, priv_ref = excluded.priv_ref, updated_at = excluded.updated_at`,
-      [
-        name,
-        JSON.stringify({
-          level: draft.level,
-          ...(draft.authProtocol === undefined ? {} : { authProtocol: draft.authProtocol }),
-          ...(draft.privProtocol === undefined ? {} : { privProtocol: draft.privProtocol }),
-        }),
-        authRef,
-        privRef,
-        current?.created_at ?? timestamp,
-        timestamp,
-      ],
-    );
+    const touched = new Map<string, string | null>();
+    const remember = async (reference: string) => {
+      if (!touched.has(reference))
+        touched.set(reference, await this.transport.secrets.get(reference));
+    };
+    const remove = async (reference: string) => {
+      await remember(reference);
+      await this.transport.secrets.delete(reference);
+    };
+    const replace = async (reference: string, value: string) => {
+      await remember(reference);
+      await this.transport.secrets.set(reference, value);
+    };
+    try {
+      if (draft.clearAuthKey && current?.auth_ref) await remove(current.auth_ref);
+      if (draft.clearPrivKey && current?.priv_ref) await remove(current.priv_ref);
+      if (draft.authKey !== undefined) {
+        if (draft.authKey) await replace(refs.auth, draft.authKey);
+        else if (current?.auth_ref) await remove(current.auth_ref);
+      }
+      if (draft.privKey !== undefined) {
+        if (draft.privKey) await replace(refs.priv, draft.privKey);
+        else if (current?.priv_ref) await remove(current.priv_ref);
+      }
+      const timestamp = this.now();
+      this.db.run(
+        `INSERT INTO trap_v3_users
+         (name, security_json, auth_ref, priv_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET security_json = excluded.security_json,
+           auth_ref = excluded.auth_ref, priv_ref = excluded.priv_ref, updated_at = excluded.updated_at`,
+        [
+          name,
+          JSON.stringify({
+            level: draft.level,
+            ...(draft.authProtocol === undefined ? {} : { authProtocol: draft.authProtocol }),
+            ...(draft.privProtocol === undefined ? {} : { privProtocol: draft.privProtocol }),
+          }),
+          authRef,
+          privRef,
+          current?.created_at ?? timestamp,
+          timestamp,
+        ],
+      );
+    } catch (cause) {
+      // Best-effort rollback covers partial secret-store writes and DB failures.
+      const rollback = await Promise.allSettled(
+        [...touched].map(([reference, previous]) =>
+          previous === null
+            ? this.transport.secrets.delete(reference)
+            : this.transport.secrets.set(reference, previous),
+        ),
+      );
+      if (rollback.some((result) => result.status === 'rejected')) {
+        throw new MibBeaconError(
+          'INTERNAL',
+          'Secret rollback outcome unknown after trap-user update failure',
+          { cause },
+        );
+      }
+      throw cause;
+    }
     return this.listV3Users().find((user) => user.name === name)!;
   }
 
   async removeV3User(name: string): Promise<void> {
     const row = this.db.get<V3UserRow>('SELECT * FROM trap_v3_users WHERE name = ?', [name]);
     if (!row) return;
-    await Promise.all(
-      [row.auth_ref, row.priv_ref]
-        .filter((reference): reference is string => !!reference)
-        .map((reference) => this.transport.secrets.delete(reference)),
+    const references = [row.auth_ref, row.priv_ref].filter(
+      (reference): reference is string => !!reference,
     );
-    this.db.run('DELETE FROM trap_v3_users WHERE name = ?', [name]);
+    const previous = new Map<string, string | null>();
+    try {
+      for (const reference of references) {
+        previous.set(reference, await this.transport.secrets.get(reference));
+        await this.transport.secrets.delete(reference);
+      }
+      this.db.run('DELETE FROM trap_v3_users WHERE name = ?', [name]);
+    } catch (cause) {
+      const rollback = await Promise.allSettled(
+        [...previous].map(([reference, value]) =>
+          value === null
+            ? this.transport.secrets.delete(reference)
+            : this.transport.secrets.set(reference, value),
+        ),
+      );
+      if (rollback.some((result) => result.status === 'rejected')) {
+        throw new MibBeaconError(
+          'INTERNAL',
+          'Secret rollback outcome unknown after trap-user removal failure',
+          { cause },
+        );
+      }
+      throw cause;
+    }
   }
 
   async resolveV3Users(): Promise<TrapV3User[]> {

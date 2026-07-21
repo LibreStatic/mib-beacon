@@ -12,13 +12,13 @@ import {
 import { Card, Field, KindGlyph, Mono, Pill, Text, useTheme } from '@mibbeacon/ui';
 import type { ThemeDescriptor } from '@mibbeacon/ui/theme-values';
 import type { MibNodeKind, MibSearchHit } from '@mibbeacon/core/client';
+import type { AppAction } from '../action-registry';
 import { MibObjectNotFoundError } from '../actions';
 import {
   PaletteHistoryController,
   buildPaletteEntries,
   parsePaletteQuery,
   validatePaletteRecentOids,
-  type PaletteCommand,
   type PaletteEntry,
   type PaletteHistoryStorage,
   type PaletteRecentItem,
@@ -50,7 +50,7 @@ type DisplayEntry = PaletteEntry | LiveOidEntry;
 
 interface CommandPaletteProps {
   visible: boolean;
-  commands: readonly PaletteCommand[];
+  commands: readonly AppAction[];
   historyStorage?: PaletteHistoryStorage;
   shortcutHint: string;
   view: CommandPaletteView;
@@ -59,7 +59,7 @@ interface CommandPaletteProps {
   openVsxEnabled: boolean;
   onClose: () => void;
   onViewChange: (view: CommandPaletteView) => void;
-  onExecute: (command: PaletteCommand) => boolean | void | Promise<boolean | void>;
+  onExecute: (command: AppAction) => boolean | void | Promise<boolean | void>;
   onOpenOid: (oid: string) => Promise<void>;
   onPreviewTheme: (theme: ThemeDescriptor) => void;
   onClearThemePreview: () => void;
@@ -318,7 +318,9 @@ function CommandPaletteCommands({
                   <PaletteRow
                     entry={entry}
                     active={index === activeIndex}
-                    disabled={busy}
+                    disabled={
+                      busy || (entry.kind === 'command' && !entry.command.enabled.value)
+                    }
                     onHover={() => setActiveIndex(index)}
                     onPress={() => void activate(entry)}
                   />
@@ -681,13 +683,18 @@ function ThemeCommandPalette({
                     style={[
                       styles.resultRow,
                       {
-                        backgroundColor: active ? t.workbench.selectionBackground : 'transparent',
-                        borderLeftColor: active ? t.accent : 'transparent',
+                        backgroundColor: active ? t.components.selected.background : 'transparent',
+                        borderLeftColor: active ? t.components.selected.border : 'transparent',
                       },
                     ]}
                   >
                     <View style={styles.glyph}>
-                      <Text style={[styles.commandGlyph, { color: active ? t.accent : t.textDim }]}>
+                      <Text
+                        style={[
+                          styles.commandGlyph,
+                          { color: active ? t.components.selected.icon : t.textDim },
+                        ]}
+                      >
                         {entry.kind === 'browse'
                           ? '+'
                           : entry.kind === 'enable'
@@ -702,12 +709,26 @@ function ThemeCommandPalette({
                       </Text>
                     </View>
                     <View style={styles.resultCopy}>
-                      <Text style={[styles.resultTitle, { color: t.text }]} numberOfLines={1}>
+                      <Text
+                        style={[
+                          styles.resultTitle,
+                          { color: active ? t.components.selected.foreground : t.text },
+                        ]}
+                        numberOfLines={1}
+                      >
                         {label}
                       </Text>
-                      <Mono dim size={10} numberOfLines={1}>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.themeMetadata,
+                          {
+                            color: active ? t.components.selected.mutedForeground : t.textDim,
+                          },
+                        ]}
+                      >
                         {metadata}
-                      </Mono>
+                      </Text>
                     </View>
                     {entry.kind === 'catalog' && entry.listing.verified ? (
                       <Pill text="VERIFIED" color={t.ok} />
@@ -758,12 +779,27 @@ function PaletteRow({
 }) {
   const t = useTheme();
   const oid = entry.kind === 'oid' ? entry.item : null;
+  const backgroundColor = disabled
+    ? t.components.disabled.background
+    : active
+      ? t.components.selected.background
+      : 'transparent';
+  const foreground = disabled
+    ? t.components.disabled.foreground
+    : active
+      ? t.components.selected.foreground
+      : t.text;
+  const secondaryForeground = disabled
+    ? t.components.disabled.foreground
+    : active
+      ? t.components.selected.mutedForeground
+      : t.textDim;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={
         entry.kind === 'command'
-          ? entry.command.label
+          ? `${entry.command.label}${entry.command.enabled.reason ? `. ${entry.command.enabled.reason}` : ''}`
           : `Open ${entry.item.name} at ${entry.item.oid}`
       }
       accessibilityState={{ selected: active, disabled }}
@@ -773,9 +809,12 @@ function PaletteRow({
       style={[
         styles.resultRow,
         {
-          backgroundColor: active ? t.accentSoft : 'transparent',
-          borderLeftColor: active ? t.accent : 'transparent',
-          opacity: disabled ? 0.55 : 1,
+          backgroundColor,
+          borderLeftColor: disabled
+            ? t.components.disabled.border
+            : active
+              ? t.components.selected.border
+              : 'transparent',
         },
       ]}
     >
@@ -783,23 +822,27 @@ function PaletteRow({
         {entry.kind === 'oid' ? (
           <KindGlyph kind={(entry.item.nodeKind ?? 'node') as MibNodeKind} />
         ) : (
-          <Text style={[styles.commandGlyph, { color: active ? t.accent : t.textDim }]}>
+          <Text style={[styles.commandGlyph, { color: secondaryForeground }]}>
             {entry.command.glyph}
           </Text>
         )}
       </View>
       <View style={styles.resultCopy}>
-        <Text style={[styles.resultTitle, { color: t.text }]} numberOfLines={1}>
+        <Text style={[styles.resultTitle, { color: foreground }]} numberOfLines={1}>
           {entry.kind === 'command' ? entry.command.label : entry.item.name}
         </Text>
         {oid ? (
-          <Mono dim size={11}>
-            {oid.oid}
-          </Mono>
+          <Text style={[styles.oidMetadata, { color: secondaryForeground }]}>{oid.oid}</Text>
+        ) : entry.kind === 'command' && entry.command.enabled.reason ? (
+          <Text style={[styles.oidMetadata, { color: secondaryForeground }]}>
+            {entry.command.enabled.reason}
+          </Text>
         ) : null}
       </View>
       {oid?.module ? <Pill text={oid.module} /> : null}
-      {entry.recent ? <Text style={[styles.recentMark, { color: t.textDim }]}>↺</Text> : null}
+      {entry.recent ? (
+        <Text style={[styles.recentMark, { color: secondaryForeground }]}>↺</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -846,6 +889,8 @@ const styles = StyleSheet.create({
   commandGlyph: { fontSize: 18, fontWeight: '800' },
   resultCopy: { flex: 1, minWidth: 0, gap: 2 },
   resultTitle: { fontSize: 13, fontWeight: '700' },
+  themeMetadata: { fontFamily: 'monospace', fontSize: 10 },
+  oidMetadata: { fontFamily: 'monospace', fontSize: 11 },
   recentMark: { fontSize: 15 },
   empty: { paddingVertical: 28, paddingHorizontal: 12, textAlign: 'center', fontSize: 13 },
   error: { paddingHorizontal: 10, paddingVertical: 7, fontSize: 12 },

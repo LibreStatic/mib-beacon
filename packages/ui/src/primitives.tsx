@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useTheme } from './theme';
 import { resolveButtonState } from './button-state';
+import { resolveButtonVisualState, resolveChipVisualState } from './component-states';
 import { resolveSwitchColors } from './switch-colors';
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -121,49 +122,66 @@ export function Button({
 }) {
   const t = useTheme();
   const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const { isBusy, isDisabled, label } = resolveButtonState({
     title,
     loading,
     loadingTitle,
     disabled,
   });
-  const bg = variant === 'primary' ? t.accent : variant === 'danger' ? t.errorSoft : 'transparent';
-  const fg = variant === 'primary' ? t.accentText : variant === 'danger' ? t.error : t.accent;
-  const borderColor = variant === 'ghost' ? t.border : 'transparent';
+  const visual = resolveButtonVisualState(t, variant, {
+    pressed,
+    focused,
+    disabled: isDisabled,
+  });
   return (
-    <Pressable
-      onPress={() => {
-        if (isBusy) return;
-        onPress();
-      }}
-      disabled={isDisabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ busy: isBusy, disabled: isDisabled }}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      style={({ pressed }) => [
-        styles.button,
-        small && styles.buttonSmall,
+    <View
+      style={[
+        styles.buttonFocusOuter,
         {
-          backgroundColor: bg,
-          borderColor: focused ? t.focus : borderColor,
-          borderWidth: focused ? 2 : 1,
-          minHeight: t.density.controlMinHeight,
-          opacity: pressed ? 0.75 : 1,
+          borderColor: visual.focusOuter,
         },
       ]}
     >
-      <View style={styles.buttonContent}>
-        {isBusy ? <ActivityIndicator size="small" color={fg} /> : null}
-        <Text
-          maxFontSizeMultiplier={1.3}
-          style={[styles.buttonText, small && styles.buttonTextSmall, { color: fg }]}
-        >
-          {label}
-        </Text>
-      </View>
-    </Pressable>
+      <Pressable
+        onPress={() => {
+          if (isBusy) return;
+          onPress();
+        }}
+        disabled={isDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ busy: isBusy, disabled: isDisabled }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        style={[
+          styles.button,
+          small && styles.buttonSmall,
+          {
+            backgroundColor: visual.background,
+            borderColor: focused ? visual.focusInner : visual.border,
+            borderWidth: focused ? 2 : 1,
+            minHeight: t.density.controlMinHeight,
+          },
+        ]}
+      >
+        <View style={styles.buttonContent}>
+          {isBusy ? <ActivityIndicator size="small" color={visual.foreground} /> : null}
+          <Text
+            maxFontSizeMultiplier={1.3}
+            style={[
+              styles.buttonText,
+              small && styles.buttonTextSmall,
+              { color: visual.foreground },
+            ]}
+          >
+            {label}
+          </Text>
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
@@ -172,38 +190,43 @@ export function Chip({
   label,
   active,
   onPress,
+  disabled = false,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
+  disabled?: boolean;
 }) {
   const t = useTheme();
   const [focused, setFocused] = useState(false);
+  const visual = resolveChipVisualState(t, { active: Boolean(active), focused });
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected: Boolean(active) }}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      style={[
-        styles.chip,
-        {
-          backgroundColor: active ? t.accentSoft : t.surfaceAlt,
-          borderColor: focused ? t.focus : active ? t.accent : t.border,
-          borderWidth: focused ? 2 : 1,
-          minHeight: t.density.controlMinHeight,
-        },
-      ]}
-    >
-      <Text
-        maxFontSizeMultiplier={1.3}
-        style={{ color: active ? t.accent : t.textDim, fontSize: 12, fontWeight: '600' }}
+    <View style={[styles.chipFocusOuter, { borderColor: visual.focusOuter }]}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: Boolean(active), disabled }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={[
+          styles.chip,
+          {
+            backgroundColor: visual.background,
+            borderColor: visual.border,
+            minHeight: t.density.controlMinHeight,
+          },
+        ]}
       >
-        {label}
-      </Text>
-    </Pressable>
+        <Text
+          maxFontSizeMultiplier={1.3}
+          style={{ color: visual.foreground, fontSize: 12, fontWeight: '600' }}
+        >
+          {label}
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -333,6 +356,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  buttonFocusOuter: { borderWidth: 2, borderRadius: 10, margin: -2 },
   buttonSmall: { paddingVertical: 6, paddingHorizontal: 12 },
   buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   buttonText: { fontWeight: '600', fontSize: 14 },
@@ -345,6 +369,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  chipFocusOuter: { borderWidth: 2, borderRadius: 10, margin: -2 },
   pill: { borderWidth: 1, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 },
   empty: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 16 },
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },

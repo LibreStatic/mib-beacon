@@ -1,10 +1,19 @@
-import type { DensityMode, Theme, ThemeDescriptor, ThemePalette } from './theme-types';
-import { colorContrast, opaqueColor, relativeLuminance } from './vscode-theme';
+import type {
+  DensityMode,
+  Theme,
+  ThemeComponentStates,
+  ThemeDescriptor,
+  ThemeMode,
+  ThemePalette,
+  ThemeScheme,
+} from './theme-types';
+import { colorContrast, opaqueColor } from './vscode-theme';
 
 export type {
   DensityMode,
   Theme,
   ThemeDescriptor,
+  ThemeComponentStates,
   ThemeMode,
   ThemePalette,
   ThemeScheme,
@@ -170,12 +179,7 @@ function readableOn(
       return color;
     }
   }
-  return candidates
-    .map((color) => ({
-      color,
-      score: Math.min(...backgrounds.map((background) => colorContrast(color, background))),
-    }))
-    .sort((left, right) => right.score - left.score)[0]!.color;
+  throw new Error(`Theme contrast normalization could not satisfy ${minimum}:1`);
 }
 
 function backgroundBehind(
@@ -187,7 +191,27 @@ function backgroundBehind(
   for (const color of [candidate, fallback, '#000000', '#ffffff']) {
     if (colorContrast(foreground, color) >= minimum) return color;
   }
-  return fallback;
+  throw new Error(`Theme background normalization could not satisfy ${minimum}:1`);
+}
+
+function distinctBackgroundBehind(
+  candidates: readonly string[],
+  foreground: string,
+  avoid: string,
+  minimum: number,
+): string {
+  for (const color of [...candidates, '#f2f2f2', '#121212', '#000000', '#ffffff']) {
+    const opaque = opaqueColor(color, avoid);
+    if (
+      opaque.toLowerCase() !== avoid.toLowerCase() &&
+      colorContrast(foreground, opaque) >= minimum
+    ) {
+      return opaque;
+    }
+  }
+  throw new Error(
+    `Theme pressed-state normalization could not satisfy ${minimum}:1 for ${foreground} away from ${avoid}`,
+  );
 }
 
 export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalette {
@@ -195,14 +219,8 @@ export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalet
   const fallback = THEME_PALETTES[palette.scheme];
   const coherentBackground = (color: string, fallbackColor: string) => {
     const opaque = opaqueColor(color, fallbackColor);
-    const light = relativeLuminance(opaque) > 0.45;
-    return palette.scheme === 'dark'
-      ? light
-        ? fallbackColor
-        : opaque
-      : light
-        ? opaque
-        : fallbackColor;
+    const familyForeground = palette.scheme === 'dark' ? '#ffffff' : '#000000';
+    return colorContrast(familyForeground, opaque) >= 4.5 ? opaque : fallbackColor;
   };
   const bg = coherentBackground(input.bg, fallback.bg);
   const surface = coherentBackground(input.surface, fallback.surface);
@@ -240,8 +258,23 @@ export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalet
       ),
     },
   };
-  const accentSoftBackground = opaqueColor(palette.accentSoft, palette.surfaceAlt);
-  const errorSoftBackground = opaqueColor(palette.errorSoft, palette.surfaceAlt);
+  const accentSoft =
+    colorContrast(
+      palette.scheme === 'dark' ? '#ffffff' : '#000000',
+      opaqueColor(input.accentSoft, surfaceAlt),
+    ) >= 4.5
+      ? input.accentSoft
+      : fallback.accentSoft;
+  const errorSoft =
+    colorContrast(
+      palette.scheme === 'dark' ? '#ffffff' : '#000000',
+      opaqueColor(input.errorSoft, surfaceAlt),
+    ) >= 4.5
+      ? input.errorSoft
+      : fallback.errorSoft;
+  palette = { ...palette, accentSoft, errorSoft };
+  const accentSoftBackground = opaqueColor(accentSoft, palette.surfaceAlt);
+  const errorSoftBackground = opaqueColor(errorSoft, palette.surfaceAlt);
   const contentBackgrounds = [
     palette.bg,
     palette.surface,
@@ -283,7 +316,17 @@ export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalet
     mono,
     focus: readableOn(
       palette.focus,
-      [palette.bg, palette.surface, palette.surfaceAlt],
+      [
+        palette.bg,
+        palette.surface,
+        palette.surfaceAlt,
+        palette.workbench.activityBarBackground,
+        palette.workbench.sideBarBackground,
+        palette.workbench.panelBackground,
+        palette.workbench.titleBarBackground,
+        palette.workbench.statusBarBackground,
+        palette.workbench.inputBackground,
+      ],
       fallback.focus,
       3,
     ),
@@ -366,6 +409,98 @@ export function normalizeThemePaletteContrast(palette: ThemePalette): ThemePalet
   };
 }
 
+function createComponentStates(palette: ThemePalette): ThemeComponentStates {
+  const selectedBackground = opaqueColor(palette.workbench.selectionBackground, palette.surfaceAlt);
+  const selectedForeground = readableOn(palette.text, [selectedBackground], palette.text, 4.5);
+  const primaryBackground = opaqueColor(palette.accent, palette.surfaceAlt);
+  const primaryForeground = readableOn(
+    palette.accentText,
+    [primaryBackground],
+    palette.accentText,
+    4.5,
+  );
+  const pressedBackground = distinctBackgroundBehind(
+    [palette.workbench.selectionBackground, palette.surfaceAlt, palette.bg],
+    primaryForeground,
+    primaryBackground,
+    4.5,
+  );
+  const disabledBackground = palette.surfaceAlt;
+  const hoverBackground = opaqueColor(palette.workbench.hoverBackground, palette.surfaceAlt);
+  const dangerBackground = opaqueColor(palette.errorSoft, palette.surfaceAlt);
+  const dangerForeground = readableOn(palette.error, [dangerBackground], palette.text, 4.5);
+  const dangerPressedBackground = opaqueColor(palette.error, palette.surfaceAlt);
+  const dangerPressedForeground = readableOn(
+    palette.accentText,
+    [dangerPressedBackground],
+    palette.text,
+    4.5,
+  );
+  return {
+    selected: {
+      background: selectedBackground,
+      foreground: selectedForeground,
+      mutedForeground: readableOn(palette.textDim, [selectedBackground], selectedForeground, 4.5),
+      icon: readableOn(palette.accent, [selectedBackground], selectedForeground, 4.5),
+      border: readableOn(palette.accent, [selectedBackground], selectedForeground, 3),
+    },
+    primaryButton: {
+      background: primaryBackground,
+      foreground: primaryForeground,
+      pressedBackground,
+      focusInner: readableOn(palette.focus, [primaryBackground], palette.focus, 3),
+      focusOuter: palette.focus,
+    },
+    badge: {
+      background: primaryBackground,
+      foreground: primaryForeground,
+    },
+    disabled: {
+      background: disabledBackground,
+      foreground: readableOn(palette.textDim, [disabledBackground], palette.text, 4.5),
+      border: readableOn(palette.border, [disabledBackground], palette.text, 3),
+    },
+    hover: {
+      background: hoverBackground,
+      foreground: readableOn(palette.text, [hoverBackground], palette.text, 4.5),
+      icon: readableOn(palette.accent, [hoverBackground], palette.text, 3),
+      border: readableOn(palette.border, [hoverBackground], palette.text, 3),
+      focusInner: readableOn(palette.focus, [hoverBackground], palette.text, 3),
+    },
+    dangerButton: {
+      background: dangerBackground,
+      foreground: dangerForeground,
+      pressedBackground: dangerPressedBackground,
+      pressedForeground: dangerPressedForeground,
+      border: readableOn(palette.border, [dangerBackground], dangerForeground, 3),
+      focusInner: readableOn(palette.focus, [dangerBackground], dangerForeground, 3),
+      pressedFocusInner: readableOn(
+        palette.focus,
+        [dangerPressedBackground],
+        dangerPressedForeground,
+        3,
+      ),
+    },
+  };
+}
+
+export function resolveThemeProviderTheme({
+  mode,
+  systemScheme,
+  density,
+  lightTheme,
+  darkTheme,
+}: {
+  mode: ThemeMode;
+  systemScheme: ThemeScheme;
+  density: DensityMode;
+  lightTheme?: ThemeDescriptor;
+  darkTheme?: ThemeDescriptor;
+}): Theme {
+  const scheme = mode === 'system' ? systemScheme : mode;
+  return createTheme(scheme, density, scheme === 'dark' ? darkTheme : lightTheme);
+}
+
 export function createTheme(
   scheme: 'light' | 'dark',
   density: DensityMode,
@@ -385,6 +520,7 @@ export function createTheme(
         : { mode: density, controlMinHeight: 44, rowMinHeight: 44, gap: 8, fontScale: 1 },
     space: { ...SPACE },
     type: { ...TYPE },
+    components: createComponentStates(palette),
   };
 }
 export function contrastRatio(foreground: string, background: string): number {

@@ -63,6 +63,9 @@ interface PollSampleRow {
 
 interface PatternTraceSessionRow {
   id: string;
+  request_id: string | null;
+  request_intent_json: string | null;
+  operation_handle_id: string | null;
   name: string;
   mode: PatternTraceMode;
   series_ids_json: string;
@@ -93,6 +96,7 @@ export class ToolService {
   private readonly pollTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly pollInFlight = new Set<string>();
   private readonly operations = new Map<string, AbortController>();
+  private readonly patternOperations = new Map<string, string>();
   private readonly cancellationEvents = new Set<string>();
   private sequence = 0;
 
@@ -108,7 +112,7 @@ export class ToolService {
     private readonly onPacket?: (event: PacketTraceEvent) => void,
   ) {
     this.db.run(
-      "UPDATE poll_pattern_sessions SET status='failed',updated_at=? WHERE status='running'",
+      "UPDATE poll_pattern_sessions SET status='failed',operation_handle_id=NULL,updated_at=? WHERE status='running'",
       [this.now()],
     );
     this.api = this.buildApi();
@@ -361,9 +365,11 @@ export class ToolService {
   private exportSeriesCsv(id: string): string {
     this.requireSeries(id);
     const sessions = this.listPatternSessions({ seriesIds: [id] });
-    const events = sessions.flatMap((session) => this.listPatternEvents(session.id)
-      .filter((event) => event.seriesId === id)
-      .map((event) => ({ event, session })));
+    const events = sessions.flatMap((session) =>
+      this.listPatternEvents(session.id)
+        .filter((event) => event.seriesId === id)
+        .map((event) => ({ event, session })),
+    );
     const rows = [
       'timestamp,raw_value,value,type,pattern_session_ids,pattern_active,pattern_event_count',
     ];
@@ -573,7 +579,10 @@ export class ToolService {
 
   private listPatternSessions(input?: { seriesIds?: string[] }): PatternTraceSession[] {
     const requested = new Set(input?.seriesIds ?? []);
-    const counts = new Map<string, { hitCount: number; successCount: number; errorCount: number }>();
+    const counts = new Map<
+      string,
+      { hitCount: number; successCount: number; errorCount: number }
+    >();
     for (const row of this.db.all<{
       session_id: string;
       hit_count: number;
@@ -616,6 +625,7 @@ export class ToolService {
   }
 
   private startPattern(input: {
+    requestId?: string;
     name?: string;
     seriesIds: string[];
     cadenceMs: number;
@@ -626,8 +636,35 @@ export class ToolService {
     const seriesIds = validatePatternSeries(input.seriesIds);
     validatePatternTraceWindow(input.cadenceMs, input.durationMs);
     const color = normalizePatternColor(input.color);
+    const requestId = input.requestId?.trim() || undefined;
+    const requestIntent = JSON.stringify({
+      name: input.name?.trim() || null,
+      seriesIds,
+      cadenceMs: input.cadenceMs,
+      durationMs: input.durationMs,
+      color,
+      chartId: input.chartId ?? null,
+    });
+    if (requestId) {
+      const existing = this.db.get<PatternTraceSessionRow>(
+        'SELECT * FROM poll_pattern_sessions WHERE request_id=?',
+        [requestId],
+      );
+      if (existing && existing.request_intent_json !== requestIntent)
+        throw new Error(`Pattern request identity conflict for ${requestId}`);
+      if (existing?.status === 'running' && existing.operation_handle_id)
+        return { handleId: existing.operation_handle_id, sessionId: existing.id };
+      if (existing)
+        throw new Error(
+          `Pattern request ${requestId} already ended with status ${existing.status}`,
+        );
+    }
     const startAt = this.now();
+    const handleId = this.operationId('pattern');
     const sessionId = this.createPatternSession({
+      requestId,
+      requestIntent,
+      operationHandleId: handleId,
       name: input.name,
       mode: 'active',
       seriesIds,
@@ -638,9 +675,9 @@ export class ToolService {
       color,
       status: 'running',
     });
-    const handleId = this.operationId('pattern');
     const controller = new AbortController();
     this.operations.set(handleId, controller);
+    this.patternOperations.set(handleId, sessionId);
     void this.runPattern(sessionId, handleId, controller).catch((error) => {
       this.updatePatternStatus(sessionId, 'failed');
       this.emitToolError(handleId, error);
@@ -650,6 +687,7 @@ export class ToolService {
   }
 
   private annotatePattern(input: {
+    requestId?: string;
     name?: string;
     seriesIds: string[];
     cadenceMs: number;
@@ -659,36 +697,72 @@ export class ToolService {
     chartId?: string;
   }): PatternTraceSession {
     const seriesIds = validatePatternSeries(input.seriesIds);
-    if (!Number.isInteger(input.startAt) || !Number.isInteger(input.endAt) || input.endAt <= input.startAt)
+    if (
+      !Number.isInteger(input.startAt) ||
+      !Number.isInteger(input.endAt) ||
+      input.endAt <= input.startAt
+    )
       throw new Error('Pattern annotation requires an increasing time window');
     validatePatternTraceWindow(input.cadenceMs, input.endAt - input.startAt);
-    const sessionId = this.createPatternSession({
-      name: input.name,
-      mode: 'passive',
+    const requestId = input.requestId?.trim() || undefined;
+    const normalizedColor = normalizePatternColor(input.color);
+    const requestIntent = JSON.stringify({
+      name: input.name?.trim() || null,
       seriesIds,
-      chartId: input.chartId,
       cadenceMs: input.cadenceMs,
       startAt: input.startAt,
       endAt: input.endAt,
-      color: normalizePatternColor(input.color),
-      status: 'completed',
+      color: normalizedColor,
+      chartId: input.chartId ?? null,
     });
-    for (const [hitIndex, hitAt] of patternHitTimes(input.startAt, input.endAt, input.cadenceMs).entries()) {
-      for (const seriesId of seriesIds) {
-        this.recordPatternEvent({
-          sessionId,
-          seriesId,
-          hitIndex,
-          hitAt,
-          elapsedMs: hitAt - input.startAt,
-          status: 'annotated',
-        });
-      }
+    if (requestId) {
+      const existing = this.db.get<PatternTraceSessionRow>(
+        'SELECT * FROM poll_pattern_sessions WHERE request_id=?',
+        [requestId],
+      );
+      if (existing && existing.request_intent_json !== requestIntent)
+        throw new Error(`Pattern request identity conflict for ${requestId}`);
+      if (existing) return this.requirePatternSession(existing.id);
     }
+    const sessionId = this.db.transaction(() => {
+      const id = this.createPatternSession({
+        requestId,
+        requestIntent,
+        name: input.name,
+        mode: 'passive',
+        seriesIds,
+        chartId: input.chartId,
+        cadenceMs: input.cadenceMs,
+        startAt: input.startAt,
+        endAt: input.endAt,
+        color: normalizedColor,
+        status: 'completed',
+      });
+      for (const [hitIndex, hitAt] of patternHitTimes(
+        input.startAt,
+        input.endAt,
+        input.cadenceMs,
+      ).entries()) {
+        for (const seriesId of seriesIds) {
+          this.recordPatternEvent({
+            sessionId: id,
+            seriesId,
+            hitIndex,
+            hitAt,
+            elapsedMs: hitAt - input.startAt,
+            status: 'annotated',
+          });
+        }
+      }
+      return id;
+    });
     return this.requirePatternSession(sessionId);
   }
 
   private createPatternSession(input: {
+    requestId?: string;
+    requestIntent?: string;
+    operationHandleId?: string;
     name?: string;
     mode: PatternTraceMode;
     seriesIds: string[];
@@ -703,10 +777,13 @@ export class ToolService {
     const at = this.now();
     this.db.run(
       `INSERT INTO poll_pattern_sessions
-       (id,name,mode,series_ids_json,chart_id,cadence_ms,start_at,end_at,color,status,created_at,updated_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+      (id,request_id,request_intent_json,operation_handle_id,name,mode,series_ids_json,chart_id,cadence_ms,start_at,end_at,color,status,created_at,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
+        input.requestId ?? null,
+        input.requestIntent ?? null,
+        input.operationHandleId ?? null,
         input.name?.trim() || `Pattern ${new Date(input.startAt).toLocaleTimeString()}`,
         input.mode,
         JSON.stringify(input.seriesIds),
@@ -760,20 +837,27 @@ export class ToolService {
     }
     const pending = new Set<Promise<void>>();
     try {
-      for (const [hitIndex, hitAt] of patternHitTimes(session.startAt, session.endAt, session.cadenceMs).entries()) {
+      for (const [hitIndex, hitAt] of patternHitTimes(
+        session.startAt,
+        session.endAt,
+        session.cadenceMs,
+      ).entries()) {
         await waitUntil(hitAt, controller.signal, this.now);
         if (controller.signal.aborted) break;
         for (const group of groups.values()) {
           if (pending.size >= MAX_PATTERN_TRACE_IN_FLIGHT) {
             for (const item of group) {
-              this.recordPatternEvent({
-                sessionId,
-                seriesId: item.id,
-                hitIndex,
-                hitAt,
-                elapsedMs: hitAt - session.startAt,
-                status: 'skipped',
-              }, handleId);
+              this.recordPatternEvent(
+                {
+                  sessionId,
+                  seriesId: item.id,
+                  hitIndex,
+                  hitAt,
+                  elapsedMs: hitAt - session.startAt,
+                  status: 'skipped',
+                },
+                handleId,
+              );
             }
             continue;
           }
@@ -823,7 +907,10 @@ export class ToolService {
     try {
       const agent = await this.agents.resolve(series[0]!.agentId);
       const startedAt = this.now();
-      values = await this.get(agent, series.map((item) => item.oid));
+      values = await this.get(
+        agent,
+        series.map((item) => item.oid),
+      );
       latencyMs = Math.max(0, this.now() - startedAt);
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
@@ -831,18 +918,23 @@ export class ToolService {
     const byOid = new Map(values.map((value) => [value.oid, value]));
     for (const item of series) {
       const varbind = byOid.get(item.oid);
-      const errorMessage = failure ?? (varbind?.isError ? varbind.errorText : undefined) ??
+      const errorMessage =
+        failure ??
+        (varbind?.isError ? varbind.errorText : undefined) ??
         (!varbind ? `No value for ${item.oid}` : undefined);
-      this.recordPatternEvent({
-        sessionId: session.id,
-        seriesId: item.id,
-        hitIndex,
-        hitAt,
-        elapsedMs: hitAt - session.startAt,
-        ...(errorMessage ? {} : { latencyMs }),
-        status: errorMessage ? 'error' : 'success',
-        ...(errorMessage ? { errorMessage } : {}),
-      }, handleId);
+      this.recordPatternEvent(
+        {
+          sessionId: session.id,
+          seriesId: item.id,
+          hitIndex,
+          hitAt,
+          elapsedMs: hitAt - session.startAt,
+          ...(errorMessage ? {} : { latencyMs }),
+          status: errorMessage ? 'error' : 'success',
+          ...(errorMessage ? { errorMessage } : {}),
+        },
+        handleId,
+      );
     }
   }
 
@@ -890,11 +982,10 @@ export class ToolService {
   }
 
   private updatePatternStatus(sessionId: string, status: PatternTraceSessionStatus): void {
-    this.db.run('UPDATE poll_pattern_sessions SET status=?,updated_at=? WHERE id=?', [
-      status,
-      this.now(),
-      sessionId,
-    ]);
+    this.db.run(
+      'UPDATE poll_pattern_sessions SET status=?,operation_handle_id=NULL,updated_at=? WHERE id=?',
+      [status, this.now(), sessionId],
+    );
   }
 
   private startDiscovery(input: {
@@ -1350,6 +1441,8 @@ export class ToolService {
   private cancelOperation(handleId: string): void {
     const controller = this.operations.get(handleId);
     if (!controller) return;
+    const patternSessionId = this.patternOperations.get(handleId);
+    if (patternSessionId) this.updatePatternStatus(patternSessionId, 'cancelled');
     controller.abort();
     this.emitCancelled(handleId);
   }
@@ -1362,6 +1455,7 @@ export class ToolService {
 
   private finishOperation(handleId: string): void {
     this.operations.delete(handleId);
+    this.patternOperations.delete(handleId);
     this.cancellationEvents.delete(handleId);
   }
 
@@ -1464,6 +1558,10 @@ function publicPatternSession(
 ): PatternTraceSession {
   return {
     id: row.id,
+    ...(row.request_id ? { requestId: row.request_id } : {}),
+    ...(row.status === 'running' && row.operation_handle_id
+      ? { operationHandleId: row.operation_handle_id }
+      : {}),
     name: row.name,
     mode: row.mode,
     seriesIds,
@@ -1506,11 +1604,7 @@ function normalizePatternColor(value: string): string {
   return value.trim().toLowerCase();
 }
 
-async function waitUntil(
-  targetAt: number,
-  signal: AbortSignal,
-  now: () => number,
-): Promise<void> {
+async function waitUntil(targetAt: number, signal: AbortSignal, now: () => number): Promise<void> {
   const delay = Math.max(0, targetAt - now());
   if (delay === 0 || signal.aborted) return;
   await new Promise<void>((resolve) => {

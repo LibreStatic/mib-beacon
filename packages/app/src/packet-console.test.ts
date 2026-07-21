@@ -41,10 +41,11 @@ describe('packet console layout', () => {
     });
   });
 
-  it('uses a bottom resizing dock on desktop', () => {
+  it('uses a bottom resizing dock on desktop without clipping the 24px trigger', () => {
     expect(getPacketConsoleLayout('expanded', 800, 0.5)).toMatchObject({
       edge: 'bottom',
       overlay: false,
+      collapsedSize: 24,
       maxSize: 440,
       size: 400,
     });

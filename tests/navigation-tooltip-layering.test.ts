@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 describe('tablet navigation tooltips', () => {
   it('layers the compact rail above the adjacent workbench body', () => {
     const source = readFileSync(
-      new URL('../packages/app/src/AppRoot.tsx', import.meta.url),
+      new URL('../packages/app/src/components/AppNavigation.tsx', import.meta.url),
       'utf8',
     );
 
@@ -13,13 +13,11 @@ describe('tablet navigation tooltips', () => {
 
   it('separates rail tooltips from their buttons and centers their labels', () => {
     const source = readFileSync(
-      new URL('../packages/app/src/AppRoot.tsx', import.meta.url),
+      new URL('../packages/app/src/components/AppNavigation.tsx', import.meta.url),
       'utf8',
     );
 
-    expect(source).toMatch(
-      /navTooltip:\s*\{[^}]*left:\s*56[^}]*alignItems:\s*'center'[^}]*\}/s,
-    );
+    expect(source).toMatch(/navTooltip:\s*\{[^}]*left:\s*64[^}]*alignItems:\s*'center'[^}]*\}/s);
     expect(source).toMatch(/navTooltipText:\s*\{[^}]*textAlign:\s*'center'[^}]*\}/s);
   });
 });

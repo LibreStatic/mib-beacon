@@ -49,9 +49,25 @@ export class QueryArtifactStore {
     this.db.run(
       `INSERT INTO operation_bookmarks
        (id, name, agent_id, oid, operation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, input.name.trim(), input.agentId, input.oid.trim(), input.operation, timestamp, timestamp],
+      [
+        id,
+        input.name.trim(),
+        input.agentId,
+        input.oid.trim(),
+        input.operation,
+        timestamp,
+        timestamp,
+      ],
     );
-    return this.listBookmarks().find((item) => item.id === id)!;
+    return {
+      id,
+      name: input.name.trim(),
+      agentId: input.agentId,
+      oid: input.oid.trim(),
+      operation: input.operation,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
   }
 
   deleteBookmark(id: string): void {
@@ -72,37 +88,117 @@ export class QueryArtifactStore {
     const directory = this.transport.files.join(this.transport.files.dataDir(), 'snapshots');
     const filePath = this.transport.files.join(directory, `${id}.json`);
     await this.transport.files.ensureDir(directory);
-    await this.transport.files.writeText(filePath, JSON.stringify(input.results));
+    try {
+      await this.transport.files.writeText(filePath, JSON.stringify(input.results));
+    } catch (cause) {
+      try {
+        if (await this.transport.files.exists(filePath))
+          await this.transport.files.remove(filePath);
+      } catch (rollbackCause) {
+        throw new Error(`Snapshot create rollback outcome unknown: ${message(rollbackCause)}`, {
+          cause,
+        });
+      }
+      throw cause;
+    }
     const timestamp = this.now();
-    this.db.run(
-      `INSERT INTO walk_snapshots
-       (id, name, agent_name, base_oid, file_path, result_count, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        input.name.trim(),
-        input.agentName.trim() || 'Unknown agent',
-        input.baseOid.trim(),
-        filePath,
-        input.results.length,
-        timestamp,
-      ],
-    );
-    return this.listSnapshots().find((item) => item.id === id)!;
+    try {
+      this.db.run(
+        `INSERT INTO walk_snapshots
+         (id, name, agent_name, base_oid, file_path, result_count, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          input.name.trim(),
+          input.agentName.trim() || 'Unknown agent',
+          input.baseOid.trim(),
+          filePath,
+          input.results.length,
+          timestamp,
+        ],
+      );
+    } catch (cause) {
+      try {
+        const inserted = this.db.get<SnapshotRow>('SELECT * FROM walk_snapshots WHERE id = ?', [
+          id,
+        ]);
+        if (inserted) {
+          try {
+            this.db.run('DELETE FROM walk_snapshots WHERE id = ?', [id]);
+          } catch (rollbackCause) {
+            const remaining = this.db.get<SnapshotRow>(
+              'SELECT * FROM walk_snapshots WHERE id = ?',
+              [id],
+            );
+            if (remaining) throw rollbackCause;
+          }
+          if (this.db.get<SnapshotRow>('SELECT * FROM walk_snapshots WHERE id = ?', [id])) {
+            throw new Error('Snapshot metadata compensation did not remove the inserted row');
+          }
+        }
+        await this.transport.files.remove(filePath);
+      } catch (rollbackCause) {
+        throw new Error(`Snapshot create rollback outcome unknown: ${message(rollbackCause)}`, {
+          cause,
+        });
+      }
+      throw cause;
+    }
+    return {
+      id,
+      name: input.name.trim(),
+      agentName: input.agentName.trim() || 'Unknown agent',
+      baseOid: input.baseOid.trim(),
+      resultCount: input.results.length,
+      createdAt: timestamp,
+    };
   }
 
   async getSnapshot(id: string): Promise<WalkSnapshot | null> {
     const row = this.db.get<SnapshotRow>('SELECT * FROM walk_snapshots WHERE id = ?', [id]);
     if (!row) return null;
-    const results = JSON.parse(await this.transport.files.readText(row.file_path)) as WalkSnapshot['results'];
+    const results = JSON.parse(
+      await this.transport.files.readText(row.file_path),
+    ) as WalkSnapshot['results'];
     return { ...snapshotSummaryFromRow(row), results };
   }
 
   async deleteSnapshot(id: string): Promise<void> {
     const row = this.db.get<SnapshotRow>('SELECT * FROM walk_snapshots WHERE id = ?', [id]);
     if (!row) return;
-    this.db.run('DELETE FROM walk_snapshots WHERE id = ?', [id]);
-    if (await this.transport.files.exists(row.file_path)) await this.transport.files.remove(row.file_path);
+    const fileExists = await this.transport.files.exists(row.file_path);
+    const content = fileExists ? await this.transport.files.readText(row.file_path) : undefined;
+    if (fileExists) {
+      try {
+        await this.transport.files.remove(row.file_path);
+      } catch (cause) {
+        try {
+          if (!(await this.transport.files.exists(row.file_path)))
+            await this.transport.files.writeText(row.file_path, content!);
+        } catch (rollbackCause) {
+          throw new Error(`Snapshot delete rollback outcome unknown: ${message(rollbackCause)}`, {
+            cause,
+          });
+        }
+        throw cause;
+      }
+    }
+    try {
+      this.db.run('DELETE FROM walk_snapshots WHERE id = ?', [id]);
+    } catch (cause) {
+      try {
+        const remaining = this.db.get<SnapshotRow>('SELECT * FROM walk_snapshots WHERE id = ?', [
+          id,
+        ]);
+        if (remaining && content !== undefined)
+          await this.transport.files.writeText(row.file_path, content);
+      } catch (rollbackCause) {
+        throw new Error(`Snapshot delete rollback outcome unknown: ${message(rollbackCause)}`, {
+          cause,
+        });
+      }
+      throw cause;
+    }
   }
 
   private id(prefix: string): string {
@@ -110,6 +206,10 @@ export class QueryArtifactStore {
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('')}`;
   }
+}
+
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function bookmarkFromRow(row: BookmarkRow): OperationBookmark {

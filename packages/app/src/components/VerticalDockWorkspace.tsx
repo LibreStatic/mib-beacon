@@ -11,6 +11,14 @@ import { useTheme } from '@mibbeacon/ui';
 import { clampSplitRatio, getWindowScopedStorageKey } from '../responsive-layout';
 
 const DEFAULT_MAIN_RATIO = 0.65;
+
+export function resetVerticalDockLayouts(): void {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.localStorage.key(index);
+    if (key?.includes(':dock:')) window.localStorage.removeItem(key);
+  }
+}
 const verticalResizeCursor =
   Platform.OS === 'web'
     ? ({ cursor: 'row-resize', touchAction: 'none', userSelect: 'none' } as unknown as ViewStyle)
