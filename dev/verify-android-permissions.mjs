@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 export const ALLOWED_ANDROID_PERMISSIONS = new Set([
   'android.permission.INTERNET',
+  'android.permission.POST_NOTIFICATIONS',
   // Android Gradle Plugin generates this app-owned signature permission to protect dynamic receivers.
   'com.librestatic.mibbeacon.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 ]);
