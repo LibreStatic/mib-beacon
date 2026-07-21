@@ -18,7 +18,7 @@
       "package": "com.librestatic.mibbeacon",
       "adaptiveIcon": {
         "foregroundImage": "../../assets/brand/mib-beacon-adaptive-foreground.png",
-        "backgroundColor": "#020617"
+        "backgroundColor": "#F8FAFC"
       },
       "permissions": ["android.permission.INTERNET"],
       "blockedPermissions": [

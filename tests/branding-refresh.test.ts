@@ -101,7 +101,7 @@ describe('branding refresh', () => {
     expect(mobile.expo.icon).toBe('../../assets/brand/mib-beacon.png');
     expect(mobile.expo.android.adaptiveIcon).toEqual({
       foregroundImage: '../../assets/brand/mib-beacon-adaptive-foreground.png',
-      backgroundColor: '#020617',
+      backgroundColor: '#F8FAFC',
     });
     expect(existsSync(new URL('../assets/brand/mib-beacon.png', import.meta.url))).toBe(true);
     expect(
