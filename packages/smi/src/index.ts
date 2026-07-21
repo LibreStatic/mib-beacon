@@ -1,5 +1,6 @@
 export { MibStore } from './mib-store';
 export { OidIndex } from './oid-index';
+export { normalizeNumericOid } from './oid';
 export {
   formatSyntax,
   enumLabel,

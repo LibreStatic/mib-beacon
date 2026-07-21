@@ -1,4 +1,4 @@
-import { inferWireType, validateVarbindInput } from '@mibbeacon/core/client';
+import { inferWireType, normalizeNumericOid, validateVarbindInput } from '@mibbeacon/core/client';
 import type {
   AgentSpec,
   AgentTarget,
@@ -294,12 +294,13 @@ export async function refreshAgentGroups(engine: EngineAPI): Promise<void> {
 /** Live OID → name hint for the query field. */
 export async function resolveOidHint(engine: EngineAPI, oid: string): Promise<void> {
   const s = useAppStore.getState();
-  if (!/^\d+(?:\.\d+)+$/.test(oid.trim())) {
+  const normalized = normalizeNumericOid(oid);
+  if (!normalized) {
     s.setOidName(null);
     return;
   }
   try {
-    const r = await engine.mibs.resolve(oid.trim());
+    const r = await engine.mibs.resolve(normalized);
     // Only apply if the field hasn't changed underneath us.
     if (useAppStore.getState().oid === oid) {
       s.setOidName(r?.name ?? null);
@@ -945,8 +946,8 @@ export async function clearResolverCache(engine: EngineAPI): Promise<void> {
 }
 
 export async function lookupUnknownOid(engine: EngineAPI, oid: string): Promise<void> {
-  const normalized = oid.trim().replace(/^\./, '');
-  if (!/^\d+(?:\.\d+)+$/.test(normalized)) return;
+  const normalized = normalizeNumericOid(oid);
+  if (!normalized) return;
   const current = useAppStore.getState().lookupHandles[normalized];
   if (current) return;
   try {
@@ -966,8 +967,8 @@ export async function browseVendorMibs(
   oid: string,
   vendor: string,
 ): Promise<void> {
-  const normalized = oid.trim().replace(/^\./, '');
-  if (!/^\d+(?:\.\d+)+$/.test(normalized)) return;
+  const normalized = normalizeNumericOid(oid);
+  if (!normalized) return;
   const state = useAppStore.getState();
   if (state.vendorMibBrowseHandles[normalized] || vendorBrowseStarts.has(normalized)) return;
   vendorBrowseStarts.add(normalized);
@@ -1163,9 +1164,10 @@ export async function runSearch(engine: EngineAPI, query: string): Promise<void>
   s.setSearchPhase('searching');
   s.setSearchError(null);
   try {
+    const normalizedQuery = normalizeNumericOid(query) ?? query;
     const hits = s.moduleFocus
-      ? await engine.mibs.moduleSearch(s.moduleFocus.module.name, query, 40)
-      : await engine.mibs.search(query, 40);
+      ? await engine.mibs.moduleSearch(s.moduleFocus.module.name, normalizedQuery, 40)
+      : await engine.mibs.search(normalizedQuery, 40);
     const current = useAppStore.getState();
     if (current.search === query) {
       current.setHits(hits);

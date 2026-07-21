@@ -12,6 +12,7 @@ import {
   type TextInput,
 } from 'react-native';
 import { Button, Card, EmptyState, Field, KindGlyph, Mono, Pill, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+import { normalizeNumericOid } from '@mibbeacon/core/client';
 import type { EngineInfo, MibNodeSummary, MibSearchHit } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
@@ -220,7 +221,7 @@ export function BrowseScreen({
           keyExtractor={(h) => h.oid + h.matched}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
-            searchPhase !== 'idle' ? null : /^\.?\d+(?:\.\d+)+$/.test(search.trim()) ? (
+            searchPhase !== 'idle' ? null : normalizeNumericOid(search) ? (
               <View style={styles.lookupEmpty}>
                 <EmptyState
                   title="OID is not in the loaded catalog"

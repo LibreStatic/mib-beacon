@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useState } from 'react';
 import { Button, Card, Dialog, Label, Mono, Pill, Row, SectionTitle, Text, useTheme } from '@mibbeacon/ui';
+import { normalizeNumericOid } from '@mibbeacon/core/client';
 import { useEngine } from '../engine-context';
 import { useAppStore } from '../store';
 import { browseVendorMibs, loadLookupCandidate, lookupUnknownOid } from '../actions';
@@ -15,7 +16,7 @@ import { shouldOfferVendorMibBrowse, vendorMibImportAction } from '../vendor-mib
 export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?: boolean }) {
   const engine = useEngine();
   const t = useTheme();
-  const normalized = oid.trim().replace(/^\./, '');
+  const normalized = normalizeNumericOid(oid) ?? '';
   const lookup = useAppStore((s) => s.oidLookups[normalized]);
   const running = Boolean(useAppStore((s) => s.lookupHandles[normalized]));
   const vendorBrowse = useAppStore((s) => s.vendorMibBrowses[normalized]);
@@ -24,7 +25,7 @@ export function OidLookupPanel({ oid, compact = false }: { oid: string; compact?
   const [vendorBrowserOpen, setVendorBrowserOpen] = useState(false);
   const [vendorBrowseStarting, setVendorBrowseStarting] = useState(false);
   const [startingCandidate, setStartingCandidate] = useState<string | null>(null);
-  const valid = /^\d+(?:\.\d+)+$/.test(normalized);
+  const valid = Boolean(normalized);
   if (!valid) return null;
   const vendorPrompt = lookup?.result
     ? shouldOfferVendorMibBrowse(lookup.result)

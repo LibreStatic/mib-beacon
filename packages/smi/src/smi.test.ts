@@ -337,6 +337,8 @@ END`;
     const r = store.index.resolve('1.3.6.1.2.1.1.1.0');
     expect(r?.name).toBe('sysDescr.0');
     expect(r?.definitionOid).toBe('1.3.6.1.2.1.1.1');
+    expect(store.index.resolve('iso.3.6.1.2.1.1.1.0')).toEqual(r);
+    expect(store.index.node('iso.3.6.1.2.1.1.1')).toEqual(store.index.node('1.3.6.1.2.1.1.1'));
   });
 
   it('search finds by name, ranks exact first', () => {
@@ -347,6 +349,7 @@ END`;
     expect(fuzzy.some((h) => h.name === 'ifInOctets')).toBe(true);
     expect(store.index.search('sysdescr')[0]?.name).toBe('sysDescr');
     expect(store.index.search('SYSDESCR')[0]?.name).toBe('sysDescr');
+    expect(store.index.search('iso.3.6.1.2.1.1.1')[0]?.name).toBe('sysDescr');
   });
 
   it('unloads a user module (and refuses base modules)', () => {

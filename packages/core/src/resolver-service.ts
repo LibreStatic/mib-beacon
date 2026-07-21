@@ -1,5 +1,6 @@
 import type { StorageAdapter, Transport } from '@mibbeacon/transport';
 import type { ImportResult, MibStore } from '@mibbeacon/smi';
+import { normalizeNumericOid } from '@mibbeacon/smi/client';
 import {
   IanaEnterpriseClient,
   MibResolver,
@@ -209,8 +210,9 @@ export class ResolverService {
         return { handleId: operation.status.handleId };
       },
       lookupOid: async (request) => {
+        const oid = normalizeNumericOid(request.oid) ?? request.oid;
         const operation = this.createOperation({
-          oidLookup: { oid: request.oid, network: request.network ?? true },
+          oidLookup: { oid, network: request.network ?? true },
         });
         void this.runOidLookup(operation, request.oid, request.network ?? true).catch((error) =>
           this.failUnexpected(operation, error),
@@ -847,8 +849,15 @@ export class ResolverService {
     oid: string,
     network: boolean,
   ): Promise<void> {
-    const preliminary = await this.lookupOid(oid, false, operation.controller.signal);
-    const normalizedOid = oid.startsWith('.') ? oid.slice(1) : oid;
+    const normalizedOid = normalizeNumericOid(oid);
+    if (!normalizedOid) {
+      this.finish(operation, 'error', 'error', {
+        code: 'INVALID_OID',
+        message: 'OID lookup requires a numeric OID or an iso-prefixed numeric OID',
+      });
+      return;
+    }
+    const preliminary = await this.lookupOid(normalizedOid, false, operation.controller.signal);
     const hasExactLocal = preliminary.loaded?.definitionOid === normalizedOid;
     if (!network || hasExactLocal || preliminary.fromCache) {
       this.finish(operation, 'done', 'done', preliminary);
@@ -861,7 +870,7 @@ export class ResolverService {
       if (!allowed || isTerminal(operation.status.state)) return;
     }
     this.transition(operation, 'resolving');
-    const result = await this.lookupOid(oid, network, operation.controller.signal);
+    const result = await this.lookupOid(normalizedOid, network, operation.controller.signal);
     this.finish(operation, 'done', 'done', result);
   }
 
@@ -1058,11 +1067,6 @@ function summarizeRequest(request: ImportOperation['request']): unknown {
   if ('vendorBrowse' in request) return request;
   if ('url' in request) return { url: request.url };
   return { files: request.files.map((file) => ({ name: file.name, bytes: file.content.length })) };
-}
-
-function normalizeNumericOid(value: string): string | null {
-  const normalized = value.trim().replace(/^\./, '');
-  return /^\d+(?:\.\d+)+$/.test(normalized) ? normalized : null;
 }
 
 function redactPayload(value: unknown): unknown {

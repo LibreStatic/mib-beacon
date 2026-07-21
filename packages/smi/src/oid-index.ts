@@ -1,6 +1,7 @@
 /// <reference path="./net-snmp.d.ts" />
 import type { MibModuleEntry } from 'net-snmp';
 import { enumValues, extractSyntaxConstraints, formatSyntax } from './format-syntax';
+import { normalizeNumericOid } from './oid';
 import type {
   MibNodeDetail,
   MibNodeKind,
@@ -133,8 +134,10 @@ export class OidIndex {
 
   private find(oid: string): TrieNode | null {
     if (!oid) return this.root;
+    const normalized = normalizeNumericOid(oid);
+    if (!normalized) return null;
     let node = this.root;
-    for (const part of oid.split('.')) {
+    for (const part of normalized.split('.')) {
       const next = node.children.get(Number(part));
       if (!next) return null;
       node = next;
@@ -218,8 +221,9 @@ export class OidIndex {
 
   /** Full detail for a numeric OID or a symbol name. */
   node(oidOrName: string, moduleName?: string): MibNodeDetail | null {
-    const node = /^[0-9.]+$/.test(oidOrName)
-      ? this.find(oidOrName)
+    const numericOid = normalizeNumericOid(oidOrName);
+    const node = numericOid
+      ? this.find(numericOid)
       : moduleName
         ? (this.byModuleName.get(`${moduleName}:${oidOrName}`) ?? null)
         : (this.byName.get(oidOrName) ?? null);
@@ -290,10 +294,12 @@ export class OidIndex {
 
   /** Longest-prefix resolution of (instance) OIDs to definition names. */
   resolve(oid: string): ResolvedName | null {
+    const normalized = normalizeNumericOid(oid);
+    if (!normalized) return null;
     let node = this.root;
     let best: TrieNode | null = null;
     let bestDepth = 0;
-    const parts = oid.split('.').map(Number);
+    const parts = normalized.split('.').map(Number);
     for (let i = 0; i < parts.length; i++) {
       const next = node.children.get(parts[i]!);
       if (!next) break;
@@ -315,9 +321,10 @@ export class OidIndex {
   /** Bidirectional exact/instance translation between numeric and symbolic OIDs. */
   translate(oidOrName: string): OidTranslation | null {
     const value = oidOrName.trim().replace(/^\./, '');
-    if (/^[0-9.]+$/.test(value)) {
-      const resolved = this.resolve(value);
-      return resolved ? { oid: value, name: resolved.name, module: resolved.module } : null;
+    const numericOid = normalizeNumericOid(value);
+    if (numericOid) {
+      const resolved = this.resolve(numericOid);
+      return resolved ? { oid: numericOid, name: resolved.name, module: resolved.module } : null;
     }
     const qualified = value.match(
       /^(?:([A-Za-z][A-Za-z0-9-]*)::)?([A-Za-z][A-Za-z0-9-]*)(?:\.(\d+(?:\.\d+)*))?$/,
@@ -334,10 +341,12 @@ export class OidIndex {
   }
 
   search(query: string, limit = 30): MibSearchHit[] {
-    const q = query.trim().toLowerCase();
+    const rawQuery = query.trim();
+    const normalizedOid = normalizeNumericOid(rawQuery);
+    const q = (normalizedOid ?? rawQuery).toLowerCase();
     if (!q) return [];
     const hits: { hit: MibSearchHit; score: number }[] = [];
-    const isOidQuery = /^[0-9.]+$/.test(q);
+    const isOidQuery = normalizedOid !== null;
     const visit = (node: TrieNode): void => {
       if (node.entry) {
         const match = this.matchSearch(node, node.entry, q, isOidQuery);
@@ -358,10 +367,12 @@ export class OidIndex {
   }
 
   searchModule(moduleName: string, query: string, limit = 30): MibSearchHit[] {
-    const q = query.trim().toLowerCase();
+    const rawQuery = query.trim();
+    const normalizedOid = normalizeNumericOid(rawQuery);
+    const q = (normalizedOid ?? rawQuery).toLowerCase();
     if (!q) return [];
     const hits: { hit: MibSearchHit; score: number }[] = [];
-    const isOidQuery = /^\d+(?:\.\d+)*$/.test(q);
+    const isOidQuery = normalizedOid !== null;
     const visit = (node: TrieNode): void => {
       const entry = node.entries.get(moduleName);
       if (entry) {

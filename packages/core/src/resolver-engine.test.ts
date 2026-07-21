@@ -780,10 +780,13 @@ END`;
     const engine = createEngine(transportWith(fixtureHttp()), { dbPath: ':memory:' });
     await enableResolver(engine);
     await engine.mibs.importTexts([{ name: 'leaf.mib', content: LEAF }]);
-    const local = await engine.resolver.lookupOid({ oid: '1.3.6.1.4.1.99001', network: true });
+    const local = await engine.resolver.lookupOid({ oid: 'iso.3.6.1.4.1.99001', network: true });
     await expect(waitForTerminal(engine, local.handleId)).resolves.toMatchObject({
       state: 'done',
-      result: expect.objectContaining({ loaded: expect.objectContaining({ name: 'leafNode' }) }),
+      result: expect.objectContaining({
+        oid: '1.3.6.1.4.1.99001',
+        loaded: expect.objectContaining({ name: 'leafNode' }),
+      }),
     });
 
     const miss = await engine.resolver.lookupOid({ oid: '1.3.6.1.4.1.123456', network: true });

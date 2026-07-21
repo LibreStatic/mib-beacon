@@ -6,5 +6,8 @@ describe('OID lookup references', () => {
     expect(observiumSearchUrl(' .1.3.6.1.4.1.9 ')).toBe(
       'https://mibs.observium.org/search?q=1.3.6.1.4.1.9',
     );
+    expect(observiumSearchUrl(' iso.3.6.1.4.1.9 ')).toBe(
+      'https://mibs.observium.org/search?q=1.3.6.1.4.1.9',
+    );
   });
 });

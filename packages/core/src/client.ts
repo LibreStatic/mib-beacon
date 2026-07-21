@@ -14,7 +14,7 @@ export {
 export { MibBeaconError, type MibBeaconErrorCode } from './errors';
 export { inferWireType, validateVarbindInput } from './snmp/wire-types';
 export type { RowStatusCreateResult } from './ops/row-status';
-export { decodeTableIndex } from '@mibbeacon/smi/client';
+export { decodeTableIndex, normalizeNumericOid } from '@mibbeacon/smi/client';
 export type {
   EngineAPI,
   EngineInfo,

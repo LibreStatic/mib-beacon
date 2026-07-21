@@ -39,6 +39,7 @@ describe('IANA enterprise lookup', () => {
   it('extracts an enterprise number only from the private-enterprise OID arc', () => {
     expect(enterpriseNumberFromOid('1.3.6.1.4.1.9.9.41')).toBe(9);
     expect(enterpriseNumberFromOid('.1.3.6.1.4.1.2636')).toBe(2636);
+    expect(enterpriseNumberFromOid('iso.3.6.1.4.1.9.9.41')).toBe(9);
     expect(enterpriseNumberFromOid('1.3.6.1.2.1.1.1')).toBeNull();
     expect(enterpriseNumberFromOid('1.3.6.1.4.1.nope')).toBeNull();
   });

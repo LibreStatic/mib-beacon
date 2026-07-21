@@ -52,6 +52,17 @@ describe('Browse search state', () => {
     expect(useAppStore.getState().searchPhase).toBe('idle');
   });
 
+  it('searches an iso-prefixed OID through its canonical numeric form', async () => {
+    useAppStore.setState({ search: 'iso.3.6.1.2.1.1.1' });
+    const search = vi.fn().mockResolvedValue([hit]);
+    const engine = { mibs: { search } } as unknown as EngineAPI;
+
+    await runSearch(engine, 'iso.3.6.1.2.1.1.1');
+
+    expect(search).toHaveBeenCalledWith('1.3.6.1.2.1.1.1', 40);
+    expect(useAppStore.getState().hits).toEqual([hit]);
+  });
+
   it('keeps the query and results when opening a hit fails', async () => {
     useAppStore.setState({ hits: [hit] });
     const engine = {

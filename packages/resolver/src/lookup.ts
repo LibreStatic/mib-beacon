@@ -1,4 +1,5 @@
 import type { HttpClient } from '@mibbeacon/transport';
+import { normalizeNumericOid } from '@mibbeacon/smi/client';
 
 export interface IanaEnterpriseRecord {
   number: number;
@@ -55,7 +56,8 @@ export function parseIanaEnterpriseNumbers(text: string): IanaEnterpriseRecord[]
 }
 
 export function enterpriseNumberFromOid(oid: string): number | null {
-  const normalized = oid.startsWith('.') ? oid.slice(1) : oid;
+  const normalized = normalizeNumericOid(oid);
+  if (!normalized) return null;
   const match = /^1\.3\.6\.1\.4\.1\.(\d+)(?:\.|$)/.exec(normalized);
   return match?.[1] ? Number(match[1]) : null;
 }
@@ -131,8 +133,8 @@ export function parseOidBaseMarkdown(markdown: string): OidBaseRecord | null {
 }
 
 function normalizeOid(oid: string): string {
-  const normalized = oid.startsWith('.') ? oid.slice(1) : oid;
-  if (!/^\d+(?:\.\d+)*$/.test(normalized)) throw new Error(`Invalid numeric OID: ${oid}`);
+  const normalized = normalizeNumericOid(oid);
+  if (!normalized) throw new Error(`Invalid numeric OID: ${oid}`);
   return normalized;
 }
 
