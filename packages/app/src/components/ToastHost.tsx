@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react';
 import {
   AccessibilityInfo,
-  Modal,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -25,11 +23,9 @@ function toneColor(tone: ToastTone, t: Theme): string {
 }
 
 /**
- * Single mounted host that renders transient toasts above every other layer
- * (Dialog / CommandPalette are RN Modals, so on web we sit at a higher zIndex
- * and on native we wrap the stack in our own transparent Modal). Kept
- * bottom-pinned, short-lived, and tap-to-dismiss so the native Modal never
- * blocks the workspace for long.
+ * Single mounted host that renders transient, bottom-pinned toasts above the
+ * workspace. The full-screen overlay is pointer-transparent, so only the toast
+ * cards catch taps and the rest of the UI remains interactive.
  */
 export function ToastHost() {
   const t = useTheme();
@@ -49,42 +45,17 @@ export function ToastHost() {
     for (const id of announced.current) if (!live.has(id)) announced.current.delete(id);
   }, [toasts]);
 
-  const stack = (
-    <View
-      style={[styles.stack, { padding: t.space.md, gap: t.space.sm }]}
-      pointerEvents="box-none"
-    >
-      {toasts.map((toast) => (
-        <ToastCard key={toast.id} toast={toast} accent={toneColor(toast.tone, t)} theme={t} onDismiss={dismissToast} />
-      ))}
-    </View>
-  );
-
-  if (Platform.OS === 'web') {
-    // Non-Modal overlay above CommandPalette (zIndex 10000); only cards catch taps.
-    return (
-      <View style={[StyleSheet.absoluteFill, styles.webRoot]} pointerEvents="box-none">
-        {stack}
-      </View>
-    );
-  }
-
-  // Native: a transparent Modal is the only reliable way to sit above other Modals.
   return (
-    <Modal
-      visible={toasts.length > 0}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={() => {
-        const last = toasts[toasts.length - 1];
-        if (last) dismissToast(last.id);
-      }}
-    >
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        {stack}
+    <View style={[StyleSheet.absoluteFill, styles.overlay]} pointerEvents="box-none">
+      <View
+        style={[styles.stack, { padding: t.space.md, gap: t.space.sm }]}
+        pointerEvents="box-none"
+      >
+        {toasts.map((toast) => (
+          <ToastCard key={toast.id} toast={toast} accent={toneColor(toast.tone, t)} theme={t} onDismiss={dismissToast} />
+        ))}
       </View>
-    </Modal>
+    </View>
   );
 }
 
@@ -139,8 +110,8 @@ function ToastCard({
 }
 
 const styles = StyleSheet.create({
-  webRoot: {
-    // Above CommandPalette's backdrop (zIndex 10000) and any Dialog Modal.
+  overlay: {
+    // Above in-tree workspace overlays such as the Command Palette backdrop.
     zIndex: 100000,
   },
   stack: {
