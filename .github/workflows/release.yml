@@ -860,9 +860,8 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            apk=$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)
-            test -n "$apk"
-            adb install -r "$apk"
+            test -n "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
+            adb install -r "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
             adb shell pm grant com.librestatic.mibbeacon android.permission.POST_NOTIFICATIONS
             adb shell monkey -p com.librestatic.mibbeacon -c android.intent.category.LAUNCHER 1
             sleep 8

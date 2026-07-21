@@ -57,6 +57,8 @@ describe('versioned AGENTS validation matrix', () => {
     expect(ci).toContain('python3 dev/audit/validation-matrix.py');
     expect(ci).toContain('MIB_BEACON_AUDIT_COMMIT: ${{ github.sha }}');
     expect(release).toContain('reactivecircus/android-emulator-runner@v2');
-    expect(release).toContain('adb install -r');
+    expect(release).toContain(
+      `adb install -r "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"`,
+    );
   });
 });
