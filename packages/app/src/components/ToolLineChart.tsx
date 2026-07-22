@@ -1,6 +1,15 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Circle,
+  ClipPath,
+  Defs,
+  G,
+  Line,
+  Polyline,
+  Rect,
+  Text as SvgText,
+} from 'react-native-svg';
 import type { PatternTraceEvent, PatternTraceSession, PollSample } from '@mibbeacon/core/client';
 import { Button, Label, Mono, Row, Text, useTheme } from '@mibbeacon/ui';
 import { chartPoints, patternLatencyPoints, patternMarkerX, polylinePoints } from '../tool-chart';
@@ -38,6 +47,7 @@ export function ToolLineChart({
   sharePng?: (capture: ChartPngExport) => Promise<void>;
 }) {
   const t = useTheme();
+  const plotClipId = `tool-chart-plot-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [width, setWidth] = useState(520);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [hiddenPatterns, setHiddenPatterns] = useState<Set<string>>(new Set());
@@ -203,6 +213,11 @@ export function ToolLineChart({
           height={230}
           accessibilityLabel={`${title} line chart`}
         >
+          <Defs>
+            <ClipPath id={plotClipId}>
+              <Rect x={0} y={0} width={plotWidth} height={plotHeight} />
+            </ClipPath>
+          </Defs>
           <Line x1={36} y1={8} x2={36} y2={198} stroke={t.border} />
           <Line x1={36} y1={198} x2={36 + plotWidth} y2={198} stroke={t.border} />
           {bounds ? (
@@ -232,15 +247,27 @@ export function ToolLineChart({
               ) : null}
             </>
           ) : null}
-          {rendered.map((item) => (
-            <Polyline
-              key={item.id}
-              points={polylinePoints(item.points)}
-              fill="none"
-              stroke={item.color}
-              strokeWidth={2}
-            />
-          ))}
+          <G transform="translate(36 8)" clipPath={`url(#${plotClipId})`}>
+            {rendered.map((item) => (
+              <Polyline
+                key={item.id}
+                points={polylinePoints(item.points)}
+                fill="none"
+                stroke={item.color}
+                strokeWidth={2}
+              />
+            ))}
+            {renderedPatterns.map(({ session, latencyPoints }) => (
+              <Polyline
+                key={`${session.id}-latency`}
+                points={polylinePoints(latencyPoints)}
+                fill="none"
+                stroke={session.color}
+                strokeDasharray="5 3"
+                strokeWidth={2}
+              />
+            ))}
+          </G>
           {bounds
             ? renderedPatterns.flatMap(({ session, events }) =>
                 events.map((event) => {
@@ -260,16 +287,6 @@ export function ToolLineChart({
                 }),
               )
             : null}
-          {renderedPatterns.map(({ session, latencyPoints }) => (
-            <Polyline
-              key={`${session.id}-latency`}
-              points={polylinePoints(latencyPoints)}
-              fill="none"
-              stroke={session.color}
-              strokeDasharray="5 3"
-              strokeWidth={2}
-            />
-          ))}
           {cursor ? (
             <>
               <Line
