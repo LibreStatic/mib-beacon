@@ -132,6 +132,7 @@ export function QueryScreen({
   const stats = useAppStore((s) => s.stats);
   const error = useAppStore((s) => s.queryError);
   const operation = useAppStore((s) => s.queryOperation);
+  const queryPane = useAppStore((s) => s.queryPane);
   const setDraft = useAppStore((s) => s.setDraft);
   const setStaging = useAppStore((s) => s.setStaging);
   const setPreviousValues = useAppStore((s) => s.setPreviousValues);
@@ -178,6 +179,7 @@ export function QueryScreen({
   const submitSet = async () => {
     setSending(true);
     try {
+      useAppStore.getState().setQueryPane('results');
       await runSet(engine, ownsEngine);
     } finally {
       if (ownsEngine()) setSending(false);
@@ -786,7 +788,8 @@ export function QueryScreen({
       accessibilityLabel={embedded ? 'Resize SNMP operation console panes' : undefined}
       {...(embedded ? EMBEDDED_QUERY_SPLIT_MINIMUMS : QUERY_SPLIT_MINIMUMS)}
       splitEnabled={supportsSplitView}
-      stackOnFallback
+      stackOnFallback={supportsSplitView}
+      inactivePane={supportsSplitView ? undefined : queryPane === 'setup' ? 'primary' : 'secondary'}
       primary={
         <ScrollView
           style={embedded ? styles.consoleConfig : styles.configuration}
@@ -819,9 +822,63 @@ export function QueryScreen({
     />
   );
 
+  const compactPaneSwitcher = !supportsSplitView ? (
+    <View
+      accessibilityLabel="Operation console view"
+      style={[styles.compactPaneSwitcher, { borderColor: t.border, backgroundColor: t.surface }]}
+    >
+      {(
+        [
+          { pane: 'setup', title: 'Setup', detail: 'Target & operation' },
+          {
+            pane: 'results',
+            title: 'Results',
+            detail: running
+              ? 'Running…'
+              : error
+                ? 'Needs attention'
+                : `${results.length} result${results.length === 1 ? '' : 's'}`,
+          },
+        ] as const
+      ).map((item) => {
+        const selected = queryPane === item.pane;
+        const attention = item.pane === 'results' && Boolean(error);
+        return (
+          <Pressable
+            key={item.pane}
+            accessibilityRole="tab"
+            accessibilityLabel={`Show ${item.title.toLowerCase()}`}
+            accessibilityState={{ selected }}
+            onPress={() => void dispatchQueryAction(`query:show-${item.pane}`)}
+            style={({ pressed }) => [
+              styles.compactPaneTab,
+              {
+                backgroundColor: selected || pressed ? t.accentSoft : 'transparent',
+                borderColor: selected ? t.accent : 'transparent',
+              },
+            ]}
+          >
+            <Text style={[styles.compactPaneTitle, { color: selected ? t.accent : t.text }]}>
+              {item.title}
+            </Text>
+            <Text
+              style={[
+                styles.compactPaneDetail,
+                { color: attention ? t.error : selected ? t.text : t.textDim },
+              ]}
+            >
+              {item.detail}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  ) : null;
+
   if (embedded) {
     return (
       <View style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: t.bg }}>
+        {compactPaneSwitcher}
         {queryWorkspace}
       </View>
     );
@@ -842,6 +899,7 @@ export function QueryScreen({
           }
         />
       ) : null}
+      {compactPaneSwitcher}
       {queryWorkspace}
     </View>
   );
@@ -921,10 +979,7 @@ function AgentCard({
     if (!groupName.trim() || !groupMembers.length || groupBusy || !ownsEngine()) return;
     setGroupBusy(true);
     try {
-      await collections.createGroup(
-        { name: groupName.trim(), agentIds: groupMembers },
-        ownsEngine,
-      );
+      await collections.createGroup({ name: groupName.trim(), agentIds: groupMembers }, ownsEngine);
       if (!ownsEngine()) return;
       await refreshAgentGroups(engine, ownsEngine);
       if (!ownsEngine()) return;
@@ -941,7 +996,9 @@ function AgentCard({
       useAppStore.getState().pushToast({ tone: 'success', message: 'Group created and selected' });
     } catch (caught) {
       if (ownsEngine())
-        useAppStore.getState().setQueryError(caught instanceof Error ? caught.message : String(caught));
+        useAppStore
+          .getState()
+          .setQueryError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       if (ownsEngine()) setGroupBusy(false);
     }
@@ -1711,6 +1768,26 @@ const styles = StyleSheet.create({
   consoleConfig: { flex: 1 },
   consoleConfigContent: { padding: 10, paddingBottom: 18 },
   consoleResults: { flex: 1, minWidth: 0, minHeight: 0 },
+  compactPaneSwitcher: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 3,
+    marginHorizontal: 10,
+    marginTop: 10,
+    gap: 3,
+  },
+  compactPaneTab: {
+    flex: 1,
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  compactPaneTitle: { fontSize: 13, fontWeight: '800' },
+  compactPaneDetail: { fontSize: 10, fontWeight: '600', marginTop: 2 },
   workspace: { flex: 1, minWidth: 0, minHeight: 0 },
   configuration: { flex: 1 },
   configurationContent: { padding: 14, paddingBottom: 28 },

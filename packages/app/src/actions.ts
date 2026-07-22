@@ -2046,6 +2046,7 @@ export async function prepareNodeOperation(
   if (!owns()) return;
   const s = useAppStore.getState();
   const plan = getNodeOperationPlan(detail, operation, options.instanceSuffix);
+  s.setQueryPane('setup');
   s.setBrowserConsoleOpen(true);
   if (s.running) {
     s.setQueryError('Stop the running walk before starting another operation.');

@@ -12,6 +12,7 @@ function actions(overrides: Parameters<typeof createQueryActions>[0] = {}) {
     running: false,
     setValidationError: undefined,
     selectOperation: vi.fn(),
+    selectPane: vi.fn(),
     runGet: vi.fn(),
     runGetNext: vi.fn(),
     runGetBulk: vi.fn(),
@@ -27,6 +28,8 @@ describe('contextual Query actions', () => {
   it('exposes every direct, current, repeat, and stop action through the palette', () => {
     const result = actions();
     expect(result.map(({ id }) => id)).toEqual([
+      'query:show-setup',
+      'query:show-results',
       'query:prepare-get',
       'query:prepare-get-next',
       'query:prepare-get-bulk',
@@ -84,6 +87,20 @@ describe('contextual Query actions', () => {
     expect(selectOperation).toHaveBeenCalledWith('getNext');
     expect(runGetNext).toHaveBeenCalledOnce();
     expect(runGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps preparation on setup and switches actual reads to results', async () => {
+    const selectPane = vi.fn();
+    const result = actions({ selectPane });
+
+    await result.find(({ id }) => id === 'query:prepare-get-next')?.execute();
+    expect(selectPane).toHaveBeenLastCalledWith('setup');
+
+    await result.find(({ id }) => id === 'query:run-current')?.execute();
+    expect(selectPane).toHaveBeenLastCalledWith('results');
+
+    await result.find(({ id }) => id === 'query:show-setup')?.execute();
+    expect(selectPane).toHaveBeenLastCalledWith('setup');
   });
 
   it('explains running, stop, and invalid Set disabled states', () => {

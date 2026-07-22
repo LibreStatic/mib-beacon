@@ -27,6 +27,7 @@ describe('registered Query action lifecycle', () => {
     );
     expect(queryScreen).toContain("dispatchQueryAction('query:run-current')");
     expect(queryScreen).toContain("dispatchQueryAction('query:stop')");
+    expect(queryScreen).toContain('dispatchQueryAction(`query:show-${item.pane}`)');
     expect(queryScreen).toContain('dispatchQueryAction(queryShortcutActionId(shortcut))');
     expect(queryScreen).not.toMatch(/if \(shortcut === 'get'\).*runGet/s);
   });

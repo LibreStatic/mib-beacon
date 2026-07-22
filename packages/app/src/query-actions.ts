@@ -1,10 +1,6 @@
-import type {
-  ActionEnabledState,
-  ActionShortcutBinding,
-  AppAction,
-} from './action-registry';
+import type { ActionEnabledState, ActionShortcutBinding, AppAction } from './action-registry';
 import type { QueryShortcut } from './browser-shortcuts';
-import type { QueryOperation } from './store';
+import type { QueryOperation, QueryPane } from './store';
 
 export type QueryActionId =
   | 'query:prepare-get'
@@ -19,13 +15,16 @@ export type QueryActionId =
   | 'query:stage-set'
   | 'query:run-current'
   | 'query:repeat'
-  | 'query:stop';
+  | 'query:stop'
+  | 'query:show-setup'
+  | 'query:show-results';
 
 export interface QueryActionContext {
   operation: QueryOperation;
   running: boolean;
   setValidationError?: string;
   selectOperation(operation: QueryOperation): void;
+  selectPane(pane: QueryPane): void;
   runGet(): void | Promise<void>;
   runGetNext(): void | Promise<void>;
   runGetBulk(): void | Promise<void>;
@@ -63,6 +62,7 @@ export function queryShortcutActionId(shortcut: QueryShortcut): QueryActionId {
 
 export function createQueryActions(context: QueryActionContext): AppAction[] {
   const runFor = (operation: QueryOperation) => {
+    if (operation !== 'set') context.selectPane('results');
     if (operation === 'get') return context.runGet();
     if (operation === 'getNext') return context.runGetNext();
     if (operation === 'getBulk') return context.runGetBulk();
@@ -132,6 +132,7 @@ export function createQueryActions(context: QueryActionContext): AppAction[] {
       id,
       label,
       () => {
+        context.selectPane('setup');
         context.selectOperation(operation);
         context.navigateToQuery();
       },
@@ -139,6 +140,14 @@ export function createQueryActions(context: QueryActionContext): AppAction[] {
     );
 
   return [
+    definition('query:show-setup', 'Show query setup', () => context.selectPane('setup'), {
+      enabled: { value: true },
+      glyph: '⚙',
+    }),
+    definition('query:show-results', 'Show query results', () => context.selectPane('results'), {
+      enabled: { value: true },
+      glyph: '≡',
+    }),
     prepare('query:prepare-get', 'Prepare Get', 'get'),
     prepare('query:prepare-get-next', 'Prepare Get Next', 'getNext'),
     prepare('query:prepare-get-bulk', 'Prepare Get Bulk', 'getBulk'),

@@ -27,11 +27,15 @@ describe('container-aware split activation', () => {
     expect(source.slice(opening, start + 1_200)).toContain('primaryDrawer=');
   });
 
-  it('keeps Query configuration and result panes mounted while stacking below the threshold', () => {
+  it('keeps compact Query panes mounted behind an explicit Setup and Results switcher', () => {
     const source = read('./screens/QueryScreen.tsx');
 
     expect(source).toContain("workspace={embedded ? 'operationConsole' : 'query'}");
-    expect(source).toContain('stackOnFallback');
+    expect(source).toContain('stackOnFallback={supportsSplitView}');
+    expect(source).toContain("queryPane === 'setup' ? 'primary' : 'secondary'");
+    expect(source).toContain('accessibilityLabel="Operation console view"');
+    expect(source).toContain("title: 'Setup'");
+    expect(source).toContain("title: 'Results'");
     expect(source.match(/<TableViewResult/g)).toHaveLength(1);
   });
 

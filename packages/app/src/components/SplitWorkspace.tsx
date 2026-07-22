@@ -362,7 +362,7 @@ export function SplitWorkspace({
   const drawerOpen = !active && inactiveMode === 'secondary' && Boolean(primaryDrawer?.open);
   const primaryStyle = active
     ? { flexBasis: primaryBasis }
-    : inactiveMode === 'primary'
+    : inactiveMode === 'primary' || inactiveMode === 'stack'
       ? styles.unsplitPane
       : drawerOpen
         ? [styles.drawerPane, { backgroundColor: t.bg, borderRightColor: t.border }]

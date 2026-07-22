@@ -38,6 +38,7 @@ export function RegisteredQueryActions({ navigateToQuery }: { navigateToQuery():
             void resolveOidHint(engine, state.oid, ownsEngine);
           }
         },
+        selectPane: (pane) => useAppStore.getState().setQueryPane(pane),
         runGet: () => runGet(engine, ownsEngine),
         runGetNext: () => runGetNext(engine, ownsEngine),
         runGetBulk: () => runGetBulk(engine, ownsEngine),

@@ -451,14 +451,24 @@ describe('mounted container-aware split transitions', () => {
     });
     const root = renderer!.container;
     const measure = root.queryAll((node) => typeof node.props.onLayout === 'function')[0]!;
+    const paneStyle = (testID: string) => {
+      const probe = root.queryAll((node) => node.props.testID === testID)[0]!;
+      const pane = probe.parent?.parent;
+      expect(pane).toBeDefined();
+      return Object.assign({}, ...pane!.props.style.flat(Infinity).filter(Boolean));
+    };
     const result = () => {
       const matches = root.queryAll((node) => node.props.testID === 'query-result-draft');
       expect(matches).toHaveLength(1);
       return matches[0]!;
     };
 
+    expect(paneStyle('query-config').display).not.toBe('none');
+    expect(paneStyle('query-result-draft').display).not.toBe('none');
     act(() => result().props.onTouchEnd('edited-row-index'));
     act(() => measure.props.onLayout({ nativeEvent: { layout: { width: 768 } } }));
+    expect(paneStyle('query-config').display).not.toBe('none');
+    expect(paneStyle('query-result-draft').display).not.toBe('none');
     expect(result().props.accessibilityLabel).toBe('edited-row-index');
     expect(mountCount).toBe(1);
 

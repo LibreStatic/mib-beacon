@@ -113,6 +113,7 @@ export interface TableViewState {
 export type BrowseTreeNode = MibNodeSummary | ModuleTreeNode;
 export type BrowseSearchPhase = 'idle' | 'debouncing' | 'searching' | 'opening' | 'error';
 export type QueryOperation = 'get' | 'getNext' | 'getBulk' | 'walk' | 'set';
+export type QueryPane = 'setup' | 'results';
 export type TrapMode = 'receive' | 'send';
 
 export interface NotificationForm {
@@ -219,6 +220,7 @@ export interface AppState {
   stats: WalkStats;
   queryError: string | null;
   queryOperation: QueryOperation;
+  queryPane: QueryPane;
   setDraft: SnmpVarbindInput;
   setStaging: SnmpVarbindInput[];
   setPreviousValues: DecodedVarbind[];
@@ -252,6 +254,7 @@ export interface AppState {
   setStats: (stats: WalkStats) => void;
   setQueryError: (msg: string | null) => void;
   setQueryOperation: (operation: QueryOperation) => void;
+  setQueryPane: (pane: QueryPane) => void;
   updateSetDraft: (patch: Partial<SnmpVarbindInput>) => void;
   addSetDraftToStaging: () => void;
   updateStagedVarbind: (index: number, patch: Partial<SnmpVarbindInput>) => void;
@@ -680,6 +683,7 @@ export const useAppStore = create<AppState>((set) => ({
   stats: { count: 0, batches: 0, ms: 0 },
   queryError: null,
   queryOperation: 'get',
+  queryPane: 'setup',
   setDraft: { oid: '1.3.6.1.2.1.1.5.0', type: 'OctetString', value: '' },
   setStaging: [],
   setPreviousValues: [],
@@ -755,6 +759,7 @@ export const useAppStore = create<AppState>((set) => ({
   setStats: (stats) => set({ stats }),
   setQueryError: (queryError) => set({ queryError }),
   setQueryOperation: (queryOperation) => set({ queryOperation, setReview: false }),
+  setQueryPane: (queryPane) => set({ queryPane }),
   updateSetDraft: (patch) =>
     set((s) => ({ setDraft: { ...s.setDraft, ...patch }, setReview: false })),
   addSetDraftToStaging: () =>
