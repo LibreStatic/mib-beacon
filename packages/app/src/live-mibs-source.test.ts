@@ -88,7 +88,9 @@ describe('Live MIB source guards', () => {
     expect(liveMibs).toContain('settingsAgentId !== selectedAgentId');
     expect(liveMibs).toContain('setSettingsAgentId(selectedAgentId)');
     expect(liveMibs).toContain("setError('Loading settings for the selected agent.');");
-    expect(liveMibs).toContain('disabled={scanStarting || settingsAgentId !== selectedAgentId}');
+    expect(liveMibs).toContain(
+      'disabled={!scanActive && !autoRefreshPaused && settingsAgentId !== selectedAgentId}',
+    );
   });
 
   it('routes asynchronous scan starts through the latest-request guard', () => {
@@ -96,6 +98,29 @@ describe('Live MIB source guards', () => {
     expect(liveMibs).toContain('runLatestLiveMibScanRequest');
     expect(liveMibs).toContain('currentHandle: () => handleRef.current');
     expect(liveMibs).toContain('startingRequestRef.current');
+  });
+
+  it('searches the full MIB catalog instead of filtering only expanded tree rows', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    expect(liveMibs).toContain('.search(query, 60)');
+    expect(liveMibs).toContain('treeSearchHits');
+    expect(liveMibs).toContain('openTreeSearchHit');
+    expect(liveMibs).not.toContain('node.name.toLowerCase().includes(query)');
+  });
+
+  it('lets Stop invalidate pending starts and pauses automatic refreshes', () => {
+    const liveMibs = readFileSync(join(__dirname, 'screens', 'LiveMibsScreen.tsx'), 'utf-8');
+    const stopScan = liveMibs
+      .split('const stopScan = useCallback')[1]
+      ?.split('useEffect(() => {')[0];
+    expect(stopScan).toContain('scanRequestSequence.current += 1');
+    expect(stopScan).toContain('handleRef.current = null');
+    expect(stopScan).toContain('setAutoRefreshPaused(true)');
+    expect(liveMibs).toContain(
+      "title={autoRefreshPaused ? 'Resume' : scanActive ? 'Stop' : 'Refresh'}",
+    );
+    expect(liveMibs).toContain("scanStateRef.current ?? 'done'");
+    expect(liveMibs).not.toContain('scan?.state,\n  ]);');
   });
 
   it('consumes palette create requests so navigation does not reopen a dismissed dialog', () => {

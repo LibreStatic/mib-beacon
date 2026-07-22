@@ -27,6 +27,7 @@ import type {
   LiveMibWorkflowStatus,
   MibNodeDetail,
   MibNodeSummary,
+  MibSearchHit,
 } from '@mibbeacon/core/client';
 import { useEngine, useEngineOwnership } from '../engine-context';
 import { useAppStore } from '../store';
@@ -160,14 +161,22 @@ export function LiveMibsScreen({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [scope, setScope] = useState<MibNodeDetail | null>(null);
   const [treeSearch, setTreeSearch] = useState('');
+  const [treeSearchHits, setTreeSearchHits] = useState<MibSearchHit[]>([]);
+  const [treeSearchPhase, setTreeSearchPhase] = useState<
+    'idle' | 'debouncing' | 'searching' | 'opening' | 'error'
+  >('idle');
+  const [treeSearchError, setTreeSearchError] = useState<string | null>(null);
   const [rows, setRows] = useState<Map<string, LiveMibGridRow>>(new Map());
   const [scan, setScan] = useState<LiveMibScanStatus | null>(null);
   const [scanStarting, setScanStarting] = useState(false);
+  const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const handleRef = useRef<string | null>(null);
   const scanRequestSequence = useRef(0);
   const startingRequestRef = useRef<number | null>(null);
+  const treeSearchRequestSequence = useRef(0);
+  const scanStateRef = useRef<LiveMibScanStatus['state'] | null>(null);
   const visibleOidsRef = useRef<string[]>([]);
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: { item: LiveMibDocumentItem }[] }) => {
@@ -267,12 +276,65 @@ export function LiveMibsScreen({
     scanRequestSequence.current += 1;
     startingRequestRef.current = null;
     setScanStarting(false);
+    setAutoRefreshPaused(false);
     if (previousHandle) void engine.liveMibs.scan.cancel(previousHandle).catch(() => undefined);
     setRows(new Map());
     setScan(null);
     setError(null);
     visibleOidsRef.current = [];
   }, [engine, scope?.oid, selectedAgentId]);
+
+  const changeTreeSearch = useCallback((query: string) => {
+    treeSearchRequestSequence.current += 1;
+    setTreeSearch(query);
+    setTreeSearchHits([]);
+    setTreeSearchError(null);
+    setTreeSearchPhase(query.trim() ? 'debouncing' : 'idle');
+  }, []);
+
+  useEffect(() => {
+    const query = treeSearch.trim();
+    if (!query) return;
+    const requestId = treeSearchRequestSequence.current;
+    const timer = setTimeout(() => {
+      if (treeSearchRequestSequence.current !== requestId) return;
+      setTreeSearchPhase('searching');
+      void engine.mibs
+        .search(query, 60)
+        .then((hits) => {
+          if (!ownsEngine() || treeSearchRequestSequence.current !== requestId) return;
+          setTreeSearchHits(hits);
+          setTreeSearchPhase('idle');
+        })
+        .catch((caught: unknown) => {
+          if (!ownsEngine() || treeSearchRequestSequence.current !== requestId) return;
+          setTreeSearchError(caught instanceof Error ? caught.message : String(caught));
+          setTreeSearchPhase('error');
+        });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [engine, ownsEngine, treeSearch]);
+
+  const openTreeSearchHit = useCallback(
+    async (hit: MibSearchHit) => {
+      const requestId = treeSearchRequestSequence.current + 1;
+      treeSearchRequestSequence.current = requestId;
+      setTreeSearchPhase('opening');
+      setTreeSearchError(null);
+      try {
+        const detail = await engine.mibs.node(hit.oid, hit.module);
+        if (!ownsEngine() || treeSearchRequestSequence.current !== requestId) return;
+        if (!detail) throw new Error(`MIB object is no longer available: ${hit.oid}`);
+        setScope(detail);
+        setTreeSearchPhase('idle');
+      } catch (caught) {
+        if (!ownsEngine() || treeSearchRequestSequence.current !== requestId) return;
+        setTreeSearchError(caught instanceof Error ? caught.message : String(caught));
+        setTreeSearchPhase('error');
+      }
+    },
+    [engine, ownsEngine],
+  );
 
   useEffect(() => {
     let active = true;
@@ -352,6 +414,10 @@ export function LiveMibsScreen({
     return () => clearInterval(timer);
   }, [engine, ownsEngine, scan]);
 
+  useEffect(() => {
+    scanStateRef.current = scan?.state ?? null;
+  }, [scan?.state]);
+
   const startScan = useCallback(async () => {
     if (!ownsEngine()) return;
     if (startingRequestRef.current !== null) return;
@@ -409,8 +475,31 @@ export function LiveMibsScreen({
     }
   }, [engine, ownsEngine, scope, selectedAgentId, settings, settingsAgentId]);
 
+  const stopScan = useCallback(async () => {
+    if (!ownsEngine()) return;
+    scanRequestSequence.current += 1;
+    startingRequestRef.current = null;
+    setScanStarting(false);
+    if (settings.refreshMode !== 'manual') setAutoRefreshPaused(true);
+    const handleId = handleRef.current;
+    handleRef.current = null;
+    setScan(null);
+    if (!handleId) return;
+    try {
+      await engine.liveMibs.scan.cancel(handleId);
+    } catch (caught) {
+      if (ownsEngine()) setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, [engine, ownsEngine, settings.refreshMode]);
+
   useEffect(() => {
-    if (!scope || settingsAgentId !== selectedAgentId || settings.refreshMode === 'manual') return;
+    if (
+      !scope ||
+      settingsAgentId !== selectedAgentId ||
+      settings.refreshMode === 'manual' ||
+      autoRefreshPaused
+    )
+      return;
     void startScan();
     const timer = setInterval(() => {
       if (
@@ -419,7 +508,7 @@ export function LiveMibsScreen({
         document.visibilityState === 'hidden'
       )
         return;
-      if (!handleRef.current || !['started', 'running'].includes(scan?.state ?? 'done'))
+      if (!handleRef.current || !['started', 'running'].includes(scanStateRef.current ?? 'done'))
         void startScan();
     }, settings.refreshIntervalMs);
     return () => clearInterval(timer);
@@ -430,8 +519,8 @@ export function LiveMibsScreen({
     settings.refreshMode,
     settings.refreshIntervalMs,
     settings.pauseWhenHidden,
+    autoRefreshPaused,
     startScan,
-    scan?.state,
   ]);
 
   useEffect(
@@ -442,15 +531,7 @@ export function LiveMibsScreen({
     [engine],
   );
 
-  const treeRows = useMemo(() => {
-    const all = flattenTree(treeCache, expanded);
-    const query = treeSearch.trim().toLowerCase();
-    return query
-      ? all.filter(
-          ({ node }) => node.name.toLowerCase().includes(query) || node.oid.includes(query),
-        )
-      : all;
-  }, [expanded, treeCache, treeSearch]);
+  const treeRows = useMemo(() => flattenTree(treeCache, expanded), [expanded, treeCache]);
   const dataRows = useMemo(
     () =>
       [...rows.values()].sort((left, right) =>
@@ -459,6 +540,7 @@ export function LiveMibsScreen({
     [rows],
   );
   const busy = scan?.state === 'started' || scan?.state === 'running';
+  const scanActive = scanStarting || busy;
   const resultsIncomplete =
     !!scan && ['done', 'partial'].includes(scan.state) && scan.count > dataRows.length;
 
@@ -487,56 +569,117 @@ export function LiveMibsScreen({
       <View style={styles.paneHeader}>
         <SectionTitle>MIB scope</SectionTitle>
         <Label tone="dim" size={10}>
-          {treeRows.length} visible nodes
+          {treeSearch.trim()
+            ? `${treeSearchHits.length} catalog ${treeSearchHits.length === 1 ? 'match' : 'matches'}`
+            : `${treeRows.length} visible nodes`}
         </Label>
       </View>
-      <Field
-        label="Filter loaded tree"
-        value={treeSearch}
-        onChangeText={setTreeSearch}
-        placeholder="Name or OID"
-      />
-      <FlatList
-        data={treeRows}
-        nestedScrollEnabled={mode === 'compact'}
-        keyExtractor={({ node }) => `${node.module ?? ''}:${node.oid}`}
-        renderItem={({ item: { node, depth } }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: scope?.oid === node.oid }}
-            onPress={() =>
-              void toggleTreeNode(node).catch((caught) => {
-                if (ownsEngine())
-                  setError(caught instanceof Error ? caught.message : String(caught));
-              })
-            }
-            style={({ pressed }) => [
-              styles.treeRow,
-              {
-                paddingLeft: 10 + depth * 14,
-                backgroundColor:
-                  scope?.oid === node.oid ? t.accentSoft : pressed ? t.surfaceAlt : 'transparent',
-              },
-            ]}
-          >
-            <Text style={{ color: node.hasChildren ? t.accent : t.textDim, width: 16 }}>
-              {node.hasChildren ? (expanded[node.oid] ? '⌄' : '›') : '·'}
-            </Text>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ color: t.text, fontSize: 12 }} numberOfLines={1}>
-                {node.name}
+      <View style={styles.treeSearchField}>
+        <Field
+          label="Search MIB catalog"
+          value={treeSearch}
+          onChangeText={changeTreeSearch}
+          placeholder="Name, OID, or description…"
+        />
+      </View>
+      {treeSearch.trim() ? (
+        <View style={styles.treeSearchStatus}>
+          {treeSearchPhase === 'debouncing' ||
+          treeSearchPhase === 'searching' ||
+          treeSearchPhase === 'opening' ? (
+            <ActivityIndicator color={t.accent} size="small" />
+          ) : null}
+          {treeSearchPhase !== 'idle' ? (
+            <Label tone={treeSearchPhase === 'error' ? 'error' : 'dim'} size={10}>
+              {treeSearchPhase === 'debouncing'
+                ? 'Waiting for you to finish typing…'
+                : treeSearchPhase === 'searching'
+                  ? 'Searching loaded MIB names, OIDs, and descriptions…'
+                  : treeSearchPhase === 'opening'
+                    ? 'Opening selected MIB scope…'
+                    : (treeSearchError ?? 'Search failed.')}
+            </Label>
+          ) : null}
+        </View>
+      ) : null}
+      {treeSearch.trim() ? (
+        <ScrollView nestedScrollEnabled={mode === 'compact'} keyboardShouldPersistTaps="handled">
+          {treeSearchHits.map((hit) => (
+            <Pressable
+              key={`${hit.module ?? ''}:${hit.oid}:${hit.matched}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Use ${hit.name} at ${hit.oid} as the Live MIB scope`}
+              accessibilityState={{ selected: scope?.oid === hit.oid }}
+              disabled={treeSearchPhase === 'opening'}
+              onPress={() => void openTreeSearchHit(hit)}
+              style={({ pressed }) => [
+                styles.treeSearchResult,
+                {
+                  borderBottomColor: t.border,
+                  backgroundColor:
+                    scope?.oid === hit.oid ? t.accentSoft : pressed ? t.surfaceAlt : 'transparent',
+                },
+              ]}
+            >
+              <View style={styles.treeSearchResultText}>
+                <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
+                  {hit.name}
+                </Text>
+                <Mono size={9}>{hit.oid}</Mono>
+              </View>
+              {hit.module ? <Pill text={hit.module} /> : null}
+            </Pressable>
+          ))}
+          {treeSearchPhase === 'idle' && treeSearchHits.length === 0 ? (
+            <EmptyState title="No catalog matches" />
+          ) : null}
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={treeRows}
+          nestedScrollEnabled={mode === 'compact'}
+          keyExtractor={({ node }) => `${node.module ?? ''}:${node.oid}`}
+          renderItem={({ item: { node, depth } }) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: scope?.oid === node.oid }}
+              onPress={() =>
+                void toggleTreeNode(node).catch((caught) => {
+                  if (ownsEngine())
+                    setError(caught instanceof Error ? caught.message : String(caught));
+                })
+              }
+              style={({ pressed }) => [
+                styles.treeRow,
+                {
+                  paddingLeft: 10 + depth * 14,
+                  backgroundColor:
+                    scope?.oid === node.oid ? t.accentSoft : pressed ? t.surfaceAlt : 'transparent',
+                },
+              ]}
+            >
+              <Text style={{ color: node.hasChildren ? t.accent : t.textDim, width: 16 }}>
+                {node.hasChildren ? (expanded[node.oid] ? '⌄' : '›') : '·'}
               </Text>
-              <Mono size={9}>{node.oid}</Mono>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: t.text, fontSize: 12 }} numberOfLines={1}>
+                  {node.name}
+                </Text>
+                <Mono size={9}>{node.oid}</Mono>
+              </View>
+            </Pressable>
+          )}
+          ListEmptyComponent={
+            <View style={styles.liveMibImportEmpty}>
+              <EmptyState
+                title="No MIB nodes"
+                hint="Import MIBs here to populate Live MIB nodes."
+              />
+              <FileImportFlow busy={importBusy} />
             </View>
-          </Pressable>
-        )}
-        ListEmptyComponent={
-          <View style={styles.liveMibImportEmpty}>
-            <EmptyState title="No MIB nodes" hint="Import MIBs here to populate Live MIB nodes." />
-            <FileImportFlow busy={importBusy} />
-          </View>
-        }
-      />
+          }
+        />
+      )}
     </View>
   );
 
@@ -559,31 +702,39 @@ export function LiveMibsScreen({
         </View>
         <Row style={styles.wrap}>
           <Pill
-            text={(resultsIncomplete ? 'incomplete' : (scan?.state ?? 'idle')).toUpperCase()}
+            text={(autoRefreshPaused
+              ? 'paused'
+              : resultsIncomplete
+                ? 'incomplete'
+                : (scan?.state ?? 'idle')
+            ).toUpperCase()}
             color={
               scan?.state === 'error'
                 ? t.error
-                : resultsIncomplete
-                  ? t.warn
-                  : scan?.state === 'done'
-                    ? t.ok
-                    : busy
-                      ? t.warn
-                      : t.textDim
+                : autoRefreshPaused
+                  ? t.textDim
+                  : resultsIncomplete
+                    ? t.warn
+                    : scan?.state === 'done'
+                      ? t.ok
+                      : busy
+                        ? t.warn
+                        : t.textDim
             }
           />
           <Button
-            title={scanStarting ? 'Starting…' : busy ? 'Stop' : 'Refresh'}
+            title={autoRefreshPaused ? 'Resume' : scanActive ? 'Stop' : 'Refresh'}
             small
-            disabled={scanStarting || settingsAgentId !== selectedAgentId}
-            onPress={() =>
-              busy && handleRef.current
-                ? void engine.liveMibs.scan.cancel(handleRef.current).catch((caught) => {
-                    if (ownsEngine())
-                      setError(caught instanceof Error ? caught.message : String(caught));
-                  })
-                : void startScan()
-            }
+            disabled={!scanActive && !autoRefreshPaused && settingsAgentId !== selectedAgentId}
+            onPress={() => {
+              if (scanActive) {
+                void stopScan();
+              } else if (autoRefreshPaused) {
+                setAutoRefreshPaused(false);
+              } else {
+                void startScan();
+              }
+            }}
           />
         </Row>
       </View>
@@ -1414,6 +1565,18 @@ const styles = StyleSheet.create({
   paneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   liveMibImportEmpty: { gap: 10, padding: 12 },
   treeRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4, paddingRight: 6 },
+  treeSearchField: { flexGrow: 0, flexShrink: 0 },
+  treeSearchStatus: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  treeSearchResult: {
+    minHeight: 46,
+    borderBottomWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  treeSearchResultText: { flex: 1, minWidth: 0, gap: 2 },
   gridPane: {
     flex: 1,
     minWidth: 0,
