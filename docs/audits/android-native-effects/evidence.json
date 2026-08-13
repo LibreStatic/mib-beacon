@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "testedCommit": "be5fe8088a12dc1e22bc97464cd3d88603231839",
+  "testedCommit": "6c2b958cf29d94e2396a56b20a394582f47fe601",
   "releaseApkSha256": "1b1bb4564be74a13671f81c5d67c5e629f06bb8092697949dd5640cedb923140",
   "receiverApkSha256": "628cf4b06511efb5663d336f39fe4b358086c4a8110237e61077eedd6ce74953",
   "notification": {

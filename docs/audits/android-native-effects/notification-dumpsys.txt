@@ -1,22 +1,22 @@
 Current Notification Manager state:
   Notification List:
-    NotificationRecord(0x08829df9: pkg=com.librestatic.mibbeacon user=UserHandle{0} id=0 tag=06ff697a-dc19-4f93-ab65-cb56f849e03f importance=4 key=0|com.librestatic.mibbeacon|0|06ff697a-dc19-4f93-ab65-cb56f849e03f|10245: Notification(channel=mibbeacon-alerts shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=AUTO_CANCEL|SILENT color=0x00000000 vis=PRIVATE))
-      uid=10245 userId=0
+    NotificationRecord(0x0f8f2103: pkg=com.librestatic.mibbeacon user=UserHandle{0} id=0 tag=128c382c-d125-4e70-8f26-7ca57377800d importance=4 key=0|com.librestatic.mibbeacon|0|128c382c-d125-4e70-8f26-7ca57377800d|10247: Notification(channel=mibbeacon-alerts shortcut=null contentView=null vibrate=null sound=null defaults=0 flags=AUTO_CANCEL|SILENT color=0x00000000 vis=PRIVATE))
+      uid=10247 userId=0
       opPkg=com.librestatic.mibbeacon
       icon=Icon(typ=RESOURCE pkg=com.librestatic.mibbeacon id=0x7f0e0000)
       flags=AUTO_CANCEL|SILENT
       originalFlags=AUTO_CANCEL|SILENT
       pri=1
-      key=0|com.librestatic.mibbeacon|0|06ff697a-dc19-4f93-ab65-cb56f849e03f|10245
+      key=0|com.librestatic.mibbeacon|0|128c382c-d125-4e70-8f26-7ca57377800d|10247
       seen=false
-      groupKey=0|com.librestatic.mibbeacon|0|06ff697a-dc19-4f93-ab65-cb56f849e03f|10245
+      groupKey=0|com.librestatic.mibbeacon|0|128c382c-d125-4e70-8f26-7ca57377800d|10247
       notification=
             fullscreenIntent=null
-            contentIntent=PendingIntent{355513e: PendingIntentRecord{4aec7b1 com.librestatic.mibbeacon startActivity (allowlist: e3d54ee:+30s0ms/0/NOTIFICATION_SERVICE/NotificationManagerService)}}
+            contentIntent=PendingIntent{7522880: PendingIntentRecord{3b67bc7 com.librestatic.mibbeacon startActivity (allowlist: e3d54ee:+30s0ms/0/NOTIFICATION_SERVICE/NotificationManagerService)}}
             deleteIntent=null
             number=0
             groupAlertBehavior=1
-            when=1786599429739/1786599429739
+            when=1786600223810/1786600223810
             tickerText=null
             vis=0
             contentView=null
@@ -33,77 +33,77 @@ Current Notification Manager state:
                   [1] 0
                   [2] 0
                   [3] 0
-                  [4] 48
+                  [4] 49
                   [5] 0
-                  [6] 54
+                  [6] 50
                   [7] 0
-                  [8] 102
+                  [8] 56
                   [9] 0
-                  [10] 102
+                  [10] 99
                   [11] 0
-                  [12] 54
+                  [12] 51
                   [13] 0
-                  [14] 57
+                  [14] 56
                   [15] 0
-                  [16] 55
+                  [16] 50
                   [17] 0
-                  [18] 97
+                  [18] 99
                   [19] 0
                   [20] 45
                   [21] 0
                   [22] 100
                   [23] 0
-                  [24] 99
+                  [24] 49
                   [25] 0
-                  [26] 49
+                  [26] 50
                   [27] 0
-                  [28] 57
+                  [28] 53
                   [29] 0
                   [30] 45
                   [31] 0
                   [32] 52
                   [33] 0
-                  [34] 102
+                  [34] 101
                   [35] 0
-                  [36] 57
+                  [36] 55
                   [37] 0
-                  [38] 51
+                  [38] 48
                   [39] 0
                   [40] 45
                   [41] 0
-                  [42] 97
+                  [42] 56
                   [43] 0
-                  [44] 98
+                  [44] 102
                   [45] 0
-                  [46] 54
+                  [46] 50
                   [47] 0
-                  [48] 53
+                  [48] 54
                   [49] 0
                   [50] 45
                   [51] 0
-                  [52] 99
+                  [52] 55
                   [53] 0
-                  [54] 98
+                  [54] 99
                   [55] 0
-                  [56] 53
+                  [56] 97
                   [57] 0
-                  [58] 54
+                  [58] 53
                   [59] 0
-                  [60] 102
+                  [60] 55
                   [61] 0
-                  [62] 56
+                  [62] 51
                   [63] 0
-                  [64] 52
+                  [64] 55
                   [65] 0
-                  [66] 57
+                  [66] 55
                   [67] 0
-                  [68] 101
+                  [68] 56
                   [69] 0
                   [70] 48
                   [71] 0
-                  [72] 51
+                  [72] 48
                   [73] 0
-                  [74] 102
+                  [74] 100
                   [75] 0
                   [76] 0
                   [77] 0
@@ -639,7 +639,7 @@ Current Notification Manager state:
                 android.progress=Integer (0)
                 androidx.core.app.extra.COMPAT_TEMPLATE=String (androidx.core.app.NotificationCompat$BigTextStyle)
                 android.progressMax=Integer (0)
-                android.appInfo=ApplicationInfo (ApplicationInfo{e08ab9f com.librestatic.mibbeacon})
+                android.appInfo=ApplicationInfo (ApplicationInfo{9526eb9 com.librestatic.mibbeacon})
                 android.showWhen=Boolean (true)
                 android.largeIcon=null
                 android.bigText=String (Release notification delivery verified.)
@@ -649,7 +649,7 @@ Current Notification Manager state:
             }
       publicNotification=
             None
-      stats=SingleNotificationStats{posttimeElapsedMs=252615287, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=0, airtimeMs=0, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=4, naturalImportance=4, isNoisy=true}
+      stats=SingleNotificationStats{posttimeElapsedMs=253409346, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=0, airtimeMs=0, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=4, naturalImportance=4, isNoisy=true}
       mContactAffinity=0.0
       mPackagePriority=0
       mPackageVisibility=-1000
@@ -664,11 +664,11 @@ Current Notification Manager state:
       mIntercept=false
       mHidden==false
       mGlobalSortKey=crtcl=0x0002:intrsv=2:grnk=0x0000:gsmry=1:nsk:rnk=0x0000
-      mRankingTimeMs=1786599429739
-      mCreationTimeMs=1786599429754
+      mRankingTimeMs=1786600223810
+      mCreationTimeMs=1786600223814
       mVisibleSinceMs=0
-      mUpdateTimeMs=1786599429754
-      mInterruptionTimeMs=1786599429957
+      mUpdateTimeMs=1786600223814
+      mInterruptionTimeMs=1786600224016
       mSuppressedVisualEffects= 0
       mSound= content://settings/system/notification_sound
       mVibration= null
@@ -718,7 +718,7 @@ Current Notification Manager state:
             }
       publicNotification=
             None
-      stats=SingleNotificationStats{posttimeElapsedMs=32137, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=3, airtimeMs=4426, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=3, naturalImportance=2, isNoisy=true}
+      stats=SingleNotificationStats{posttimeElapsedMs=32137, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=4, airtimeMs=7348, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=3, naturalImportance=2, isNoisy=true}
       mContactAffinity=0.0
       mPackagePriority=0
       mPackageVisibility=-1000
@@ -735,7 +735,7 @@ Current Notification Manager state:
       mGlobalSortKey=crtcl=0x0002:intrsv=2:grnk=0x0001:gsmry=1:nsk:rnk=0x0001
       mRankingTimeMs=1786346833314
       mCreationTimeMs=1786346833314
-      mVisibleSinceMs=1786594920553
+      mVisibleSinceMs=1786599431682
       mUpdateTimeMs=1786594553148
       mInterruptionTimeMs=1786594553148
       mSuppressedVisualEffects= 0
@@ -789,7 +789,7 @@ Current Notification Manager state:
             }
       publicNotification=
             None
-      stats=SingleNotificationStats{posttimeElapsedMs=13166, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=3, airtimeMs=4429, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=3, naturalImportance=3, isNoisy=true}
+      stats=SingleNotificationStats{posttimeElapsedMs=13166, posttimeToFirstClickMs=-1, posttimeToDismissMs=-1, airtimeCount=4, airtimeMs=7359, currentAirtimeStartElapsedMs=-1, airtimeExpandedMs=0, posttimeToFirstVisibleExpansionMs=-1, currentAirtimeExpandedStartElapsedMs=-1, requestedImportance=3, naturalImportance=3, isNoisy=true}
       mContactAffinity=0.0
       mPackagePriority=0
       mPackageVisibility=-1000
@@ -806,9 +806,9 @@ Current Notification Manager state:
       mGlobalSortKey=crtcl=0x0002:intrsv=2:grnk=0x0002:gsmry=1:nsk:rnk=0x0002
       mRankingTimeMs=1786346826689
       mCreationTimeMs=1786346826689
-      mVisibleSinceMs=1786594920551
+      mVisibleSinceMs=1786599431673
       mUpdateTimeMs=1786346826689
-      mInterruptionTimeMs=1786594920551
+      mInterruptionTimeMs=1786599431673
       mSuppressedVisualEffects= 0
       mSound= content://settings/system/notification_sound
       mVibration= null
@@ -1131,7 +1131,7 @@ PackagePreferences:
         NotificationChannel{mId='discovery_notifications', mName=Suggested features, mDescription=, mImportance=2, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=null, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=false, mOriginalImp=2, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
         NotificationChannel{mId='app_limit_updates', mName=Updates, mDescription=, mImportance=2, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=true, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=false, mOriginalImp=2, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
       AppSettings: com.android.systemui.emulation.pixel_6_pro (10072)
-      AppSettings: com.librestatic.mibbeacon (10245) importance=DEFAULT userSet=false
+      AppSettings: com.librestatic.mibbeacon (10247) importance=DEFAULT userSet=false
         NotificationChannel{mId='mibbeacon-alerts', mName=MIB Beacon alerts, mDescription=, mImportance=4, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=false, mOriginalImp=4, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
       AppSettings: com.google.android.tag (10121)
       AppSettings: com.android.keychain (1000) fixedImportance=true
@@ -1452,6 +1452,12 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
     2026-08-13T05:36:49.287568 - config: com.librestatic.mibbeacon|removeAutomaticZenRules (ORIGIN_SYSTEM) no changes
     2026-08-13T05:36:49.289074 - set_zen_mode: off,com.librestatic.mibbeacon|removeAutomaticZenRules
     2026-08-13T05:36:49.289154 - set_zen_mode: off,updated setting
+    2026-08-13T05:37:24.909750 - config: com.librestatic.mibbeacon.auditreceiver|removeAutomaticZenRules (ORIGIN_SYSTEM) no changes
+    2026-08-13T05:37:24.913575 - set_zen_mode: off,com.librestatic.mibbeacon.auditreceiver|removeAutomaticZenRules
+    2026-08-13T05:37:24.913725 - set_zen_mode: off,updated setting
+    2026-08-13T05:50:18.021455 - config: com.librestatic.mibbeacon|removeAutomaticZenRules (ORIGIN_SYSTEM) no changes
+    2026-08-13T05:50:18.027035 - set_zen_mode: off,com.librestatic.mibbeacon|removeAutomaticZenRules
+    2026-08-13T05:50:18.027153 - set_zen_mode: off,updated setting
     Other Events:
 
   Condition providers:
@@ -1539,7 +1545,7 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
     }
     AggregatedStats{
       key='host.exp.exponent',
-      numEnqueuedByApp=1,
+      numEnqueuedByApp=2,
       numPostedByApp=0,
       numUpdatedByApp=0,
       numRemovedByApp=0,
@@ -1547,7 +1553,7 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
       numWithStaredPeople=0,
       numWithValidPeople=0,
       numPeopleCacheMiss=0,
-      numBlocked=1,
+      numBlocked=2,
       numSuspendedByAdmin=0,
       numWithActions=0,
       numPrivate=0,
@@ -1582,7 +1588,7 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
       numPostedByApp=0,
       numUpdatedByApp=1,
       numRemovedByApp=0,
-      numPeopleCacheHit=13,
+      numPeopleCacheHit=15,
       numWithStaredPeople=0,
       numWithValidPeople=0,
       numPeopleCacheMiss=0,
@@ -1617,57 +1623,18 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
     }
     AggregatedStats{
       key='com.librestatic.mibbeacon',
-      numEnqueuedByApp=5,
-      numPostedByApp=5,
+      numEnqueuedByApp=6,
+      numPostedByApp=6,
       numUpdatedByApp=0,
       numRemovedByApp=0,
-      numPeopleCacheHit=8,
+      numPeopleCacheHit=10,
       numWithStaredPeople=0,
       numWithValidPeople=0,
       numPeopleCacheMiss=0,
       numBlocked=0,
       numSuspendedByAdmin=0,
       numWithActions=0,
-      numPrivate=5,
-      numSecret=0,
-      numInterrupt=0,
-      numWithBigText=5,
-      numWithBigPicture=0
-      numForegroundService=0
-      numUserInitiatedJob=0
-      numOngoing=0
-      numAutoCancel=5
-      numWithLargeIcon=5
-      numWithInbox=0
-      numWithMediaSession=0
-      numWithTitle=5
-      numWithText=5
-      numWithSubText=0
-      numWithInfoText=0
-      numRateViolations=0
-      numAlertViolations=0
-      numQuotaViolations=0
-      numImagesRemoved=0
-      numTooOld=0
-      note_imp_noisy_: [0, 0, 0, 0, 5, 0]
-      note_imp_quiet_: [0, 0, 0, 0, 0, 0]
-      note_importance_: [0, 0, 0, 0, 5, 0]
-      numUndecorateRVs=0
-    }
-    AggregatedStats{
-      key='__global',
-      numEnqueuedByApp=17,
-      numPostedByApp=7,
-      numUpdatedByApp=3,
-      numRemovedByApp=5,
-      numPeopleCacheHit=22,
-      numWithStaredPeople=0,
-      numWithValidPeople=0,
-      numPeopleCacheMiss=0,
-      numBlocked=2,
-      numSuspendedByAdmin=0,
-      numWithActions=0,
-      numPrivate=10,
+      numPrivate=6,
       numSecret=0,
       numInterrupt=0,
       numWithBigText=6,
@@ -1675,12 +1642,12 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
       numForegroundService=0
       numUserInitiatedJob=0
       numOngoing=0
-      numAutoCancel=10
-      numWithLargeIcon=5
+      numAutoCancel=6
+      numWithLargeIcon=6
       numWithInbox=0
       numWithMediaSession=0
-      numWithTitle=10
-      numWithText=10
+      numWithTitle=6
+      numWithText=6
       numWithSubText=0
       numWithInfoText=0
       numRateViolations=0
@@ -1688,16 +1655,55 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
       numQuotaViolations=0
       numImagesRemoved=0
       numTooOld=0
-      note_imp_noisy_: [0, 0, 0, 1, 5, 0]
+      note_imp_noisy_: [0, 0, 0, 0, 6, 0]
       note_imp_quiet_: [0, 0, 0, 0, 0, 0]
-      note_importance_: [0, 0, 1, 0, 5, 0]
+      note_importance_: [0, 0, 0, 0, 6, 0]
+      numUndecorateRVs=0
+    }
+    AggregatedStats{
+      key='__global',
+      numEnqueuedByApp=19,
+      numPostedByApp=8,
+      numUpdatedByApp=3,
+      numRemovedByApp=5,
+      numPeopleCacheHit=26,
+      numWithStaredPeople=0,
+      numWithValidPeople=0,
+      numPeopleCacheMiss=0,
+      numBlocked=3,
+      numSuspendedByAdmin=0,
+      numWithActions=0,
+      numPrivate=11,
+      numSecret=0,
+      numInterrupt=0,
+      numWithBigText=7,
+      numWithBigPicture=0
+      numForegroundService=0
+      numUserInitiatedJob=0
+      numOngoing=0
+      numAutoCancel=11
+      numWithLargeIcon=6
+      numWithInbox=0
+      numWithMediaSession=0
+      numWithTitle=11
+      numWithText=11
+      numWithSubText=0
+      numWithInfoText=0
+      numRateViolations=0
+      numAlertViolations=0
+      numQuotaViolations=0
+      numImagesRemoved=0
+      numTooOld=0
+      note_imp_noisy_: [0, 0, 0, 1, 6, 0]
+      note_imp_quiet_: [0, 0, 0, 0, 0, 0]
+      note_importance_: [0, 0, 1, 0, 6, 0]
       numUndecorateRVs=0
     }
     mStatsArrays.size(): 1
     mStats.size(): 5
 
   TimeToLive alarms:
-    mKeys [Pair{259213163 0|android|1001|TimeZoneDetector|1000}, Pair{506938484 -1|android|19|null|1000}, Pair{511815085 0|com.librestatic.mibbeacon|0|06ff697a-dc19-4f93-ab65-cb56f849e03f|10245}]
+    mKeys [Pair{259213163 0|android|1001|TimeZoneDetector|1000}, Pair{506938484 -1|android|19|null|1000}, Pair{512609144 0|com.librestatic.mibbeacon|0|128c382c-d125-4e70-8f26-7ca57377800d|10247}]
 
   GroupHelper:
     Ungrouped notifications:
@@ -1706,4 +1712,4 @@ automaticRule[4cbcf9ae16e1472db0a4c049dc8d966d]:ZenRuleDiff{added}]
         0|android|g:Aggregate_AlertingSection
             0|android|1001|TimeZoneDetector|1000
         0|com.librestatic.mibbeacon|g:Aggregate_AlertingSection
-            0|com.librestatic.mibbeacon|0|06ff697a-dc19-4f93-ab65-cb56f849e03f|10245
+            0|com.librestatic.mibbeacon|0|128c382c-d125-4e70-8f26-7ca57377800d|10247

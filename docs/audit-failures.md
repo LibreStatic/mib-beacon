@@ -3,7 +3,7 @@
 **Original audit date:** 2026-07-20
 **Latest revalidation:** 2026-08-13
 **Scope:** Repository-wide validation against the root `AGENTS.md` rules  
-**Status:** Remediation and dirty-worktree revalidation are complete, and the historical v0.6.0 release remains successfully published. All 58 browser scenarios, all 58 versioned matrix checks, the full 1,292-test inventory (1,288 passed, 4 skipped), and the rebuilt Android notification/share harness pass. Goal completion is still **not yet proven** only because AF-003/AF-009 require the same browser/native evidence tied to the committed code candidate.
+**Status:** Remediation and exact-candidate revalidation are complete, and the historical v0.6.0 release remains successfully published. Implementation commit `6c2b958cf29d94e2396a56b20a394582f47fe601` passed all 58 browser scenarios, all 58 versioned matrix checks, the full 1,292-test inventory (1,288 passed, 4 skipped), and the rebuilt Android notification/share harness. AF-003 and AF-009 are resolved; only this evidence/report finalization commit and the verified push to `origin/master` remain.
 
 ## Launch goal
 
@@ -17,13 +17,13 @@ Paste this into Codex from the repository root:
 
 This pass treats the repository, GitHub remote, tag, and published release as authoritative instead of relying on the July completion narrative.
 
-- Local `master` is `be5fe80` and is **three commits ahead** of `origin/master`: `fa04996`, `875140d`, and `be5fe80`.
+- Local `master` is `6c2b958` and is **four commits ahead** of `origin/master`: `fa04996`, `875140d`, `be5fe80`, and `6c2b958`.
 - `origin/master` and the dereferenced annotated `v0.6.0` tag both point to `7eb855a4bc037677955b9d113030d9f44cede52f`. The annotated tag object is `1a238c16184540a07375f8ab65bab7218b3894e5`.
-- The current worktree contains the intended Command Palette integration, Android native-effects harness, browser-audit work, and unrelated `docs/plans/post-v1/` files. The unrelated plans remain outside the audit scope and must be preserved.
-- A fresh production web bundle from the settled dirty worktree passed all **58/58** browser scenarios in `docs/audits/ui-browser/coverage.json` and all **58/58** versioned checks in `docs/audits/validation-matrix-v1.json`, with zero failures. Both reports name `be5fe80`, but because tracked/untracked implementation changes were present, this is provisional behavioral evidence rather than exact-commit proof.
-- A clean Expo prebuild plus signed x86_64 release/receiver rebuild was followed by a self-contained run of `dev/audit/android-native-effects/run.sh`. It proved a delivered notification with `mHidden==false` and `mIntercept=false`, then proved that an audit receiver could read and decode the exact `image/png` attachment. `docs/audits/android-native-effects/SHA256SUMS` validates the retained evidence bundle. This resolves the AF-006 and AF-007 behavior gaps provisionally; AF-009 still requires a rerun against the committed code candidate.
-- The published v0.6.0 emulator run remains historical launch-only evidence. The newer native-effects bundle supersedes that limitation for current behavior, but its `testedCommit` field also names `be5fe80` while the worktree was dirty. Browser and native evidence must therefore be regenerated after the intended changes are committed.
-- AF-009 now remains open only for the exact post-commit freshness rerun after AF-003's implemented persistent global Command Palette catalog passes its full and exact-route gates; there is no remaining locally reproducible browser-layout or Android-effects blocker.
+- The implementation commit contains the intended Command Palette integration, Android native-effects harness, and browser-audit work. Unrelated `docs/plans/post-v1/` files remained outside the audit scope and were temporarily moved only while clean-worktree attestations ran, then restored unchanged.
+- A fresh production web bundle from implementation commit `6c2b958cf29d94e2396a56b20a394582f47fe601` passed all **58/58** browser scenarios in `docs/audits/ui-browser/coverage.json` from a clean worktree and all **58/58** versioned checks in `docs/audits/validation-matrix-v1.json`, with zero failures.
+- A signed x86_64 release/receiver build from that same commit was followed by a self-contained run of `dev/audit/android-native-effects/run.sh`. It proved a delivered notification with `mHidden==false` and `mIntercept=false`, then proved that an audit receiver read and decoded the exact `image/png` attachment. `docs/audits/android-native-effects/SHA256SUMS` validates the retained exact-commit evidence bundle.
+- The exact release APK SHA-256 is `1b1bb4564be74a13671f81c5d67c5e629f06bb8092697949dd5640cedb923140`; the audit receiver APK SHA-256 is `628cf4b06511efb5663d336f39fe4b358086c4a8110237e61077eedd6ce74953`.
+- The historical v0.6.0 emulator run remains launch-only evidence and is not being rerun. The exact post-release candidate evidence closes AF-003, AF-006, AF-007, and AF-009 without moving or republishing `v0.6.0`.
 
 ## Executive summary
 
@@ -38,21 +38,21 @@ The audit originally found the following systemic deviations. Shared infrastruct
 
 Open completion gates as of 2026-08-13:
 
-1. **AF-003 / AF-009:** commit the intended code candidate, rerun the already-passing browser and Android native-effects matrices against that code commit, retain SHA-keyed evidence, and push the verified remediation commits to `origin/master` without changing the historical release.
+1. **Final publication:** commit this exact-candidate evidence/report update and push the verified post-release remediation commits to `origin/master` without changing the historical release.
 
-AF-006 and AF-007 behavior is provisionally resolved: the current Android harness observed a visible, non-intercepted product notification and a receiver read the exact PNG attachment. AF-009 owns their exact-candidate freshness rerun.
+AF-003, AF-006, AF-007, and AF-009 are resolved against implementation commit `6c2b958`; the retained Android harness observed a visible, non-intercepted product notification and a receiver read the exact PNG attachment.
 
 ## Rule status
 
-| AGENTS.md rule                               | Status                            | Main evidence                                                                                   |
-| -------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| User-changeable behavior exposed in Settings | Resolved                          | Notification and layout controls are exposed in Settings                                        |
-| Mobile, tablet, and desktop validation       | Provisional pass; **AF-009 open** | Fresh dirty-tree browser audit and matrix v1 each passed 58/58; exact post-commit rerun remains |
-| Required content remains reachable           | Provisional rendered pass         | Current phone/tablet/desktop light/dark audit completed with zero failures                      |
-| Safe remote-backed editing                   | Resolved                          | Shared transactions enforce phases, rollback, reconciliation, and stale guards                  |
-| Keyboard-suitable actions in Command Palette | Provisional pass; **AF-009 open** | 84 catalog actions and the rendered off-route handoff pass; exact-code-commit rerun remains     |
-| Runtime WCAG 2.2 AA contrast                 | Resolved                          | Runtime repair/state matrices pass and current rendered coverage completed provisionally        |
-| In-context prerequisite completion           | Resolved                          | Dependent pages create/select prerequisites and resume actions                                  |
+| AGENTS.md rule                               | Status   | Main evidence                                                                                   |
+| -------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| User-changeable behavior exposed in Settings | Resolved | Notification and layout controls are exposed in Settings                                        |
+| Mobile, tablet, and desktop validation       | Resolved | Exact implementation commit passed browser audit and matrix v1, each 58/58                      |
+| Required content remains reachable           | Resolved | Exact phone/tablet/desktop light/dark audit completed with zero failures                        |
+| Safe remote-backed editing                   | Resolved | Shared transactions enforce phases, rollback, reconciliation, and stale guards                  |
+| Keyboard-suitable actions in Command Palette | Resolved | 84 catalog actions and the rendered off-route handoff passed on the exact implementation commit |
+| Runtime WCAG 2.2 AA contrast                 | Resolved | Runtime repair/state matrices and exact rendered coverage pass                                  |
+| In-context prerequisite completion           | Resolved | Dependent pages create/select prerequisites and resume actions                                  |
 
 ---
 
@@ -60,7 +60,7 @@ AF-006 and AF-007 behavior is provisionally resolved: the current Android harnes
 
 ### AF-001 — Remote-backed controls are not transaction-safe
 
-**Remediation status (2026-07-21): Implementation resolved; current rendered revalidation belongs to AF-009.** Live MIB settings, resolver settings/sources/cache clear, update preferences, packet retention, Tools poll/watch/chart/pattern collections, trap persistence, agents/groups, Query bookmarks/walk snapshots, and direct MIB catalog mutations completed the shared transaction migration. The older rendered result remains historical evidence; current exact-candidate phase/recovery evidence is tracked under AF-009.
+**Remediation status (2026-08-13): Resolved.** Live MIB settings, resolver settings/sources/cache clear, update preferences, packet retention, Tools poll/watch/chart/pattern collections, trap persistence, agents/groups, Query bookmarks/walk snapshots, and direct MIB catalog mutations completed the shared transaction migration. Focused transaction tests and the exact-candidate rendered matrix pass.
 
 **Implementation progress:** Shared infrastructure now exists in `packages/app/src/remote-edit-transaction.ts` with focused tests for confirmed/draft separation, overlapping active and queued writes, stale/scope guards, authoritative rollback, explicit error acknowledgement, uncertain reconciliation, conflict retention, semantic record equality, and illegal transitions. Live MIB global defaults/per-agent overrides, resolver enable/auto-resolve/consent settings, resolver sources, Tools polls/watches/saved charts, persistent trap configuration, agents/groups, the automatic desktop update preference, and packet retention now use that contract: authoritative load gates, staged drafts, explicit Save/Cancel, queued writes, rollback, latest-attempt reconciliation, safe retry/reset, visible phases, per-engine or per-adapter invalidation, and runner-generation handoff are covered by focused tests and independent specification/quality review. The updater status stream also has adapter-lifetime, event-revision, and request-order arbitration. Packet retention additionally uses current-engine event authority, causal field synchronization, truthful/deduplicated disk-write recovery, and packet bootstrap lifecycle/event revisions; its final focused gate covers 47 transaction/bootstrap/shared cases. The later subsections record completion of the pattern-session, Query artifact, MIB catalog, and resolver-cache follow-ons that were still open at this intermediate checkpoint. No production Query-preset persistence API exists; earlier “query preset” wording was audit drift.
 
@@ -176,7 +176,7 @@ AF-006 and AF-007 behavior is provisionally resolved: the current Android harnes
 
 **Revalidation status (2026-07-20, `7074513`): Reproducible.** The palette still exposes only 15 static non-navigation commands, Query shortcuts still execute actions unavailable from the palette, and no shared action registry or suitability classification exists.
 
-**Current revalidation status (2026-08-13): Behavior and full dirty-tree gate pass; exact-code-commit rerun pending under AF-009.** The current worktree defines 84 unique palette-required actions across Browse (5), Tools (18), Traps (8), Packet Console (4), Agents (7), Live MIBs (5), and Settings (37), plus 26 explicitly justified contextual-only interaction classifications. Owner-exact registration rejects missing or unexpected IDs, catalog actions require keyboard-suitable and palette-exposed metadata, and migrated pointer controls dispatch through the registry confirmation gateway. Persistent navigation fallbacks keep all catalog IDs discoverable while their owning route is unmounted. The complete workspace typecheck, ESLint, 1,287 runnable tests, focused action tests, production build, and rendered browser matrices pass. The browser scenario now selects `tools:start-ports` from Browse, confirms safe navigation while the palette remains open, and observes the mounted Tools action taking ownership. Only AF-009's exact-code-commit evidence rerun remains.
+**Current revalidation status (2026-08-13): Resolved against implementation commit `6c2b958`.** The candidate defines 84 unique palette-required actions across Browse (5), Tools (18), Traps (8), Packet Console (4), Agents (7), Live MIBs (5), and Settings (37), plus 26 explicitly justified contextual-only interaction classifications. Owner-exact registration rejects missing or unexpected IDs, catalog actions require keyboard-suitable and palette-exposed metadata, and migrated pointer controls dispatch through the registry confirmation gateway. Persistent navigation fallbacks keep all catalog IDs discoverable while their owning route is unmounted. The complete workspace typecheck, ESLint, 1,288 runnable tests, focused action tests, production build, and exact rendered browser matrices pass. The browser scenario selects `tools:start-ports` from Browse, confirms safe navigation while the palette remains open, and observes the mounted Tools action taking ownership.
 
 **Implementation progress:** A central owner-scoped action registry now defines palette exposure, keyboard suitability, shortcut bindings, platforms, enabled/disabled reasons, confirmation metadata, and execution handlers. Owner batches replace atomically; confirmation is enforced at the execution gateway and revalidated after asynchronous authorization; safe future action IDs survive palette-history persistence. Query prepare, direct Get/Get Next/Get Bulk/Walk/Set staging, Run, Repeat, and Stop actions register persistently above conditional screens, and the palette, operation Chips, Run/Stop buttons, and browser shortcuts dispatch those same definitions with visible failure reasons. Four Settings transaction acknowledge controls now also share registry dispatch, and dependency-correct registrations prevent them from retaining stale remote drafts or recovery state. AppRoot registers one non-executing navigation fallback for every catalog action at priority `-100`; a mounted route registers the authoritative state/confirmation/handler at higher priority. Selecting a fallback navigates without executing the underlying action and keeps the palette open so the user can invoke the newly authoritative definition. Registry tests cover same-priority duplicate rejection, finite-priority validation, fallback restoration, and invalidation of a confirmation whose higher-priority owner unmounts. The inventory and suitability tests lock the 84 catalog IDs and 26 contextual exclusions.
 
@@ -203,7 +203,7 @@ AF-006 and AF-007 behavior is provisionally resolved: the current Android harnes
 - [x] Disabled contextual commands explain why they are unavailable.
 - [x] Tests fail when a registered keyboard shortcut or suitable UI action has no palette exposure.
 - [x] Low-priority (`-100`) non-executing fallbacks keep every catalog ID discoverable off-route; higher-priority route actions safely override them.
-- [x] The full candidate gate passes and the production browser validates catalog availability and priority-safe ownership across route changes; AF-009 owns the exact-code-commit evidence rerun.
+- [x] The full candidate gate and exact production browser validate catalog availability and priority-safe ownership across route changes.
 
 ---
 
@@ -211,7 +211,7 @@ AF-006 and AF-007 behavior is provisionally resolved: the current Android harnes
 
 ### AF-004 — Split layouts activate before pane minimums fit
 
-**Remediation status (2026-07-21): Implementation resolved; July versioned matrix passed.** Query, Traps, and nested Browse now use measured container width, exact divider-aware pane minima, and stable mounted stack/drawer fallbacks. Responsive transitions preserve pane identity and drafts; web/native drawer semantics, focus transfer, restoration, Escape, and Android Back are covered by mounted regressions. Final independent specification and quality review passed 54 focused tests plus app typecheck. Current exact-candidate rendered proof is tracked under AF-009.
+**Remediation status (2026-08-13): Resolved.** Query, Traps, and nested Browse now use measured container width, exact divider-aware pane minima, and stable mounted stack/drawer fallbacks. Responsive transitions preserve pane identity and drafts; web/native drawer semantics, focus transfer, restoration, Escape, and Android Back are covered by mounted regressions. Final independent specification and quality review passed 54 focused tests plus app typecheck, and the exact-candidate rendered matrix passed.
 
 **Evidence:**
 
@@ -241,7 +241,7 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 
 **Evidence:** `packages/app/src/AppRoot.tsx:807-900` and `1121-1158`.
 
-**Remediation status (2026-07-21): Implementation resolved; July versioned matrix passed.** Desktop navigation is extracted into `packages/app/src/components/AppNavigation.tsx` and rendered as one height-bounded vertical `ScrollView` that owns both primary tabs and footer actions. The compact rail tooltip layer renders outside the scroll container so short-height overflow cannot clip labels or block hit-testing. Current exact-candidate rendered proof is tracked under AF-009.
+**Remediation status (2026-08-13): Resolved.** Desktop navigation is extracted into `packages/app/src/components/AppNavigation.tsx` and rendered as one height-bounded vertical `ScrollView` that owns both primary tabs and footer actions. The compact rail tooltip layer renders outside the scroll container so short-height overflow cannot clip labels or block hit-testing. The exact-candidate rendered matrix passed.
 
 **Fresh parent verification (2026-07-21 10:32 -03):**
 
@@ -268,9 +268,9 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 
 **Implementation progress (2026-07-21):** Notification delivery now goes through `packages/app/src/notification-delivery.ts` host adapters and only calls `show()` after the relevant Settings preference is enabled and the adapter reports `granted` permission. Trap-rule and Tools watch events no longer request permission implicitly. Settings includes a Notifications section with explicit permission status, opt-in controls, a permission request button, and an unsupported-host explanation. The mobile host declares `expo-notifications`, wires a native notification adapter, and includes Android `POST_NOTIFICATIONS`.
 
-**Historical runtime gap:** Release run `29843854069` successfully built, installed, and launched the signed APK, but its Android step did not assert notification-manager state after exercising the app. That historical limitation is superseded by the provisional current runtime evidence below.
+**Historical runtime gap:** Release run `29843854069` successfully built, installed, and launched the signed APK, but its Android step did not assert notification-manager state after exercising the app. The exact-candidate runtime evidence below supersedes that historical limitation.
 
-**Current revalidation status (2026-08-13): Behavior resolved provisionally; exact-code-commit rerun tracked by AF-009.** A clean Expo prebuild and rebuilt signed release APK were exercised through the production notification adapter, generating `docs/audits/android-native-effects/evidence.json`. Its provisional `testedCommit` is `be5fe8088a12dc1e22bc97464cd3d88603231839`; the rebuilt release APK SHA-256 is `1b1bb4564be74a13671f81c5d67c5e629f06bb8092697949dd5640cedb923140`. `dumpsys notification --noredact` recorded package `com.librestatic.mibbeacon`, title `MIB Beacon native adapter audit`, body `Release notification delivery verified.`, `delivered=true`, `hidden=false`, and `intercepted=false`. Both APKs verify under APK Signature Scheme v2, and the evidence bundle checksum covers the JSON, raw dumpsys output, receiver log, chooser XML, and notification screenshot. Because the tested worktree was dirty, AF-009 requires the same pass after the code candidate is committed.
+**Current revalidation status (2026-08-13): Resolved against implementation commit `6c2b958`.** A signed x86_64 release APK built from the exact commit was exercised through the production notification adapter, generating `docs/audits/android-native-effects/evidence.json`. Its `testedCommit` is `6c2b958cf29d94e2396a56b20a394582f47fe601`; the release APK SHA-256 is `1b1bb4564be74a13671f81c5d67c5e629f06bb8092697949dd5640cedb923140`. `dumpsys notification --noredact` recorded package `com.librestatic.mibbeacon`, title `MIB Beacon native adapter audit`, body `Release notification delivery verified.`, `delivered=true`, `hidden=false`, and `intercepted=false`. Both APKs verify under APK Signature Scheme v2, and the evidence bundle checksum covers the JSON, raw dumpsys output, receiver log, chooser XML, and notification screenshot.
 
 **Fresh parent verification (2026-07-21 10:44 -03):**
 
@@ -283,7 +283,7 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 - [x] Settings exposes notification preference controls plus current permission state.
 - [x] Browser trap-rule and watch events do not auto-request notification permission.
 - [x] Native Android declares notification dependency/permission and wires a host adapter.
-- [x] Android emulator notification permission and delivery are proven provisionally; AF-009 owns the exact-post-commit freshness rerun.
+- [x] Android emulator notification permission and delivery are proven against the exact implementation commit.
 
 ### AF-007 — Android chart PNG sharing can produce an empty share intent
 
@@ -295,9 +295,9 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 
 **Implementation progress (2026-07-21):** `ToolLineChart` now keeps browser canvas download behavior on web but delegates native PNG export through `sharePng`. `AppHostAdapter` exposes `shareChartPng`, `ToolsScreen` passes it to charts, and the mobile host decodes the base64 PNG into a cache file, shares that file with MIME type `image/png`, preserves the generated filename, and deletes the cache file after the share promise resolves.
 
-**Historical runtime gap:** The successful published-release emulator pass did not install or invoke a purpose-built share receiver and did not validate `EXTRA_STREAM`, URI permission, MIME type, PNG signature, filename, or readable bytes. That historical limitation is superseded by the provisional current runtime evidence below.
+**Historical runtime gap:** The successful published-release emulator pass did not install or invoke a purpose-built share receiver and did not validate `EXTRA_STREAM`, URI permission, MIME type, PNG signature, filename, or readable bytes. The exact-candidate runtime evidence below supersedes that historical limitation.
 
-**Current revalidation status (2026-08-13): Behavior resolved provisionally; exact-code-commit rerun tracked by AF-009.** The self-contained emulator harness installed rebuilt receiver APK SHA-256 `628cf4b06511efb5663d336f39fe4b358086c4a8110237e61077eedd6ce74953`, selected `MIB Beacon audit receiver` semantically, and the receiver opened the granted `EXTRA_STREAM`. `evidence.json` records `ACTION_SEND`, MIME `image/png`, filename `mib-beacon-native-adapter-audit.png`, read grant, 68 bytes, a valid/decodable PNG, and SHA-256 `431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460`. `SHA256SUMS` covers the retained evidence. Because the provisional run names base commit `be5fe80` while the worktree was dirty, AF-009 requires an exact-code-commit rerun.
+**Current revalidation status (2026-08-13): Resolved against implementation commit `6c2b958`.** The self-contained emulator harness installed receiver APK SHA-256 `628cf4b06511efb5663d336f39fe4b358086c4a8110237e61077eedd6ce74953`, selected `MIB Beacon audit receiver` semantically, and the receiver opened the granted `EXTRA_STREAM`. `evidence.json` records `ACTION_SEND`, MIME `image/png`, filename `mib-beacon-native-adapter-audit.png`, read grant, 68 bytes, a valid/decodable PNG, and SHA-256 `431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460`. `SHA256SUMS` covers the retained exact-commit evidence.
 
 **Fresh parent verification (2026-07-21 10:48 -03):**
 
@@ -308,7 +308,7 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 
 **Acceptance criteria:**
 
-- [x] Android emulator receiver reads the actual PNG attachment provisionally; AF-009 owns the exact-post-commit freshness rerun.
+- [x] Android emulator receiver reads the actual PNG attachment from the exact implementation commit.
 - [x] Shared file URI, MIME type, filename, and cleanup are covered by source regression tests.
 - [x] Browser download behavior remains in the web branch.
 
@@ -374,26 +374,21 @@ At `640x480`, the apparent Settings entry was covered by Command Palette; hit-te
 
 **Implementation progress (2026-07-21):** `dev/audit/validation-matrix.v1.json` covers the real `#/live-mibs` route, breakpoint edges, short landscape, route identity, bounds, hit testing, occlusion, last-control reachability, nested panes, dialogs, native requirements, and tested-commit freshness. `dev/audit/validation-matrix.py` passed against a fresh production build at commit `7e35a688da5e343d468f5ccda6650bac066b8223`. CI runs the browser matrix and uploads commit-keyed evidence. The published v0.6.0 Release workflow repeated the browser matrix and launched its signed APK in an API 35 emulator; that historical run did not prove native notification or sharing effects.
 
-**Current worktree harness and provisional run (2026-08-13):** Release configuration now builds a dedicated audit receiver and replaces the historical launch-only emulator step with `dev/audit/android-native-effects/run.sh`. The runner has an exact expected-commit guard, performs the AF-006 notification and AF-007 share-receiver assertions, and uploads `audit-android-native-effects-${{ github.sha }}` evidence. A finalized Expo config mod removes injected dev-scheme data from each dedicated audit intent filter, and a clean-prebuild regression proves that each audit filter contains exactly one `mibbeacon://localhost` exact path. The locally rebuilt signed release and receiver APKs passed the self-contained harness and produced the evidence described under AF-006/AF-007; it remains provisional only because the dirty worktree means its recorded base commit is not the final code candidate.
+**Current harness and exact run (2026-08-13):** Release configuration now builds a dedicated audit receiver and replaces the historical launch-only emulator step with `dev/audit/android-native-effects/run.sh`. The runner has an exact expected-commit and clean-worktree guard, performs the AF-006 notification and AF-007 share-receiver assertions, and uploads `audit-android-native-effects-${{ github.sha }}` evidence. A finalized Expo config mod removes injected dev-scheme data from each dedicated audit intent filter, and a clean-prebuild regression proves that each audit filter contains exactly one `mibbeacon://localhost` exact path. The signed release and receiver APKs built from `6c2b958` passed the self-contained harness and produced the retained evidence described under AF-006/AF-007.
 
 **Historical local Android availability (2026-07-21):** the original host check found no connected device and no emulator executable in `PATH`, so the July release workflow owned the launch-only APK check.
 
-**Current Android availability (2026-08-13):** `/home/facuarmo/Android/Sdk/emulator/emulator` is installed, AVDs are configured, and `adb` reported a running emulator for the provisional successful native-effects pass. The former environment blocker and the AF-006/AF-007 behavioral gaps are closed; only AF-009's exact-post-commit freshness rerun remains.
+**Current Android availability (2026-08-13):** `/home/facuarmo/Android/Sdk/emulator/emulator` is installed, AVDs are configured, and `adb` reported a running emulator for the successful exact-candidate native-effects pass. The former environment blocker and the AF-006/AF-007 behavioral gaps are closed.
 
-**Current revalidation status (2026-08-13): Open only for exact-code-commit evidence.** The fresh production browser report passes 58/58 scenarios, the versioned matrix passes 58/58 checks, the full suite passes 1,292 tests (1,288 passed and four intentionally skipped), and the hardened/rebuilt native harness passes both effects. The provisional reports still name base commit `be5fe80`, while the worktree contains the uncommitted implementation. They prove current behavior but not the final code commit. The historical published Release workflow established signed-APK installation and launch only; the current harness supersedes that behavioral limitation. Close AF-009 only after:
-
-- the accepted browser harness passes every declared route and viewport against the exact intended commit (or a documented reproducible dirty-tree digest before commit);
-- the evidence bundle contains no stale artifacts or route-identity false positives;
-- AF-006 and AF-007 assertions execute successfully against the exact candidate and produce an accepted evidence bundle; and
-- the committed CI/release configuration contains and validates those assertions, retained evidence is keyed to the tested SHA, and the already-published v0.6.0 workflow is not rerun.
+**Current revalidation status (2026-08-13): Resolved against implementation commit `6c2b958cf29d94e2396a56b20a394582f47fe601`.** The clean-worktree production browser report passes 58/58 scenarios, the versioned matrix passes 58/58 checks, the full suite passes 1,292 tests (1,288 passed and four intentionally skipped), and the signed/rebuilt native harness passes both effects. The browser and Android evidence name the exact implementation commit, contain no stale route failures, and retain portable checksums. The committed CI/release configuration validates those assertions and keys evidence to the tested SHA; the already-published v0.6.0 workflow was not rerun.
 
 **Acceptance criteria:**
 
 - [x] Browser checks cover mobile, tablet, desktop, breakpoint edges, and low-height landscape.
 - [x] Every primary workspace, including Live MIBs, is identified and visited directly.
 - [x] Checks validate horizontal and vertical bounds, hit-testing, occlusion, and last-control reachability.
-- [x] The current hardened Android harness verifies notification delivery and binary sharing provisionally; rerun it on the exact committed code candidate.
-- [ ] Final browser and native evidence is tied to the exact current candidate commit.
+- [x] The hardened Android harness verifies notification delivery and binary sharing against the exact implementation commit.
+- [x] Final browser and native evidence is tied to the exact implementation commit.
 
 ---
 
@@ -477,7 +472,7 @@ This prevents future features from silently bypassing the Settings rule.
 
 ### Evidence freshness rule (2026-08-13)
 
-Every final validation claim must identify the tested Git commit. The current local branch is three commits ahead of the released SHA, and the worktree is dirty, so the prior v0.6.0 evidence is historical rather than proof of the current candidate. Rerun the complete affected matrix after the intended audit changes are committed; until then, describe dirty-tree results as provisional and record a reproducible content digest.
+Every final validation claim identifies the tested Git commit. The prior v0.6.0 evidence remains historical rather than proof of this post-release candidate. The complete affected matrix was rerun against clean implementation commit `6c2b958cf29d94e2396a56b20a394582f47fe601`; the retained browser and native reports record that SHA, while this follow-up commit changes evidence and documentation only.
 
 - TypeScript typecheck passed.
 - Lint passed.
