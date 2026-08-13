@@ -38,6 +38,8 @@ describe('LiveMibSettingsController', () => {
     expect(source).toContain(
       '() => resolveLiveMibSettingsForScope(globalLiveState, agentLiveState)',
     );
+    expect(source).toContain('lastSyncedLiveSettings.current[liveScopeKey]');
+    expect(source).toContain('JSON.stringify(current) === JSON.stringify(next)');
     expect(liveSection).not.toContain('updateLiveSetting');
     expect(liveSection).not.toContain('agentOverrides.update');
   });

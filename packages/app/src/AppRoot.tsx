@@ -109,6 +109,7 @@ import {
   useActionRegistrySnapshot,
   useRegisteredActions,
 } from './action-registry-react';
+import { catalogFallbackActions } from './keyboard-action-catalog';
 import { acquireBrowserThemeFiles } from './theme-file-picker';
 import { prepareThemeImports } from './theme-import';
 import { PacketBootstrapCoordinator } from './packet-bootstrap-coordinator';
@@ -257,7 +258,11 @@ function ThemedAppRoot({
         lightTheme={lightTheme}
         darkTheme={darkTheme}
       >
-        <ActionRegistryProvider registry={actionRegistry} platform={actionPlatform}>
+        <ActionRegistryProvider
+          registry={actionRegistry}
+          platform={actionPlatform}
+          authorizeConfirmation={authorizeActionConfirmation}
+        >
           <ResponsiveAppRoot
             host={host}
             paletteHistoryStorage={paletteHistoryStorage}
@@ -480,6 +485,8 @@ function ResponsiveAppRoot({
     [executePaletteCommand, legacyPaletteCommands],
   );
   useRegisteredActions(staticActions);
+  const catalogFallbacks = useMemo(() => catalogFallbackActions(selectTab), [selectTab]);
+  useRegisteredActions(catalogFallbacks, -100);
   const registeredActions = useActionRegistrySnapshot();
   const paletteCommands = useMemo(
     () =>

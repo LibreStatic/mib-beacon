@@ -1,8 +1,6 @@
 export type ActionPlatform = 'web' | 'desktop' | 'native';
 
-export type ActionEnabledState =
-  | { value: true; reason?: never }
-  | { value: false; reason: string };
+export type ActionEnabledState = { value: true; reason?: never } | { value: false; reason: string };
 
 export interface AppAction {
   id: string;
@@ -32,9 +30,7 @@ export interface ActionShortcutBinding {
   actionId: string;
 }
 
-export type ActionConfirmationAuthorizer = (
-  action: AppAction,
-) => boolean | Promise<boolean>;
+export type ActionConfirmationAuthorizer = (action: AppAction) => boolean | Promise<boolean>;
 
 export class ActionUnavailableError extends Error {
   constructor(
@@ -64,10 +60,16 @@ interface RegisteredAction {
   action: AppAction;
   owner: symbol;
   generation: symbol;
+  priority: number;
+}
+
+export interface ActionRegistrationOptions {
+  /** Higher-priority owners temporarily override lower-priority fallback definitions. */
+  priority?: number;
 }
 
 export class ActionRegistry {
-  private actions = new Map<string, RegisteredAction>();
+  private registrations = new Map<string, RegisteredAction[]>();
   private readonly listeners = new Set<() => void>();
   private currentSnapshot: readonly AppAction[] = [];
 
@@ -75,37 +77,52 @@ export class ActionRegistry {
     return this.replaceMany(Symbol(action.id), [action]);
   }
 
-  replaceMany(owner: symbol, actions: readonly AppAction[]): () => void {
+  replaceMany(
+    owner: symbol,
+    actions: readonly AppAction[],
+    options: ActionRegistrationOptions = {},
+  ): () => void {
+    const priority = options.priority ?? 0;
+    if (!Number.isFinite(priority)) throw new Error('Action registration priority must be finite.');
     const ids = new Set<string>();
     for (const action of actions) {
       validateAction(action);
       if (ids.has(action.id)) throw new Error(`Duplicate action ID: ${action.id}`);
       ids.add(action.id);
-      const existing = this.actions.get(action.id);
-      if (existing && existing.owner !== owner) {
+      const existing = this.registrations
+        .get(action.id)
+        ?.find((entry) => entry.owner !== owner && entry.priority === priority);
+      if (existing) {
         throw new Error(`Duplicate action ID: ${action.id}`);
       }
     }
     const generation = Symbol(owner.description);
-    const next = new Map(
-      [...this.actions].filter(([, entry]) => entry.owner !== owner),
-    );
-    for (const action of actions) next.set(action.id, { action, owner, generation });
-    this.actions = next;
+    this.removeOwner(owner);
+    for (const action of actions) {
+      const entries = this.registrations.get(action.id) ?? [];
+      this.registrations.set(action.id, [...entries, { action, owner, generation, priority }]);
+    }
     this.refreshSnapshot();
     this.emit();
     return () => {
-      if (![...this.actions.values()].some((entry) => entry.generation === generation)) return;
-      this.actions = new Map(
-        [...this.actions].filter(([, entry]) => entry.generation !== generation),
-      );
+      if (
+        ![...this.registrations.values()].some((entries) =>
+          entries.some((entry) => entry.generation === generation),
+        )
+      )
+        return;
+      for (const [id, entries] of this.registrations) {
+        const remaining = entries.filter((entry) => entry.generation !== generation);
+        if (remaining.length) this.registrations.set(id, remaining);
+        else this.registrations.delete(id);
+      }
       this.refreshSnapshot();
       this.emit();
     };
   }
 
   get(id: string): AppAction | undefined {
-    return this.actions.get(id)?.action;
+    return this.currentRegistration(id)?.action;
   }
 
   snapshot(): readonly AppAction[] {
@@ -123,7 +140,7 @@ export class ActionRegistry {
     platform: ActionPlatform,
     authorizeConfirmation?: ActionConfirmationAuthorizer,
   ): Promise<void | boolean> {
-    const registration = this.actions.get(id);
+    const registration = this.currentRegistration(id);
     const action = registration?.action;
     if (!registration || !action || !action.platforms.includes(platform)) {
       throw new ActionUnavailableError(id, 'This action is not available on this platform.');
@@ -136,7 +153,7 @@ export class ActionRegistry {
       const confirmation = { ...action.confirmation };
       const authorized = await authorizeConfirmation?.(action);
       if (!authorized) throw new ActionConfirmationRequiredError(id);
-      const current = this.actions.get(id);
+      const current = this.currentRegistration(id);
       if (
         current !== registration ||
         current.action.execute !== execute ||
@@ -165,8 +182,29 @@ export class ActionRegistry {
   }
 
   private refreshSnapshot(): void {
-    this.currentSnapshot = [...this.actions.values()].map(({ action }) => action);
+    this.currentSnapshot = [...this.registrations.values()]
+      .map((entries) => highestPriority(entries)?.action)
+      .filter((action): action is AppAction => Boolean(action));
   }
+
+  private currentRegistration(id: string): RegisteredAction | undefined {
+    return highestPriority(this.registrations.get(id) ?? []);
+  }
+
+  private removeOwner(owner: symbol): void {
+    for (const [id, entries] of this.registrations) {
+      const remaining = entries.filter((entry) => entry.owner !== owner);
+      if (remaining.length) this.registrations.set(id, remaining);
+      else this.registrations.delete(id);
+    }
+  }
+}
+
+function highestPriority(entries: readonly RegisteredAction[]): RegisteredAction | undefined {
+  return entries.reduce<RegisteredAction | undefined>(
+    (highest, entry) => (!highest || entry.priority > highest.priority ? entry : highest),
+    undefined,
+  );
 }
 
 function sameConfirmation(
@@ -193,10 +231,7 @@ function validateAction(action: AppAction): void {
   }
 }
 
-export function resolveActionPlatform(
-  platformOs: string,
-  hasDesktopHost: boolean,
-): ActionPlatform {
+export function resolveActionPlatform(platformOs: string, hasDesktopHost: boolean): ActionPlatform {
   return platformOs === 'web' ? (hasDesktopHost ? 'desktop' : 'web') : 'native';
 }
 
@@ -240,7 +275,9 @@ export function assertActionExposureInvariants(
     for (const shortcutId of action.keyboard.shortcutIds ?? []) {
       const binding = bindingByShortcut.get(shortcutId);
       if (!binding) {
-        throw new Error(`Action ${action.id} declared shortcut ${shortcutId} with no matching binding.`);
+        throw new Error(
+          `Action ${action.id} declared shortcut ${shortcutId} with no matching binding.`,
+        );
       }
       if (binding.actionId !== action.id) {
         throw new Error(`Shortcut ${shortcutId} binding does not match action ${action.id}.`);

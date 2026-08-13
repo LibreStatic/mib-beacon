@@ -79,9 +79,10 @@ describe('release workflow output selection', () => {
     );
   });
 
-  it('launches the signed APK in an Android emulator without an external SNMP fixture', () => {
+  it('validates signed APK native effects in an Android emulator without an external SNMP fixture', () => {
     expect(workflow).toContain('reactivecircus/android-emulator-runner@v2');
-    expect(workflow).toContain('adb install -r');
+    expect(workflow).toContain('dev/audit/android-native-effects/run.sh');
+    expect(workflow).toContain('MIB_BEACON_AUDIT_COMMIT="${{ github.sha }}"');
     expect(workflow).not.toContain('Start Android SNMP fixture');
   });
 

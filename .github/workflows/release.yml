@@ -805,8 +805,9 @@ jobs:
           BUILD_AAB: ${{ needs.verify.outputs.aab }}
         run: |
           tasks=()
-          [[ "$BUILD_APK" == true ]] && tasks+=(assembleRelease)
-          [[ "$BUILD_AAB" == true ]] && tasks+=(bundleRelease)
+          [[ "$BUILD_APK" == true ]] && tasks+=(":app:assembleRelease")
+          [[ "$BUILD_APK" == true ]] && tasks+=(":native-effects-audit-receiver:assembleRelease")
+          [[ "$BUILD_AAB" == true ]] && tasks+=(":app:bundleRelease")
           ./gradlew "${tasks[@]}" --no-daemon \
             -Dorg.gradle.jvmargs='-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8'
       - name: Verify Android release signatures
@@ -851,7 +852,7 @@ jobs:
         run: >-
           node dev/verify-android-permissions.mjs
           apps/mobile/android/app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
-      - name: Launch signed APK in Android emulator
+      - name: Validate signed release APK native effects in Android emulator
         if: needs.verify.outputs.apk == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -860,13 +861,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            test -n "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
-            adb install -r "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
-            adb shell pm grant com.librestatic.mibbeacon android.permission.POST_NOTIFICATIONS
-            adb shell monkey -p com.librestatic.mibbeacon -c android.intent.category.LAUNCHER 1
-            sleep 8
-            adb shell pidof com.librestatic.mibbeacon
-            adb logcat -d '*:E' | tee android-emulator-errors.log
+            MIB_BEACON_AUDIT_COMMIT="${{ github.sha }}" dev/audit/android-native-effects/run.sh "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"
       - name: Scan Android application payloads
         shell: bash
         env:
@@ -877,6 +872,14 @@ jobs:
           [[ "$BUILD_APK" == true ]] && paths+=(apps/mobile/android/app/build/outputs/apk/release)
           [[ "$BUILD_AAB" == true ]] && paths+=(apps/mobile/android/app/build/outputs/bundle/release)
           node dev/scan-release-artifacts.mjs "${paths[@]}"
+      - name: Upload Android native-effects audit evidence
+        if: always() && needs.verify.outputs.apk == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-android-native-effects-${{ github.sha }}
+          path: docs/audits/android-native-effects/
+          if-no-files-found: warn
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: release-android

@@ -100,8 +100,7 @@ export function applyPaletteCommandEffect(
   else if (effect.kind === 'create-agent-profile') {
     context.navigate('liveMibs');
     context.createAgentProfile();
-  }
-  else if (effect.kind === 'show-shortcuts') context.showShortcuts();
+  } else if (effect.kind === 'show-shortcuts') context.showShortcuts();
   else if (effect.kind === 'new-window') context.newWindow?.();
   else if (effect.kind === 'prepare-query') {
     context.prepareQuery(effect.operation);
@@ -128,7 +127,7 @@ export type PaletteEntry =
       recent: true;
     };
 
-const STATIC_COMMANDS: readonly PaletteCommand[] = [
+export const STATIC_PALETTE_COMMANDS: readonly PaletteCommand[] = [
   {
     id: 'browse:focus-search',
     label: 'Focus Browse search',
@@ -224,14 +223,11 @@ export function getPaletteCommands(
     effect: { kind: 'navigate', tab: tab.key },
   }));
   return navigation.concat(
-    STATIC_COMMANDS.filter(({ id }) => canOpenWindow || id !== 'window:new'),
+    STATIC_PALETTE_COMMANDS.filter(({ id }) => canOpenWindow || id !== 'window:new'),
   );
 }
 
-export function filterPaletteCommands(
-  commands: readonly AppAction[],
-  query: string,
-): AppAction[] {
+export function filterPaletteCommands(commands: readonly AppAction[], query: string): AppAction[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return [...commands];
   return commands

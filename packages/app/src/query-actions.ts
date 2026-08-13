@@ -19,6 +19,24 @@ export type QueryActionId =
   | 'query:show-setup'
   | 'query:show-results';
 
+export const QUERY_ACTION_IDS: readonly QueryActionId[] = [
+  'query:prepare-get',
+  'query:prepare-get-next',
+  'query:prepare-get-bulk',
+  'query:prepare-walk',
+  'query:prepare-set',
+  'query:get',
+  'query:get-next',
+  'query:get-bulk',
+  'query:walk',
+  'query:stage-set',
+  'query:run-current',
+  'query:repeat',
+  'query:stop',
+  'query:show-setup',
+  'query:show-results',
+];
+
 export interface QueryActionContext {
   operation: QueryOperation;
   running: boolean;

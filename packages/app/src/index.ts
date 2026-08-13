@@ -23,6 +23,17 @@ export {
   type ActionShortcutBinding,
   type AppAction,
 } from './action-registry';
+export {
+  CONTEXTUAL_ACTION_CLASSIFICATIONS,
+  KEYBOARD_ACTION_CATALOG,
+  KEYBOARD_ACTION_IDS,
+  assertCatalogOwnerActions,
+  assertContextualActionClassifications,
+  keyboardAction,
+  type CatalogKeyboardActionId,
+  type ContextualActionClassification,
+  type KeyboardActionOwner,
+} from './keyboard-action-catalog';
 export { dispatchRegisteredAction } from './action-dispatch';
 export {
   THEME_IMPORT_LIMITS,

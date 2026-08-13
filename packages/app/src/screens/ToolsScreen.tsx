@@ -44,6 +44,11 @@ import {
 } from '../tools-persistent-collections';
 import { ToolsRefreshCoordinator } from '../tools-refresh-coordinator';
 import { patternPersistentCollectionsController } from '../pattern-persistent-collections';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 
 interface PingSummary {
   transmitted: number;
@@ -396,7 +401,7 @@ export function ToolsScreen({
       ),
     [patternSessions, selectedSeries],
   );
-  const startPattern = async () => {
+  const startPattern = useCallback(async () => {
     if (!ownsEngine()) return;
     if (!selectedSeries.length || patternHandle) return;
     try {
@@ -431,11 +436,25 @@ export function ToolsScreen({
     } catch (caught) {
       if (ownsEngine()) report(caught);
     }
-  };
-  const stopPattern = () => {
+  }, [
+    activeChartId,
+    ownsEngine,
+    patternCadence,
+    patternDuration,
+    patternEnd,
+    patternHandle,
+    patternMode,
+    patternName,
+    patternStart,
+    patternTraceColor,
+    patterns,
+    report,
+    selectedSeries,
+  ]);
+  const stopPattern = useCallback(() => {
     if (!patternHandle || patternStopping) return;
     void patterns.cancel(patternHandle, ownsEngine).catch(report);
-  };
+  }, [ownsEngine, patternHandle, patternStopping, patterns, report]);
   const visiblePorts = useMemo(
     () =>
       [...ports]
@@ -458,6 +477,269 @@ export function ToolsScreen({
   const persistentBlocked =
     persistentSnapshot.readiness.phase !== 'ready' ||
     ['error-reverted', 'uncertain', 'conflict'].includes(persistentSnapshot.phase);
+  const activeChartName = charts.find((chart) => chart.id === activeChartId)?.name;
+
+  const startDiscovery = useCallback(() => {
+    setDiscoveryResults([]);
+    const adhoc = communities
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return runToolStart(
+      'tools-discovery',
+      () =>
+        engine.tools.discovery.start({
+          target,
+          credentials: [
+            ...credentialIds.map((agentId) => ({
+              agentId,
+              label: agents.find((agent) => agent.id === agentId)?.name ?? agentId,
+            })),
+            ...adhoc.map((community, index) => ({
+              community,
+              label: `Community #${index + 1}`,
+            })),
+          ],
+          prePing: discoveryPrePing,
+        }),
+      (id) => engine.tools.discovery.cancel(id),
+      (handleId) => {
+        acceptedHandles.current.discovery = handleId;
+        setDiscoveryHandle(handleId);
+        setDiscoveryProgress('Starting…');
+      },
+    );
+  }, [agents, communities, credentialIds, discoveryPrePing, engine, runToolStart, target]);
+  const startCompare = useCallback(
+    () =>
+      runToolStart(
+        'tools-compare',
+        () =>
+          engine.tools.compare.start({
+            agentAId: compareA,
+            agentBId: compareB,
+            baseOid: compareOid,
+          }),
+        (id) => engine.tools.compare.cancel(id),
+        (id) => {
+          acceptedHandles.current.compare = id;
+          setCompareHandle(id);
+        },
+      ),
+    [compareA, compareB, compareOid, engine, runToolStart],
+  );
+  const startPorts = useCallback(
+    () =>
+      runToolStart(
+        'tools-ports',
+        () => engine.tools.ports.start(portAgent),
+        (id) => engine.tools.ports.cancel(id),
+        (id) => {
+          acceptedHandles.current.ports = id;
+          setPortHandle(id);
+        },
+      ),
+    [engine, portAgent, runToolStart],
+  );
+  const startReachability = useCallback(() => {
+    setReachLines([]);
+    setReachSummary(null);
+    return runToolStart(
+      'tools-reachability',
+      () =>
+        engine.tools.reachability.start({
+          kind: reachKind,
+          target: reachTarget,
+          count: Number(reachCount),
+          intervalMs: Number(reachInterval),
+        }),
+      (id) => engine.tools.reachability.cancel(id),
+      (id) => {
+        acceptedHandles.current.reach = id;
+        setReachHandle(id);
+      },
+    );
+  }, [engine, reachCount, reachInterval, reachKind, reachTarget, runToolStart]);
+
+  const reportActionError = useCallback((message: string) => setError(message), []);
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const toolActions = useMemo(
+    () => [
+      ...SECTIONS.map(({ key, label }) =>
+        keyboardAction(`tools:show-${key}`, `Show Tools ${label}`, 'Tools', () => setSection(key)),
+      ),
+      keyboardAction(
+        'tools:start-pattern',
+        patternMode === 'active' ? 'Start pattern trace' : 'Annotate pattern history',
+        'Tools',
+        startPattern,
+        {
+          enabled: !selectedSeries.length
+            ? { value: false, reason: 'Select at least one series first.' }
+            : patternHandle
+              ? { value: false, reason: 'A pattern trace is already running.' }
+              : patternBlocked
+                ? { value: false, reason: 'Pattern state is not ready for changes.' }
+                : { value: true },
+        },
+      ),
+      keyboardAction('tools:stop-pattern', 'Stop pattern trace', 'Tools', stopPattern, {
+        enabled:
+          patternHandle && !patternStopping && !patternBlocked
+            ? { value: true }
+            : { value: false, reason: 'No stoppable pattern trace is running.' },
+        confirmation: { kind: 'remote', title: 'Stop pattern trace?' },
+      }),
+      keyboardAction(
+        'tools:sample-now',
+        'Sample selected series now',
+        'Tools',
+        () => engine.tools.polls.sampleNow(selectedSeries).then(refresh),
+        {
+          enabled: selectedSeries.length
+            ? { value: true }
+            : { value: false, reason: 'Select at least one poll series first.' },
+        },
+      ),
+      keyboardAction(
+        'tools:save-chart',
+        'Save selected chart',
+        'Tools',
+        () =>
+          persistent.saveChart(
+            {
+              id: activeChartId ?? undefined,
+              name: activeChartName ?? `Chart ${new Date().toLocaleTimeString()}`,
+              seriesIds: selectedSeries,
+              hiddenPatternSessionIds,
+            },
+            ownsEngine,
+          ),
+        {
+          enabled: persistentBlocked
+            ? { value: false, reason: 'Saved Tools state is not ready for changes.' }
+            : selectedSeries.length
+              ? { value: true }
+              : { value: false, reason: 'Select at least one poll series first.' },
+        },
+      ),
+      keyboardAction('tools:start-discovery', 'Start discovery', 'Tools', startDiscovery, {
+        enabled: discoveryHandle
+          ? { value: false, reason: 'A discovery is already running.' }
+          : credentialIds.length || communities.trim()
+            ? { value: true }
+            : { value: false, reason: 'Choose a saved credential or enter a community first.' },
+      }),
+      keyboardAction('tools:start-compare', 'Start live comparison', 'Tools', startCompare, {
+        enabled: compareHandle
+          ? { value: false, reason: 'A live comparison is already running.' }
+          : compareA && compareB
+            ? { value: true }
+            : { value: false, reason: 'Choose two saved agents first.' },
+      }),
+      keyboardAction('tools:start-ports', 'Load interface table', 'Tools', startPorts, {
+        enabled: portHandle
+          ? { value: false, reason: 'An interface load is already running.' }
+          : portAgent
+            ? { value: true }
+            : { value: false, reason: 'Choose a saved agent first.' },
+      }),
+      keyboardAction(
+        'tools:start-reachability',
+        'Run reachability tool',
+        'Tools',
+        startReachability,
+        {
+          enabled: reachHandle
+            ? { value: false, reason: 'A reachability operation is already running.' }
+            : reachTarget.trim()
+              ? { value: true }
+              : { value: false, reason: 'Enter a host or address first.' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'tools:cancel-discovery',
+        'Cancel discovery',
+        'Tools',
+        () => (discoveryHandle ? engine.tools.discovery.cancel(discoveryHandle) : undefined),
+        {
+          enabled: discoveryHandle
+            ? { value: true }
+            : { value: false, reason: 'No discovery is running.' },
+          confirmation: { kind: 'remote', title: 'Cancel discovery?' },
+        },
+      ),
+      keyboardAction(
+        'tools:cancel-compare',
+        'Cancel live comparison',
+        'Tools',
+        () => (compareHandle ? engine.tools.compare.cancel(compareHandle) : undefined),
+        {
+          enabled: compareHandle
+            ? { value: true }
+            : { value: false, reason: 'No live comparison is running.' },
+          confirmation: { kind: 'remote', title: 'Cancel live comparison?' },
+        },
+      ),
+      keyboardAction(
+        'tools:cancel-ports',
+        'Cancel interface load',
+        'Tools',
+        () => (portHandle ? engine.tools.ports.cancel(portHandle) : undefined),
+        {
+          enabled: portHandle
+            ? { value: true }
+            : { value: false, reason: 'No interface load is running.' },
+          confirmation: { kind: 'remote', title: 'Cancel interface load?' },
+        },
+      ),
+      keyboardAction(
+        'tools:cancel-reachability',
+        'Cancel reachability tool',
+        'Tools',
+        () => (reachHandle ? engine.tools.reachability.cancel(reachHandle) : undefined),
+        {
+          enabled: reachHandle
+            ? { value: true }
+            : { value: false, reason: 'No reachability operation is running.' },
+          confirmation: { kind: 'remote', title: 'Cancel reachability operation?' },
+        },
+      ),
+    ],
+    [
+      activeChartId,
+      activeChartName,
+      communities,
+      compareA,
+      compareB,
+      credentialIds,
+      compareHandle,
+      discoveryHandle,
+      engine,
+      hiddenPatternSessionIds,
+      ownsEngine,
+      patternBlocked,
+      patternHandle,
+      patternMode,
+      patternStopping,
+      persistent,
+      persistentBlocked,
+      portAgent,
+      portHandle,
+      reachTarget,
+      reachHandle,
+      refresh,
+      startCompare,
+      startDiscovery,
+      selectedSeries,
+      startPattern,
+      startPorts,
+      startReachability,
+      stopPattern,
+    ],
+  );
+  useRegisteredCatalogActions('tools', toolActions);
 
   const choose = (current: string[], value: string, cap = Infinity) =>
     current.includes(value)
@@ -488,7 +770,7 @@ export function ToolsScreen({
             key={item.key}
             label={item.label}
             active={section === item.key}
-            onPress={() => setSection(item.key)}
+            onPress={() => void dispatchAction(`tools:show-${item.key}`)}
           />
         ))}
       </View>
@@ -669,7 +951,7 @@ export function ToolsScreen({
                   title={patternMode === 'active' ? 'Start pattern' : 'Annotate history'}
                   small
                   disabled={!selectedSeries.length || Boolean(patternHandle) || patternBlocked}
-                  onPress={() => void startPattern()}
+                  onPress={() => void dispatchAction('tools:start-pattern')}
                 />
                 {patternHandle ? (
                   <Button
@@ -677,7 +959,7 @@ export function ToolsScreen({
                     small
                     variant="danger"
                     disabled={patternStopping || patternBlocked}
-                    onPress={stopPattern}
+                    onPress={() => void dispatchAction('tools:stop-pattern')}
                   />
                 ) : null}
                 <Label tone="dim" size={10}>
@@ -792,30 +1074,14 @@ export function ToolsScreen({
                 <Button
                   title="Sample now"
                   small
-                  onPress={() =>
-                    void engine.tools.polls.sampleNow(selectedSeries).then(refresh).catch(report)
-                  }
+                  onPress={() => void dispatchAction('tools:sample-now')}
                 />
                 <Button
                   title="Save chart"
                   small
                   variant="ghost"
                   disabled={!selectedSeries.length || persistentBlocked}
-                  onPress={() =>
-                    void persistent
-                      .saveChart(
-                        {
-                          id: activeChartId ?? undefined,
-                          name:
-                            charts.find((chart) => chart.id === activeChartId)?.name ??
-                            `Chart ${new Date().toLocaleTimeString()}`,
-                          seriesIds: selectedSeries,
-                          hiddenPatternSessionIds,
-                        },
-                        ownsEngine,
-                      )
-                      .catch(report)
-                  }
+                  onPress={() => void dispatchAction('tools:save-chart')}
                 />
               </Row>
             </Card>
@@ -1044,46 +1310,13 @@ export function ToolsScreen({
                   disabled={
                     Boolean(discoveryHandle) || (!credentialIds.length && !communities.trim())
                   }
-                  onPress={() => {
-                    setDiscoveryResults([]);
-                    const adhoc = communities
-                      .split(',')
-                      .map((value) => value.trim())
-                      .filter(Boolean);
-                    void runToolStart(
-                      'tools-discovery',
-                      () =>
-                        engine.tools.discovery.start({
-                          target,
-                          credentials: [
-                            ...credentialIds.map((agentId) => ({
-                              agentId,
-                              label: agents.find((agent) => agent.id === agentId)?.name ?? agentId,
-                            })),
-                            ...adhoc.map((community, index) => ({
-                              community,
-                              label: `Community #${index + 1}`,
-                            })),
-                          ],
-                          prePing: discoveryPrePing,
-                        }),
-                      (id) => engine.tools.discovery.cancel(id),
-                      (handleId) => {
-                        acceptedHandles.current.discovery = handleId;
-                        setDiscoveryHandle(handleId);
-                        setDiscoveryProgress('Starting…');
-                      },
-                    );
-                  }}
+                  onPress={() => void dispatchAction('tools:start-discovery')}
                 />
                 <Button
                   title="Cancel"
                   variant="ghost"
                   disabled={!discoveryHandle}
-                  onPress={() =>
-                    discoveryHandle &&
-                    void engine.tools.discovery.cancel(discoveryHandle).catch(() => undefined)
-                  }
+                  onPress={() => void dispatchAction('tools:cancel-discovery')}
                 />
               </Row>
               <Label tone="dim">{discoveryProgress}</Label>
@@ -1189,31 +1422,13 @@ export function ToolsScreen({
                     <Button
                       title={compareHandle ? 'Comparing…' : 'Compare live walks'}
                       disabled={Boolean(compareHandle)}
-                      onPress={() =>
-                        void runToolStart(
-                          'tools-compare',
-                          () =>
-                            engine.tools.compare.start({
-                              agentAId: compareA,
-                              agentBId: compareB,
-                              baseOid: compareOid,
-                            }),
-                          (id) => engine.tools.compare.cancel(id),
-                          (id) => {
-                            acceptedHandles.current.compare = id;
-                            setCompareHandle(id);
-                          },
-                        )
-                      }
+                      onPress={() => void dispatchAction('tools:start-compare')}
                     />
                     <Button
                       title="Cancel"
                       variant="ghost"
                       disabled={!compareHandle}
-                      onPress={() =>
-                        compareHandle &&
-                        void engine.tools.compare.cancel(compareHandle).catch(() => undefined)
-                      }
+                      onPress={() => void dispatchAction('tools:cancel-compare')}
                     />
                   </Row>
                 </>
@@ -1299,26 +1514,13 @@ export function ToolsScreen({
                     <Button
                       title={portHandle ? 'Loading…' : 'Load ifTable / ifXTable'}
                       disabled={Boolean(portHandle)}
-                      onPress={() =>
-                        void runToolStart(
-                          'tools-ports',
-                          () => engine.tools.ports.start(portAgent),
-                          (id) => engine.tools.ports.cancel(id),
-                          (id) => {
-                            acceptedHandles.current.ports = id;
-                            setPortHandle(id);
-                          },
-                        )
-                      }
+                      onPress={() => void dispatchAction('tools:start-ports')}
                     />
                     <Button
                       title="Cancel"
                       variant="ghost"
                       disabled={!portHandle}
-                      onPress={() =>
-                        portHandle &&
-                        void engine.tools.ports.cancel(portHandle).catch(() => undefined)
-                      }
+                      onPress={() => void dispatchAction('tools:cancel-ports')}
                     />
                   </Row>
                   <Row style={styles.wrap}>
@@ -1480,34 +1682,13 @@ export function ToolsScreen({
               <Button
                 title={reachHandle ? 'Running…' : 'Run'}
                 disabled={Boolean(reachHandle)}
-                onPress={() => {
-                  setReachLines([]);
-                  setReachSummary(null);
-                  void runToolStart(
-                    'tools-reachability',
-                    () =>
-                      engine.tools.reachability.start({
-                        kind: reachKind,
-                        target: reachTarget,
-                        count: Number(reachCount),
-                        intervalMs: Number(reachInterval),
-                      }),
-                    (id) => engine.tools.reachability.cancel(id),
-                    (id) => {
-                      acceptedHandles.current.reach = id;
-                      setReachHandle(id);
-                    },
-                  );
-                }}
+                onPress={() => void dispatchAction('tools:start-reachability')}
               />
               <Button
                 title="Cancel"
                 variant="ghost"
                 disabled={!reachHandle}
-                onPress={() =>
-                  reachHandle &&
-                  void engine.tools.reachability.cancel(reachHandle).catch(() => undefined)
-                }
+                onPress={() => void dispatchAction('tools:cancel-reachability')}
               />
             </Row>
             {reachSummary ? (

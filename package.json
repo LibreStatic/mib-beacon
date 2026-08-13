@@ -37,6 +37,7 @@
     "audit:linux-packages": "dev/audit/linux-package-smoke.sh",
     "audit:flatpak-interactive": "python3 dev/audit/flatpak-interactive-smoke.py",
     "audit:live-resolver": "tsx dev/audit/live-resolver-sources.ts --output docs/audits/live-resolver-sources.json",
+    "audit:ui-browser": "python3 dev/audit/ui-browser-audit.py",
     "verify:release-metadata": "vitest run tests/release-identity.test.ts",
     "spike:engine": "pnpm --filter @mibbeacon/core spike",
     "corpus:fetch": "tsx dev/corpus/fetch-corpus.ts",

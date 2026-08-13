@@ -25,8 +25,17 @@ def git_commit() -> str:
 
 def assert_commit_freshness(commit: str) -> None:
     expected = os.environ.get("MIB_BEACON_AUDIT_COMMIT") or os.environ.get("GITHUB_SHA")
-    if expected and commit != expected:
+    if not expected:
+        return
+    if commit != expected:
         raise AssertionError(f"tested commit {commit} does not match expected {expected}")
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=ROOT,
+        text=True,
+    )
+    if status:
+        raise AssertionError("cannot attest MIB_BEACON_AUDIT_COMMIT from a dirty worktree")
 
 
 def visible_control_failures(page: Page) -> list[str]:

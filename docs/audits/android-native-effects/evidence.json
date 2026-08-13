@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "testedCommit": "be5fe8088a12dc1e22bc97464cd3d88603231839",
+  "releaseApkSha256": "1b1bb4564be74a13671f81c5d67c5e629f06bb8092697949dd5640cedb923140",
+  "receiverApkSha256": "628cf4b06511efb5663d336f39fe4b358086c4a8110237e61077eedd6ce74953",
+  "notification": {
+    "package": "com.librestatic.mibbeacon",
+    "title": "MIB Beacon native adapter audit",
+    "body": "Release notification delivery verified.",
+    "authoritativeSource": "dumpsys notification --noredact",
+    "delivered": true,
+    "hidden": false,
+    "intercepted": false
+  },
+  "pngShare": {
+    "receiverPackage": "com.librestatic.mibbeacon.auditreceiver",
+    "action": "android.intent.action.SEND",
+    "mimeType": "image/png",
+    "fileName": "mib-beacon-native-adapter-audit.png",
+    "bytes": 68,
+    "sha256": "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+    "readGrant": true,
+    "pngSignature": true,
+    "decodable": true
+  }
+}

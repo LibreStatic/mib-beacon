@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   View,
@@ -56,6 +56,11 @@ import { canUseBrowserEventTarget, isSearchFocusShortcut } from '../browser-shor
 import { BROWSE_TITLE } from '../navigation';
 import { replaceRouteForTab } from '../routes';
 import { flattenVisibleTree, getTreeDisclosureVisual, getTreeRowBackground } from './browse-tree';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 
 export function BrowseScreen({
   info = null,
@@ -85,6 +90,79 @@ export function BrowseScreen({
   const [catalogDrawerOpen, setCatalogDrawerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [contextNode, setContextNode] = useState<{ oid: string; name: string } | null>(null);
+
+  const reportActionError = useCallback((message: string) => {
+    useAppStore.getState().pushToast({ tone: 'error', message });
+  }, []);
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const refreshTree = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      useAppStore.getState().clearChildrenCache();
+      await Promise.all([refreshModules(engine, ownsEngine), loadChildren(engine, '', ownsEngine)]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [engine, ownsEngine]);
+  const browseActions = useMemo(
+    () => [
+      keyboardAction(
+        'browse:clear-module-focus',
+        'Show all MIB modules',
+        'Browse',
+        () => clearModuleFocus(engine, ownsEngine),
+        {
+          enabled: moduleFocus
+            ? { value: true }
+            : { value: false, reason: 'Browse is already showing every loaded MIB.' },
+        },
+      ),
+      keyboardAction('browse:refresh', 'Refresh MIB catalog', 'Browse', refreshTree, {
+        enabled: refreshing
+          ? { value: false, reason: 'The MIB catalog is already refreshing.' }
+          : { value: true },
+      }),
+      keyboardAction(
+        'browse:open-selected-live',
+        'Open selected object in Live MIBs',
+        'Browse',
+        () => {
+          if (selected) openLiveMibScope(selected.oid);
+        },
+        {
+          enabled: selected
+            ? { value: true }
+            : { value: false, reason: 'Select a MIB object first.' },
+        },
+      ),
+      keyboardAction(
+        'browse:show-console',
+        'Show SNMP operation console',
+        'Browse',
+        () => useAppStore.getState().setBrowserConsoleOpen(true),
+        {
+          enabled: !unified
+            ? { value: false, reason: 'The embedded operation console is unavailable here.' }
+            : consoleOpen
+              ? { value: false, reason: 'The operation console is already open.' }
+              : { value: true },
+        },
+      ),
+      keyboardAction(
+        'browse:hide-console',
+        'Hide SNMP operation console',
+        'Browse',
+        () => useAppStore.getState().setBrowserConsoleOpen(false),
+        {
+          enabled: consoleOpen
+            ? { value: true }
+            : { value: false, reason: 'The operation console is already closed.' },
+        },
+      ),
+    ],
+    [consoleOpen, engine, moduleFocus, ownsEngine, refreshTree, refreshing, selected, unified],
+  );
+  useRegisteredCatalogActions('browse', browseActions);
 
   const rows = useMemo(() => flattenVisibleTree(cache, expanded), [cache, expanded]);
 
@@ -151,16 +229,6 @@ export function BrowseScreen({
           },
         }
       : {};
-  const refreshTree = async () => {
-    setRefreshing(true);
-    try {
-      useAppStore.getState().clearChildrenCache();
-      await Promise.all([refreshModules(engine, ownsEngine), loadChildren(engine, '', ownsEngine)]);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const navigator = (
     <View style={[styles.navigator, { borderRightColor: t.border }]}>
       {moduleFocus ? (
@@ -188,7 +256,7 @@ export function BrowseScreen({
             title="All MIBs"
             small
             variant="ghost"
-            onPress={() => void clearModuleFocus(engine, ownsEngine)}
+            onPress={() => void dispatchAction('browse:clear-module-focus')}
           />
         </View>
       ) : null}
@@ -278,7 +346,7 @@ export function BrowseScreen({
         <FlatList
           data={rows}
           refreshing={refreshing}
-          onRefresh={() => void refreshTree()}
+          onRefresh={() => void dispatchAction('browse:refresh')}
           keyExtractor={(r) => r.node.oid}
           style={styles.tree}
           ListEmptyComponent={
@@ -450,7 +518,7 @@ export function BrowseScreen({
               variant="ghost"
               onPress={() =>
                 selected
-                  ? openLiveMibScope(selected.oid)
+                  ? void dispatchAction('browse:open-selected-live')
                   : (() => {
                       useAppStore.getState().setTab('liveMibs');
                       replaceRouteForTab('liveMibs');
@@ -498,7 +566,7 @@ export function BrowseScreen({
                   title="Close"
                   small
                   variant="ghost"
-                  onPress={() => useAppStore.getState().setBrowserConsoleOpen(false)}
+                  onPress={() => void dispatchAction('browse:hide-console')}
                 />
               </View>
               <QueryScreen info={info} embedded />
@@ -597,7 +665,7 @@ export function BrowseScreen({
             title="Hide console"
             small
             variant="ghost"
-            onPress={() => useAppStore.getState().setBrowserConsoleOpen(false)}
+            onPress={() => void dispatchAction('browse:hide-console')}
           />
         </View>
         <QueryScreen info={info} embedded />

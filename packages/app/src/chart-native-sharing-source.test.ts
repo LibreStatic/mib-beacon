@@ -18,11 +18,13 @@ describe('native chart PNG sharing adapter', () => {
 
   it('writes Android chart PNGs to cache with image/png metadata before sharing', () => {
     const mobileSource = fs.readFileSync('apps/mobile/App.tsx', 'utf8');
+    const nativeHostSource = fs.readFileSync('apps/mobile/src/native-host.ts', 'utf8');
 
-    expect(mobileSource).toContain('async shareChartPng(capture)');
-    expect(mobileSource).toContain("Buffer.from(capture.base64, 'base64')");
-    expect(mobileSource).toContain("mimeType: 'image/png'");
-    expect(mobileSource).toContain('capture.fileName');
-    expect(mobileSource).toContain('file.delete()');
+    expect(mobileSource).toContain('shareChartPng: shareNativeChartPng');
+    expect(nativeHostSource).toContain('export async function shareNativeChartPng(capture');
+    expect(nativeHostSource).toContain("Buffer.from(capture.base64, 'base64')");
+    expect(nativeHostSource).toContain("capture.mimeType ?? 'image/png'");
+    expect(nativeHostSource).toContain('capture.fileName');
+    expect(nativeHostSource).toContain('file.delete()');
   });
 });

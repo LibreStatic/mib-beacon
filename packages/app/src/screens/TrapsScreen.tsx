@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { View, Pressable, FlatList, StyleSheet, Share, ScrollView } from 'react-native';
 import {
@@ -48,6 +48,11 @@ import {
   type TrapPersistentCollectionsSnapshot,
 } from '../trap-persistent-collections';
 import { buildTrapV3UserDraft, type TrapCredentialIntent } from '../trap-v3-user-draft';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction, type CatalogKeyboardActionId } from '../keyboard-action-catalog';
 
 const LEVELS: SecurityLevel[] = ['noAuthNoPriv', 'authNoPriv', 'authPriv'];
 const AUTHS: AuthProtocol[] = ['md5', 'sha', 'sha256', 'sha512'];
@@ -59,6 +64,12 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
   const t = useTheme();
   const { supportsSplitView } = useResponsiveLayout();
   const mode = useAppStore((s) => s.trapMode);
+  const receiver = useAppStore((s) => s.receiver);
+  const records = useAppStore((s) => s.records);
+  const [actionRequest, setActionRequest] = useState<{
+    id: CatalogKeyboardActionId;
+    sequence: number;
+  } | null>(null);
   const controller = useMemo(
     () => trapPersistentCollectionsController(engine, ownsEngine),
     [engine, ownsEngine],
@@ -72,6 +83,125 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
     controller.activate();
     void controller.load().catch(() => undefined);
   }, [controller]);
+  const requestAction = useCallback((id: CatalogKeyboardActionId) => {
+    setActionRequest((current) => ({ id, sequence: (current?.sequence ?? 0) + 1 }));
+  }, []);
+  const consumeActionRequest = useCallback((sequence: number) => {
+    setActionRequest((current) => (current?.sequence === sequence ? null : current));
+  }, []);
+  const reportActionError = useCallback(
+    (message: string) => useAppStore.getState().pushToast({ tone: 'error', message }),
+    [],
+  );
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const hasRecords = records.length > 0;
+  const trapActions = useMemo(
+    () => [
+      keyboardAction(
+        'traps:toggle-receiver',
+        receiver.running ? 'Stop Trap receiver' : 'Start Trap receiver',
+        'Traps',
+        () => requestAction('traps:toggle-receiver'),
+        {
+          enabled:
+            mode === 'receive'
+              ? { value: true }
+              : { value: false, reason: 'Open Trap receiver mode first.' },
+          confirmation: receiver.running
+            ? {
+                kind: 'remote',
+                title: 'Stop Trap receiver?',
+                description: 'Incoming notifications will no longer be captured.',
+              }
+            : { kind: 'none' },
+        },
+      ),
+      keyboardAction(
+        'traps:apply-filter',
+        'Apply Trap filter',
+        'Traps',
+        () => requestAction('traps:apply-filter'),
+        {
+          enabled:
+            mode === 'receive'
+              ? { value: true }
+              : { value: false, reason: 'Open Trap receiver mode first.' },
+        },
+      ),
+      keyboardAction(
+        'traps:reset-filter',
+        'Reset Trap filter',
+        'Traps',
+        () => requestAction('traps:reset-filter'),
+        {
+          enabled:
+            mode === 'receive'
+              ? { value: true }
+              : { value: false, reason: 'Open Trap receiver mode first.' },
+        },
+      ),
+      ...(['csv', 'json'] as const).map((format) =>
+        keyboardAction(
+          `traps:export-${format}`,
+          `Export traps as ${format.toUpperCase()}`,
+          'Traps',
+          () => requestAction(`traps:export-${format}`),
+          {
+            enabled:
+              mode !== 'receive'
+                ? { value: false, reason: 'Open Trap receiver mode first.' }
+                : hasRecords
+                  ? { value: true }
+                  : { value: false, reason: 'There are no captured traps to export.' },
+            glyph: '⇩',
+          },
+        ),
+      ),
+      keyboardAction(
+        'traps:compose',
+        'Compose Trap notification',
+        'Traps',
+        () => {
+          useAppStore.getState().setTrapMode('send');
+          useAppStore.getState().setTrapComposerOpen(true);
+        },
+        { glyph: '↗' },
+      ),
+      keyboardAction(
+        'traps:refresh',
+        'Refresh captured traps',
+        'Traps',
+        () => requestAction('traps:refresh'),
+        {
+          enabled:
+            mode === 'receive'
+              ? { value: true }
+              : { value: false, reason: 'Open Trap receiver mode first.' },
+        },
+      ),
+      keyboardAction(
+        'traps:clear-capture',
+        'Clear captured traps',
+        'Traps',
+        () => requestAction('traps:clear-capture'),
+        {
+          enabled:
+            mode !== 'receive'
+              ? { value: false, reason: 'Open Trap receiver mode first.' }
+              : hasRecords
+                ? { value: true }
+                : { value: false, reason: 'There are no captured traps to clear.' },
+          confirmation: {
+            kind: 'destructive',
+            title: 'Clear captured traps?',
+            description: 'Captured notifications from the current session will be removed.',
+          },
+        },
+      ),
+    ],
+    [hasRecords, mode, receiver.running, requestAction],
+  );
+  useRegisteredCatalogActions('traps', trapActions);
   return (
     <View style={styles.root}>
       {supportsSplitView ? (
@@ -106,9 +236,19 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
         </Row>
       </View>
       {mode === 'receive' ? (
-        <ReceiveWorkspace controller={controller} collection={collection} />
+        <ReceiveWorkspace
+          controller={controller}
+          collection={collection}
+          actionRequest={actionRequest}
+          onActionRequestConsumed={consumeActionRequest}
+          executeAction={dispatchAction}
+        />
       ) : (
-        <SendWorkspace controller={controller} collection={collection} />
+        <SendWorkspace
+          controller={controller}
+          collection={collection}
+          executeAction={dispatchAction}
+        />
       )}
       <TrapComposerDialog info={info} />
     </View>
@@ -116,7 +256,6 @@ export function TrapsScreen({ info }: { info: EngineInfo | null }) {
 }
 
 function TrapCaptureTools({
-  records,
   query,
   setQuery,
   applyQuery,
@@ -128,8 +267,8 @@ function TrapCaptureTools({
   controller,
   collection,
   ownsEngine,
+  executeAction,
 }: {
-  records: TrapRecord[];
   query: TrapQuery;
   setQuery: (query: TrapQuery) => void;
   applyQuery: (query?: TrapQuery) => Promise<void>;
@@ -141,6 +280,7 @@ function TrapCaptureTools({
   controller: TrapPersistentCollectionsController;
   collection: TrapPersistentCollectionsSnapshot;
   ownsEngine: () => boolean;
+  executeAction: (actionId: string) => Promise<boolean>;
 }) {
   const [userName, setUserName] = useState('');
   const [userLevel, setUserLevel] = useState<SecurityLevel>('noAuthNoPriv');
@@ -171,11 +311,6 @@ function TrapCaptureTools({
           (privIntent === 'clear' || (privIntent === 'retain' && !selectedV3User?.hasPrivKey))
         ? 'This security level requires a privacy key; choose Replace.'
         : null;
-  const share = (format: 'csv' | 'json') =>
-    void Share.share({
-      message: serializeTraps(records, format),
-      title: `mibbeacon-traps.${format}`,
-    }).catch(() => undefined);
   return (
     <View style={styles.captureToolStack}>
       <Card style={styles.card}>
@@ -286,15 +421,25 @@ function TrapCaptureTools({
           />
         </Row>
         <Row style={styles.wrap}>
-          <Button title="Apply" small onPress={() => void applyQuery().catch(() => undefined)} />
+          <Button title="Apply" small onPress={() => void executeAction('traps:apply-filter')} />
           <Button
             title="Reset"
             small
             variant="ghost"
-            onPress={() => void applyQuery({}).catch(() => undefined)}
+            onPress={() => void executeAction('traps:reset-filter')}
           />
-          <Button title="CSV" small variant="ghost" onPress={() => share('csv')} />
-          <Button title="JSON" small variant="ghost" onPress={() => share('json')} />
+          <Button
+            title="CSV"
+            small
+            variant="ghost"
+            onPress={() => void executeAction('traps:export-csv')}
+          />
+          <Button
+            title="JSON"
+            small
+            variant="ghost"
+            onPress={() => void executeAction('traps:export-json')}
+          />
         </Row>
         <Row style={styles.wrap}>
           <Field label="Saved filter name" value={filterName} onChangeText={setFilterName} />
@@ -631,9 +776,15 @@ function TrapCaptureTools({
 function ReceiveWorkspace({
   controller,
   collection,
+  actionRequest,
+  onActionRequestConsumed,
+  executeAction,
 }: {
   controller: TrapPersistentCollectionsController;
   collection: TrapPersistentCollectionsSnapshot;
+  actionRequest: { id: CatalogKeyboardActionId; sequence: number } | null;
+  onActionRequestConsumed: (sequence: number) => void;
+  executeAction: (actionId: string) => Promise<boolean>;
 }) {
   const engine = useEngine();
   const ownsEngine = useEngineOwnership();
@@ -727,6 +878,28 @@ function ReceiveWorkspace({
       if (ownsEngine()) setRefreshing(false);
     }
   };
+  useEffect(() => {
+    if (!actionRequest) return;
+    if (actionRequest.id === 'traps:toggle-receiver') void onToggle();
+    else if (actionRequest.id === 'traps:apply-filter') void applyQuery().catch(() => undefined);
+    else if (actionRequest.id === 'traps:reset-filter') void applyQuery({}).catch(() => undefined);
+    else if (actionRequest.id === 'traps:export-csv')
+      void Share.share({
+        message: serializeTraps(records, 'csv'),
+        title: 'mibbeacon-traps.csv',
+      }).catch(() => undefined);
+    else if (actionRequest.id === 'traps:export-json')
+      void Share.share({
+        message: serializeTraps(records, 'json'),
+        title: 'mibbeacon-traps.json',
+      }).catch(() => undefined);
+    else if (actionRequest.id === 'traps:refresh') void refreshRecords().catch(() => undefined);
+    else if (actionRequest.id === 'traps:clear-capture') void clearCapture().catch(() => undefined);
+    onActionRequestConsumed(actionRequest.sequence);
+    // The action request sequence is the explicit event boundary. Handlers intentionally use the
+    // latest workspace draft/record state captured by this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionRequest]);
   const receiverCard = (
     <Card style={styles.card}>
       <View style={styles.cardTitle}>
@@ -759,7 +932,7 @@ function ReceiveWorkspace({
             }
             variant={receiver.running ? 'danger' : 'primary'}
             disabled={Boolean(receiverPending)}
-            onPress={() => void onToggle()}
+            onPress={() => void executeAction('traps:toggle-receiver')}
           />
         </View>
       </Row>
@@ -801,7 +974,6 @@ function ReceiveWorkspace({
   );
   const toolsCard = (
     <TrapCaptureTools
-      records={records}
       query={query}
       setQuery={setQuery}
       applyQuery={applyQuery}
@@ -813,6 +985,7 @@ function ReceiveWorkspace({
       controller={controller}
       collection={collection}
       ownsEngine={ownsEngine}
+      executeAction={executeAction}
     />
   );
 
@@ -857,7 +1030,7 @@ function ReceiveWorkspace({
                 }
                 accessibilityState={{ disabled: clearPending || pendingRecordIds.length > 0 }}
                 disabled={clearPending || pendingRecordIds.length > 0}
-                onPress={() => void clearCapture().catch(() => undefined)}
+                onPress={() => void executeAction('traps:clear-capture')}
                 style={styles.clearAction}
               >
                 <Text style={{ color: t.accent, fontSize: 11, fontWeight: '700' }}>
@@ -874,7 +1047,7 @@ function ReceiveWorkspace({
             style={styles.captureList}
             data={records}
             refreshing={refreshing}
-            onRefresh={() => void refreshRecords().catch(() => undefined)}
+            onRefresh={() => void executeAction('traps:refresh')}
             keyExtractor={(record) => record.id}
             ListEmptyComponent={
               <EmptyState
@@ -1149,9 +1322,11 @@ function TrapDetail({
 function SendWorkspace({
   controller,
   collection,
+  executeAction,
 }: {
   controller: TrapPersistentCollectionsController;
   collection: TrapPersistentCollectionsSnapshot;
+  executeAction: (actionId: string) => Promise<boolean>;
 }) {
   const engine = useEngine();
   const ownsEngine = useEngineOwnership();
@@ -1164,7 +1339,6 @@ function SendWorkspace({
   const agentProfiles = useAppStore((s) => s.agentProfiles);
   const notificationAgentId = useAppStore((s) => s.notificationAgentId);
   const [presetName, setPresetName] = useState('');
-  const openComposer = () => useAppStore.getState().setTrapComposerOpen(true);
   const destinationAgent = agentProfiles.find((profile) => profile.id === notificationAgentId);
   const destinationSummary = destinationAgent
     ? `Saved agent · ${destinationAgent.name}`
@@ -1200,7 +1374,7 @@ function SendWorkspace({
               <Button
                 title={busy ? 'Transmitting…' : 'Compose trap'}
                 disabled={busy}
-                onPress={openComposer}
+                onPress={() => void executeAction('traps:compose')}
               />
             </Row>
             {error ? <Label tone="error">{error}</Label> : null}

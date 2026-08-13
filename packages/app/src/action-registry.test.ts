@@ -146,13 +146,11 @@ describe('ActionRegistry', () => {
 
   it('runtime-validates discriminated enabled states including JavaScript callers', () => {
     const registry = new ActionRegistry();
+    expect(() => registry.register(action({ enabled: { value: false, reason: '   ' } }))).toThrow(
+      /disabled action.*nonblank reason/i,
+    );
     expect(() =>
-      registry.register(action({ enabled: { value: false, reason: '   ' } })),
-    ).toThrow(/disabled action.*nonblank reason/i);
-    expect(() =>
-      registry.register(
-        action({ enabled: { value: true, reason: 'should not exist' } as never }),
-      ),
+      registry.register(action({ enabled: { value: true, reason: 'should not exist' } as never })),
     ).toThrow(/enabled action.*must not have a reason/i);
   });
 
@@ -187,6 +185,64 @@ describe('ActionRegistry', () => {
     ).toThrow(/duplicate action id/i);
     expect(registry.snapshot()).toBe(snapshot);
     expect(registry.get('new:valid')).toBeUndefined();
+  });
+
+  it('atomically rejects a same-priority duplicate before replacing the current owner', () => {
+    const registry = new ActionRegistry();
+    const owner = Symbol('owner');
+    const retained = action({ id: 'owner:retained' });
+    registry.replaceMany(owner, [retained], { priority: 100 });
+    registry.replaceMany(Symbol('peer'), [action({ id: 'peer:duplicate' })], {
+      priority: 100,
+    });
+    const snapshot = registry.snapshot();
+
+    expect(() =>
+      registry.replaceMany(owner, [action({ id: 'owner:new' }), action({ id: 'peer:duplicate' })], {
+        priority: 100,
+      }),
+    ).toThrow(/duplicate action id/i);
+    expect(registry.snapshot()).toBe(snapshot);
+    expect(registry.get(retained.id)).toBe(retained);
+    expect(registry.get('owner:new')).toBeUndefined();
+  });
+
+  it('rejects non-finite priorities before mutating registrations', () => {
+    const registry = new ActionRegistry();
+    const retained = action();
+    registry.register(retained);
+    const snapshot = registry.snapshot();
+    expect(() =>
+      registry.replaceMany(Symbol('invalid'), [action({ id: 'invalid:priority' })], {
+        priority: Number.NaN,
+      }),
+    ).toThrow(/priority must be finite/i);
+    expect(registry.snapshot()).toBe(snapshot);
+  });
+
+  it('restores a lower-priority fallback and invalidates pending confirmation on owner cleanup', async () => {
+    const registry = new ActionRegistry();
+    const fallback = action({ id: 'route:action', label: 'Open route' });
+    registry.replaceMany(Symbol('fallback'), [fallback], { priority: -100 });
+    let resolveAuthorization: (approved: boolean) => void = () => undefined;
+    const active = action({
+      id: fallback.id,
+      label: 'Run action',
+      confirmation: { kind: 'remote', title: 'Run?' },
+    });
+    const leaveRoute = registry.replaceMany(Symbol('screen'), [active], { priority: 100 });
+    expect(registry.get(fallback.id)).toBe(active);
+
+    const execution = registry.execute(
+      fallback.id,
+      'web',
+      () => new Promise<boolean>((resolve) => (resolveAuthorization = resolve)),
+    );
+    leaveRoute();
+    expect(registry.get(fallback.id)).toBe(fallback);
+    resolveAuthorization(true);
+
+    await expect(execution).rejects.toBeInstanceOf(ActionRegistrationChangedError);
   });
 
   it('keeps persistent actions across simulated screen owner changes and refreshes state', async () => {

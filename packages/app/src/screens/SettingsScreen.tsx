@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -65,6 +65,11 @@ import {
   type SettingsSectionId,
   type SettingsSectionOffsets,
 } from '../settings-navigation';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 import { acquireBrowserThemeFiles } from '../theme-file-picker';
 import { prepareThemeImports } from '../theme-import';
 import {
@@ -386,14 +391,17 @@ export function SettingsScreen({
         : resolverDraft.enabled
           ? { text: 'ONLINE', color: t.ok }
           : { text: 'DISABLED', color: t.textDim };
-  const resolverTransport = () => ({
-    write: (value: typeof resolverDraft) => engine.resolver.settings.update(value),
-    read: () => engine.resolver.settings.get(),
-  });
+  const resolverTransport = useCallback(
+    () => ({
+      write: (value: typeof resolverDraft) => engine.resolver.settings.update(value),
+      read: () => engine.resolver.settings.get(),
+    }),
+    [engine],
+  );
   const updatePreferenceState = updatePreferenceController.get();
   const updatePreferenceReadiness = updatePreferenceController.readiness();
   const automaticChecks = updatePreferenceController.display();
-  const updatePreferenceTransport = () => {
+  const updatePreferenceTransport = useCallback(() => {
     const adapter = updateLifetime.adapter;
     return {
       write: async (enabled: boolean) =>
@@ -415,29 +423,38 @@ export function SettingsScreen({
             )
           : null,
     };
-  };
-  const runUpdateStatusAction = (action: () => Promise<HostUpdateStatus | null>): void => {
-    void updateStatusCoordinator
-      .run(action, (status) => status)
-      .catch((cause) => {
-        updateStatusCoordinator.event({
-          phase: 'error',
-          currentVersion: updateStatus?.currentVersion ?? RELEASE_INFO.version,
-          message: cause instanceof Error ? cause.message : String(cause),
+  }, [updateLifetime.adapter, updateStatusCoordinator]);
+  const runUpdateStatusAction = useCallback(
+    (action: () => Promise<HostUpdateStatus | null>): void => {
+      void updateStatusCoordinator
+        .run(action, (status) => status)
+        .catch((cause) => {
+          updateStatusCoordinator.event({
+            phase: 'error',
+            currentVersion: updateStatus?.currentVersion ?? RELEASE_INFO.version,
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
         });
-      });
-  };
+    },
+    [updateStatus?.currentVersion, updateStatusCoordinator],
+  );
   const packetRetentionState = packetRetentionController.get();
   const packetRetentionReadiness = packetRetentionController.readiness();
   const packetRetentionValidation = packetRetentionController.validation();
+  const packetRetentionValidationReason = packetRetentionValidation.valid
+    ? null
+    : packetRetentionValidation.reason;
   const packetRetention = packetRetentionController.displayText();
   const authoritativePacketStatus = packetRetentionController.status();
   const packetStatusOperation = packetRetentionController.statusOperation();
-  const packetRetentionTransport = () => ({
-    write: (retentionMiB: number) =>
-      packetRetentionLifetime.engine.packets.updateSettings({ retentionMiB }),
-    read: () => packetRetentionLifetime.engine.packets.status(),
-  });
+  const packetRetentionTransport = useCallback(
+    () => ({
+      write: (retentionMiB: number) =>
+        packetRetentionLifetime.engine.packets.updateSettings({ retentionMiB }),
+      read: () => packetRetentionLifetime.engine.packets.status(),
+    }),
+    [packetRetentionLifetime.engine],
+  );
   const liveState = liveController.get(liveScopeKey);
   const liveReadiness = liveController.readiness(liveScopeKey);
   const globalLiveState = liveController.get(LIVE_MIB_GLOBAL_SCOPE);
@@ -452,9 +469,17 @@ export function SettingsScreen({
     () => resolveLiveMibSettingsForScope(globalLiveState, agentLiveState),
     [agentLiveState, globalLiveState],
   );
-  const liveNumericForm =
-    liveNumericForms[liveScopeKey] ?? createLiveMibNumericFormDraft(effectiveLiveSettings);
+  const liveNumericForm = useMemo(
+    () => liveNumericForms[liveScopeKey] ?? createLiveMibNumericFormDraft(effectiveLiveSettings),
+    [effectiveLiveSettings, liveNumericForms, liveScopeKey],
+  );
   const liveNumericValidation = validateLiveMibNumericFormDraft(liveNumericForm);
+  const liveNumericValidationReason = liveNumericValidation.valid
+    ? null
+    : liveNumericValidation.reason;
+  const lastSyncedLiveSettings = useRef<
+    Partial<Record<LiveMibSettingsScopeKey, LiveMibNumericFormDraft>>
+  >({});
   const liveConfirmedSignature = JSON.stringify({
     global: globalLiveState.confirmed,
     scope: liveState.confirmed,
@@ -465,10 +490,16 @@ export function SettingsScreen({
       !['confirmed', 'success', 'error-reverted', 'uncertain'].includes(liveState.phase)
     )
       return;
-    setLiveNumericForms((forms) => ({
-      ...forms,
-      [liveScopeKey]: createLiveMibNumericFormDraft(effectiveLiveSettings),
-    }));
+    const next = createLiveMibNumericFormDraft(effectiveLiveSettings);
+    const previous = lastSyncedLiveSettings.current[liveScopeKey];
+    if (previous && JSON.stringify(previous) === JSON.stringify(next)) return;
+    lastSyncedLiveSettings.current[liveScopeKey] = next;
+    setLiveNumericForms((forms) => {
+      const current = forms[liveScopeKey];
+      return current && JSON.stringify(current) === JSON.stringify(next)
+        ? forms
+        : { ...forms, [liveScopeKey]: next };
+    });
   }, [
     effectiveLiveSettings,
     liveConfirmedSignature,
@@ -476,16 +507,19 @@ export function SettingsScreen({
     liveScopeKey,
     liveState.phase,
   ]);
-  const editLiveSetting = (patch: Partial<LiveMibSettings>) => {
-    if (liveAgentId) {
-      liveController.edit(liveMibAgentScopeKey(liveAgentId), {
-        ...(liveOverrides ?? {}),
-        ...patch,
-      });
-    } else {
-      liveController.edit(LIVE_MIB_GLOBAL_SCOPE, { ...liveSettings, ...patch });
-    }
-  };
+  const editLiveSetting = useCallback(
+    (patch: Partial<LiveMibSettings>) => {
+      if (liveAgentId) {
+        liveController.edit(liveMibAgentScopeKey(liveAgentId), {
+          ...(liveOverrides ?? {}),
+          ...patch,
+        });
+      } else {
+        liveController.edit(LIVE_MIB_GLOBAL_SCOPE, { ...liveSettings, ...patch });
+      }
+    },
+    [liveAgentId, liveController, liveOverrides, liveSettings],
+  );
   const editLiveNumericSetting = (key: LiveMibNumericKey, text: string) => {
     setLiveNumericForms((forms) => ({
       ...forms,
@@ -500,7 +534,7 @@ export function SettingsScreen({
       editLiveSetting({ [key]: Number(text) });
     }
   };
-  const resetLiveNumericForm = () => {
+  const resetLiveNumericForm = useCallback(() => {
     const confirmedEffective = resolveConfirmedLiveMibSettingsForScope(
       globalLiveState,
       agentLiveState,
@@ -509,32 +543,35 @@ export function SettingsScreen({
       ...forms,
       [liveScopeKey]: createLiveMibNumericFormDraft(confirmedEffective),
     }));
-  };
-  const saveLiveSettings = () => {
+  }, [agentLiveState, globalLiveState, liveScopeKey]);
+  const liveTransport = useCallback(
+    (scopeKey: LiveMibSettingsScopeKey = liveScopeKey) => {
+      if (scopeKey === LIVE_MIB_GLOBAL_SCOPE) {
+        return {
+          write: (value: LiveMibSettings) => engine.liveMibs.settings.update(value),
+          read: () => engine.liveMibs.settings.get(),
+        };
+      }
+      const agentId = scopeKey.slice('live-mibs:agent:'.length);
+      return {
+        write: async (value: Partial<LiveMibSettings> | null) => {
+          if (value === null) {
+            await engine.liveMibs.agentOverrides.reset(agentId);
+            return null;
+          }
+          return engine.liveMibs.agentOverrides.update(agentId, value);
+        },
+        read: () => engine.liveMibs.agentOverrides.get(agentId),
+      };
+    },
+    [engine, liveScopeKey],
+  );
+  const saveLiveSettings = useCallback(() => {
     const validation = validateLiveMibNumericFormDraft(liveNumericForm);
     if (!validation.valid) return;
     editLiveSetting(validation.patch);
     void liveController.save(liveScopeKey, liveTransport());
-  };
-  const liveTransport = (scopeKey: LiveMibSettingsScopeKey = liveScopeKey) => {
-    if (scopeKey === LIVE_MIB_GLOBAL_SCOPE) {
-      return {
-        write: (value: LiveMibSettings) => engine.liveMibs.settings.update(value),
-        read: () => engine.liveMibs.settings.get(),
-      };
-    }
-    const agentId = scopeKey.slice('live-mibs:agent:'.length);
-    return {
-      write: async (value: Partial<LiveMibSettings> | null) => {
-        if (value === null) {
-          await engine.liveMibs.agentOverrides.reset(agentId);
-          return null;
-        }
-        return engine.liveMibs.agentOverrides.update(agentId, value);
-      },
-      read: () => engine.liveMibs.agentOverrides.get(agentId),
-    };
-  };
+  }, [editLiveSetting, liveController, liveNumericForm, liveScopeKey, liveTransport]);
   const clearPreview = () => {
     void cancelResolverSourcePreview(engine, ownsEngine).catch(() => undefined);
   };
@@ -571,7 +608,7 @@ export function SettingsScreen({
     }
   };
 
-  const requestNotificationPermission = async () => {
+  const requestNotificationPermission = useCallback(async () => {
     setNotificationPermissionMessage(null);
     if (!notificationAdapter) {
       setNotificationPermission('unsupported');
@@ -584,18 +621,443 @@ export function SettingsScreen({
       setNotificationPermission('unsupported');
       setNotificationPermissionMessage(cause instanceof Error ? cause.message : String(cause));
     }
-  };
+  }, [notificationAdapter]);
 
   const captureSection = (section: SettingsSectionId) => (event: LayoutChangeEvent) => {
     sectionOffsets.current[section] = event.nativeEvent.layout.y;
   };
-  const scrollToSection = (section: SettingsSectionId) => {
+  const scrollToSection = useCallback((section: SettingsSectionId) => {
     setActiveSection(section);
     settingsScroll.current?.scrollTo({
       y: Math.max(0, (sectionOffsets.current[section] ?? 0) - 12),
       animated: true,
     });
-  };
+  }, []);
+  const reportActionError = useCallback((message: string) => {
+    useAppStore.getState().pushToast({ tone: 'error', message });
+  }, []);
+  const dispatchRegistered = useRegisteredActionDispatcher(reportActionError);
+  const settingsActions = useMemo(
+    () => [
+      ...SETTINGS_SECTIONS.map((section) =>
+        keyboardAction(
+          `settings:show-${section.id === 'liveMibs' ? 'live-mibs' : section.id}` as
+            | 'settings:show-appearance'
+            | 'settings:show-live-mibs'
+            | 'settings:show-updates'
+            | 'settings:show-notifications'
+            | 'settings:show-layout'
+            | 'settings:show-privacy'
+            | 'settings:show-cache'
+            | 'settings:show-sources'
+            | 'settings:show-transfer'
+            | 'settings:show-activity'
+            | 'settings:show-about',
+          `Show ${section.label} settings`,
+          'Settings',
+          () => scrollToSection(section.id),
+        ),
+      ),
+      keyboardAction(
+        'settings:request-notification-permission',
+        'Request notification permission',
+        'Settings',
+        requestNotificationPermission,
+        {
+          enabled: !notificationAdapter
+            ? { value: false, reason: 'Notifications are not supported by this host.' }
+            : notificationPermission === 'granted'
+              ? { value: false, reason: 'Notification permission is already granted.' }
+              : { value: true },
+        },
+      ),
+      keyboardAction(
+        'settings:send-test-notification',
+        'Send test notification',
+        'Settings',
+        async () => {
+          if (!notificationAdapter) return;
+          if ((await notificationAdapter.getPermission()) !== 'granted') {
+            throw new Error('Grant notification permission before sending a test.');
+          }
+          await notificationAdapter.show({
+            title: 'MIB Beacon test notification',
+            body: 'Local notification delivery is working.',
+          });
+          useAppStore.getState().pushToast({ tone: 'success', message: 'Test notification sent' });
+        },
+        {
+          enabled: !notificationAdapter
+            ? { value: false, reason: 'Notifications are not supported by this host.' }
+            : notificationPermission !== 'granted'
+              ? { value: false, reason: 'Grant notification permission first.' }
+              : { value: true },
+          glyph: '◉',
+          keywords: ['settings', 'notification', 'test', 'alert'],
+        },
+      ),
+      keyboardAction(
+        'settings:reset-split-layout',
+        'Reset split pane layout',
+        'Settings',
+        () => {
+          resetSplitWorkspaceLayouts();
+          useAppStore
+            .getState()
+            .pushToast({ tone: 'success', message: 'Split pane layout defaults restored' });
+        },
+        {
+          confirmation: {
+            kind: 'destructive',
+            title: 'Reset split pane layout?',
+            description: 'Saved split-pane sizes will return to their defaults.',
+          },
+        },
+      ),
+      keyboardAction(
+        'settings:reset-packet-dock',
+        'Reset packet dock layout',
+        'Settings',
+        () => {
+          resetVerticalDockLayouts();
+          useAppStore
+            .getState()
+            .pushToast({ tone: 'success', message: 'Packet dock layout defaults restored' });
+        },
+        {
+          confirmation: {
+            kind: 'destructive',
+            title: 'Reset packet dock layout?',
+            description: 'The saved packet dock size will return to its default.',
+          },
+        },
+      ),
+      keyboardAction('settings:open-packet-console', 'Open packet console', 'Settings', () =>
+        useAppStore.getState().setPacketConsoleOpen(true),
+      ),
+      keyboardAction(
+        'settings:check-update',
+        'Check for application updates',
+        'Settings',
+        () => updates && runUpdateStatusAction(() => updates.check()),
+        {
+          enabled: !updates
+            ? { value: false, reason: 'Application updates are unavailable on this host.' }
+            : updateStatus?.phase === 'checking'
+              ? { value: false, reason: 'An update check is already running.' }
+              : { value: true },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:save-live-mibs',
+        'Save Live MIB settings',
+        'Settings',
+        saveLiveSettings,
+        {
+          enabled:
+            liveState.phase !== 'dirty'
+              ? {
+                  value: false,
+                  reason: 'The current Live MIB settings scope has no unsaved changes.',
+                }
+              : !liveNumericValidation.valid
+                ? {
+                    value: false,
+                    reason: liveNumericValidationReason ?? 'Live MIB settings are invalid.',
+                  }
+                : { value: true },
+          confirmation: { kind: 'remote', title: 'Save Live MIB settings?' },
+        },
+      ),
+      keyboardAction(
+        'settings:cancel-live-mibs',
+        'Cancel Live MIB settings changes',
+        'Settings',
+        () => {
+          liveController.cancel(liveScopeKey);
+          resetLiveNumericForm();
+        },
+        {
+          enabled: liveController.canCancel(liveScopeKey)
+            ? { value: true }
+            : {
+                value: false,
+                reason: 'The current Live MIB settings scope has no cancellable draft.',
+              },
+        },
+      ),
+      keyboardAction(
+        'settings:retry-live-mibs',
+        'Retry Live MIB settings change',
+        'Settings',
+        () => liveController.retry(liveScopeKey, liveTransport()),
+        {
+          enabled:
+            liveState.phase === 'error-reverted'
+              ? { value: true }
+              : {
+                  value: false,
+                  reason: 'The current Live MIB settings scope has no rejected change to retry.',
+                },
+          confirmation: { kind: 'remote', title: 'Retry Live MIB settings change?' },
+        },
+      ),
+      keyboardAction(
+        'settings:reconcile-live-mibs',
+        'Reconcile Live MIB settings',
+        'Settings',
+        () => liveController.reconcile(liveScopeKey, liveTransport().read),
+        {
+          enabled:
+            liveState.phase === 'uncertain'
+              ? { value: true }
+              : { value: false, reason: 'The current Live MIB settings scope is not uncertain.' },
+        },
+      ),
+      keyboardAction(
+        'settings:acknowledge-live-mibs',
+        'Acknowledge Live MIB settings rejection',
+        'Settings',
+        () => {
+          liveController.acknowledge(liveScopeKey);
+          return liveController.save(liveScopeKey, liveTransport());
+        },
+        {
+          enabled:
+            liveState.phase === 'error-reverted'
+              ? { value: true }
+              : {
+                  value: false,
+                  reason: 'The current Live MIB settings scope has no rejection to acknowledge.',
+                },
+          confirmation: { kind: 'remote', title: 'Acknowledge and resume Live MIB settings?' },
+        },
+      ),
+      keyboardAction(
+        'settings:save-update-preference',
+        'Save update preference',
+        'Settings',
+        () => updatePreferenceController.save(updatePreferenceTransport()),
+        {
+          enabled:
+            updatePreferenceState.phase === 'dirty'
+              ? { value: true }
+              : { value: false, reason: 'The update preference has no unsaved change.' },
+          confirmation: { kind: 'remote', title: 'Save update preference?' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:cancel-update-preference',
+        'Cancel update preference change',
+        'Settings',
+        () => updatePreferenceController.cancel(),
+        {
+          enabled: updatePreferenceController.canCancel()
+            ? { value: true }
+            : { value: false, reason: 'The update preference has no cancellable draft.' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:retry-update-preference',
+        'Retry update preference change',
+        'Settings',
+        () => updatePreferenceController.retry(updatePreferenceTransport()),
+        {
+          enabled:
+            updatePreferenceState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'The update preference has no rejected change to retry.' },
+          confirmation: { kind: 'remote', title: 'Retry update preference change?' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:reconcile-update-preference',
+        'Reconcile update preference',
+        'Settings',
+        () => updatePreferenceController.reconcile(updatePreferenceTransport().read),
+        {
+          enabled:
+            updatePreferenceState.phase === 'uncertain'
+              ? { value: true }
+              : { value: false, reason: 'The update preference is not uncertain.' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:acknowledge-update-preference',
+        'Acknowledge update preference rejection',
+        'Settings',
+        () => updatePreferenceController.acknowledgeAndResume(),
+        {
+          enabled:
+            updatePreferenceState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'The update preference has no rejection to acknowledge.' },
+          platforms: ['desktop'],
+        },
+      ),
+      keyboardAction(
+        'settings:save-resolver',
+        'Save resolver settings',
+        'Settings',
+        () => resolverController.save(resolverTransport()),
+        {
+          enabled:
+            resolverState.phase === 'dirty'
+              ? { value: true }
+              : { value: false, reason: 'Resolver settings have no unsaved changes.' },
+          confirmation: { kind: 'remote', title: 'Save resolver settings?' },
+        },
+      ),
+      keyboardAction(
+        'settings:cancel-resolver',
+        'Cancel resolver settings changes',
+        'Settings',
+        () => resolverController.cancel(),
+        {
+          enabled: resolverController.canCancel()
+            ? { value: true }
+            : { value: false, reason: 'Resolver settings have no cancellable draft.' },
+        },
+      ),
+      keyboardAction(
+        'settings:retry-resolver',
+        'Retry resolver settings change',
+        'Settings',
+        () => resolverController.retry(resolverTransport()),
+        {
+          enabled:
+            resolverState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'Resolver settings have no rejected change to retry.' },
+          confirmation: { kind: 'remote', title: 'Retry resolver settings change?' },
+        },
+      ),
+      keyboardAction(
+        'settings:reconcile-resolver',
+        'Reconcile resolver settings',
+        'Settings',
+        () => resolverController.reconcile(resolverTransport().read),
+        {
+          enabled:
+            resolverState.phase === 'uncertain'
+              ? { value: true }
+              : { value: false, reason: 'Resolver settings are not uncertain.' },
+        },
+      ),
+      keyboardAction(
+        'settings:acknowledge-resolver',
+        'Acknowledge resolver settings rejection',
+        'Settings',
+        () => resolverController.acknowledgeAndResume(),
+        {
+          enabled:
+            resolverState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'Resolver settings have no rejection to acknowledge.' },
+        },
+      ),
+      keyboardAction(
+        'settings:save-packet-retention',
+        'Save packet retention limit',
+        'Settings',
+        () => packetRetentionController.save(packetRetentionTransport()),
+        {
+          enabled:
+            packetRetentionState.phase !== 'dirty'
+              ? { value: false, reason: 'Packet retention has no unsaved change.' }
+              : packetRetentionValidation.valid
+                ? { value: true }
+                : {
+                    value: false,
+                    reason: packetRetentionValidationReason ?? 'Packet retention is invalid.',
+                  },
+          confirmation: { kind: 'remote', title: 'Save packet retention limit?' },
+        },
+      ),
+      keyboardAction(
+        'settings:cancel-packet-retention',
+        'Cancel packet retention change',
+        'Settings',
+        () => packetRetentionController.cancel(),
+        {
+          enabled: packetRetentionController.canCancel()
+            ? { value: true }
+            : { value: false, reason: 'Packet retention has no cancellable draft.' },
+        },
+      ),
+      keyboardAction(
+        'settings:retry-packet-retention',
+        'Retry packet retention change',
+        'Settings',
+        () => packetRetentionController.retry(packetRetentionTransport()),
+        {
+          enabled:
+            packetRetentionState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'Packet retention has no rejected change to retry.' },
+          confirmation: { kind: 'remote', title: 'Retry packet retention change?' },
+        },
+      ),
+      keyboardAction(
+        'settings:reconcile-packet-retention',
+        'Reconcile packet retention',
+        'Settings',
+        () => packetRetentionController.reconcile(packetRetentionTransport().read),
+        {
+          enabled:
+            packetRetentionState.phase === 'uncertain'
+              ? { value: true }
+              : { value: false, reason: 'Packet retention is not uncertain.' },
+        },
+      ),
+      keyboardAction(
+        'settings:acknowledge-packet-retention',
+        'Acknowledge packet retention rejection',
+        'Settings',
+        () => packetRetentionController.acknowledgeAndResume(),
+        {
+          enabled:
+            packetRetentionState.phase === 'error-reverted'
+              ? { value: true }
+              : { value: false, reason: 'Packet retention has no rejection to acknowledge.' },
+        },
+      ),
+    ],
+    [
+      liveController,
+      liveNumericValidationReason,
+      liveNumericValidation.valid,
+      liveScopeKey,
+      liveState.phase,
+      notificationAdapter,
+      notificationPermission,
+      packetRetentionController,
+      packetRetentionState.phase,
+      packetRetentionTransport,
+      packetRetentionValidationReason,
+      packetRetentionValidation.valid,
+      requestNotificationPermission,
+      resetLiveNumericForm,
+      resolverController,
+      resolverState.phase,
+      resolverTransport,
+      runUpdateStatusAction,
+      saveLiveSettings,
+      scrollToSection,
+      updatePreferenceController,
+      updatePreferenceState.phase,
+      updatePreferenceTransport,
+      updateStatus?.phase,
+      updates,
+      liveTransport,
+    ],
+  );
+  useRegisteredCatalogActions('settings', settingsActions);
   const trackActiveSection = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const atEnd = contentOffset.y + layoutMeasurement.height >= contentSize.height - 8;
@@ -610,7 +1072,11 @@ export function SettingsScreen({
         accessibilityRole="button"
         accessibilityLabel={`Show ${section.label} settings`}
         accessibilityState={{ selected: active }}
-        onPress={() => scrollToSection(section.id)}
+        onPress={() =>
+          void dispatchRegistered(
+            `settings:show-${section.id === 'liveMibs' ? 'live-mibs' : section.id}`,
+          )
+        }
         style={[
           styles.settingsIndexItem,
           compact ? styles.settingsIndexItemCompact : null,
@@ -1076,17 +1542,14 @@ export function SettingsScreen({
                       title="Save changes"
                       small
                       disabled={liveState.phase !== 'dirty' || !liveNumericValidation.valid}
-                      onPress={saveLiveSettings}
+                      onPress={() => void dispatchRegistered('settings:save-live-mibs')}
                     />
                     <Button
                       title="Cancel / revert"
                       small
                       variant="ghost"
                       disabled={!liveController.canCancel(liveScopeKey)}
-                      onPress={() => {
-                        liveController.cancel(liveScopeKey);
-                        resetLiveNumericForm();
-                      }}
+                      onPress={() => void dispatchRegistered('settings:cancel-live-mibs')}
                     />
                     {liveState.phase === 'error-reverted' ? (
                       <>
@@ -1094,16 +1557,13 @@ export function SettingsScreen({
                           title="Retry"
                           small
                           variant="ghost"
-                          onPress={() => void liveController.retry(liveScopeKey, liveTransport())}
+                          onPress={() => void dispatchRegistered('settings:retry-live-mibs')}
                         />
                         <Button
                           title="Acknowledge"
                           small
                           variant="ghost"
-                          onPress={() => {
-                            liveController.acknowledge(liveScopeKey);
-                            void liveController.save(liveScopeKey, liveTransport());
-                          }}
+                          onPress={() => void dispatchRegistered('settings:acknowledge-live-mibs')}
                         />
                       </>
                     ) : null}
@@ -1112,9 +1572,7 @@ export function SettingsScreen({
                         title="Check remote value"
                         small
                         variant="ghost"
-                        onPress={() =>
-                          void liveController.reconcile(liveScopeKey, liveTransport().read)
-                        }
+                        onPress={() => void dispatchRegistered('settings:reconcile-live-mibs')}
                       />
                     ) : null}
                   </Row>
@@ -1201,16 +1659,16 @@ export function SettingsScreen({
                           title="Save preference"
                           small
                           disabled={updatePreferenceState.phase !== 'dirty'}
-                          onPress={() =>
-                            void updatePreferenceController.save(updatePreferenceTransport())
-                          }
+                          onPress={() => void dispatchRegistered('settings:save-update-preference')}
                         />
                         <Button
                           title="Cancel / revert"
                           small
                           variant="ghost"
                           disabled={!updatePreferenceController.canCancel()}
-                          onPress={() => updatePreferenceController.cancel()}
+                          onPress={() =>
+                            void dispatchRegistered('settings:cancel-update-preference')
+                          }
                         />
                         {updatePreferenceState.phase === 'error-reverted' ? (
                           <>
@@ -1219,14 +1677,16 @@ export function SettingsScreen({
                               small
                               variant="ghost"
                               onPress={() =>
-                                void updatePreferenceController.retry(updatePreferenceTransport())
+                                void dispatchRegistered('settings:retry-update-preference')
                               }
                             />
                             <Button
                               title="Acknowledge"
                               small
                               variant="ghost"
-                              onPress={() => void updatePreferenceController.acknowledgeAndResume()}
+                              onPress={() =>
+                                void dispatchRegistered('settings:acknowledge-update-preference')
+                              }
                             />
                           </>
                         ) : null}
@@ -1236,14 +1696,7 @@ export function SettingsScreen({
                             small
                             variant="ghost"
                             onPress={() =>
-                              void updatePreferenceController.reconcile(async () =>
-                                toUpdatePreferenceSnapshot(
-                                  await updateStatusCoordinator.run(
-                                    () => host.updates!.get(),
-                                    (state) => state?.status,
-                                  ),
-                                ),
-                              )
+                              void dispatchRegistered('settings:reconcile-update-preference')
                             }
                           />
                         ) : null}
@@ -1267,7 +1720,7 @@ export function SettingsScreen({
                       small
                       variant="ghost"
                       disabled={updateStatus?.phase === 'checking'}
-                      onPress={() => runUpdateStatusAction(() => host.updates!.check())}
+                      onPress={() => void dispatchRegistered('settings:check-update')}
                     />
                     {updateStatus?.phase === 'available' ? (
                       <Button
@@ -1368,9 +1821,18 @@ export function SettingsScreen({
                       small
                       variant="ghost"
                       disabled={notificationPermission === 'granted'}
-                      onPress={() => void requestNotificationPermission()}
+                      onPress={() =>
+                        void dispatchRegistered('settings:request-notification-permission')
+                      }
                     />
                     <Pill text={notificationAdapter.label.toUpperCase()} color={t.textDim} />
+                    <Button
+                      title="Send test notification"
+                      small
+                      variant="ghost"
+                      disabled={notificationPermission !== 'granted'}
+                      onPress={() => void dispatchRegistered('settings:send-test-notification')}
+                    />
                   </Row>
                 </>
               )}
@@ -1394,25 +1856,13 @@ export function SettingsScreen({
                   title="Reset split panes"
                   small
                   variant="ghost"
-                  onPress={() => {
-                    resetSplitWorkspaceLayouts();
-                    useAppStore.getState().pushToast({
-                      tone: 'success',
-                      message: 'Split pane layout defaults restored',
-                    });
-                  }}
+                  onPress={() => void dispatchRegistered('settings:reset-split-layout')}
                 />
                 <Button
                   title="Reset packet dock"
                   small
                   variant="ghost"
-                  onPress={() => {
-                    resetVerticalDockLayouts();
-                    useAppStore.getState().pushToast({
-                      tone: 'success',
-                      message: 'Packet dock layout defaults restored',
-                    });
-                  }}
+                  onPress={() => void dispatchRegistered('settings:reset-packet-dock')}
                 />
               </Row>
             </Card>
@@ -1513,14 +1963,14 @@ export function SettingsScreen({
                       title="Save changes"
                       small
                       disabled={resolverState.phase !== 'dirty'}
-                      onPress={() => void resolverController.save(resolverTransport())}
+                      onPress={() => void dispatchRegistered('settings:save-resolver')}
                     />
                     <Button
                       title="Cancel / revert"
                       small
                       variant="ghost"
                       disabled={!resolverController.canCancel()}
-                      onPress={() => resolverController.cancel()}
+                      onPress={() => void dispatchRegistered('settings:cancel-resolver')}
                     />
                     {resolverState.phase === 'error-reverted' ? (
                       <>
@@ -1528,13 +1978,13 @@ export function SettingsScreen({
                           title="Retry"
                           small
                           variant="ghost"
-                          onPress={() => void resolverController.retry(resolverTransport())}
+                          onPress={() => void dispatchRegistered('settings:retry-resolver')}
                         />
                         <Button
                           title="Acknowledge"
                           small
                           variant="ghost"
-                          onPress={() => void resolverController.acknowledgeAndResume()}
+                          onPress={() => void dispatchRegistered('settings:acknowledge-resolver')}
                         />
                       </>
                     ) : null}
@@ -1543,9 +1993,7 @@ export function SettingsScreen({
                         title="Check remote value"
                         small
                         variant="ghost"
-                        onPress={() =>
-                          void resolverController.reconcile(() => engine.resolver.settings.get())
-                        }
+                        onPress={() => void dispatchRegistered('settings:reconcile-resolver')}
                       />
                     ) : null}
                   </Row>
@@ -1801,16 +2249,14 @@ export function SettingsScreen({
                       disabled={
                         packetRetentionState.phase !== 'dirty' || !packetRetentionValidation.valid
                       }
-                      onPress={() =>
-                        void packetRetentionController.save(packetRetentionTransport())
-                      }
+                      onPress={() => void dispatchRegistered('settings:save-packet-retention')}
                     />
                     <Button
                       title="Cancel / revert"
                       small
                       variant="ghost"
                       disabled={!packetRetentionController.canCancel()}
-                      onPress={() => packetRetentionController.cancel()}
+                      onPress={() => void dispatchRegistered('settings:cancel-packet-retention')}
                     />
                     {packetRetentionState.phase === 'error-reverted' ? (
                       <>
@@ -1818,15 +2264,15 @@ export function SettingsScreen({
                           title="Retry"
                           small
                           variant="ghost"
-                          onPress={() =>
-                            void packetRetentionController.retry(packetRetentionTransport())
-                          }
+                          onPress={() => void dispatchRegistered('settings:retry-packet-retention')}
                         />
                         <Button
                           title="Acknowledge"
                           small
                           variant="ghost"
-                          onPress={() => void packetRetentionController.acknowledgeAndResume()}
+                          onPress={() =>
+                            void dispatchRegistered('settings:acknowledge-packet-retention')
+                          }
                         />
                       </>
                     ) : null}
@@ -1836,9 +2282,7 @@ export function SettingsScreen({
                         small
                         variant="ghost"
                         onPress={() =>
-                          void packetRetentionController.reconcile(() =>
-                            packetRetentionLifetime.engine.packets.status(),
-                          )
+                          void dispatchRegistered('settings:reconcile-packet-retention')
                         }
                       />
                     ) : null}
@@ -1846,7 +2290,7 @@ export function SettingsScreen({
                       title="Open packet console"
                       small
                       variant="ghost"
-                      onPress={() => useAppStore.getState().setPacketConsoleOpen(true)}
+                      onPress={() => void dispatchRegistered('settings:open-packet-console')}
                     />
                     {authoritativePacketStatus?.persistence === 'degraded' ? (
                       <Button

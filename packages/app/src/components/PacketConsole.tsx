@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   FlatList,
@@ -21,6 +21,11 @@ import {
   getPacketConsoleLayout,
 } from '../packet-console';
 import type { AppHostAdapter, PacketCaptureExportReader } from '../AppRoot';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 
 // The packet console is a fixed-dark terminal in both themes; colors come from
 // the shared, contrast-tested consolePalette rather than the app theme.
@@ -144,18 +149,18 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
     [layout.edge, layout.maxSize, layout.minSize, open, size],
   );
 
-  const clear = async () => {
+  const clear = useCallback(async () => {
     await clearPacketHistory(engine, ownsEngine);
     if (ownsEngine()) setSelectedId(null);
-  };
-  const togglePause = async () => {
+  }, [engine, ownsEngine]);
+  const togglePause = useCallback(async () => {
     if (!paused) {
       useAppStore.getState().setPacketFeedPaused(true);
       return;
     }
     await resumePacketHistory(engine, ownsEngine);
-  };
-  const exportCapture = async () => {
+  }, [engine, ownsEngine, paused]);
+  const exportCapture = useCallback(async () => {
     if (!ownsEngine()) return;
     const attempt = ++exportAttempt.current;
     setExporting(true);
@@ -183,7 +188,53 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
       if (id) await engine.packets.export.dispose(id).catch(() => undefined);
       if (ownsEngine() && exportAttempt.current === attempt) setExporting(false);
     }
-  };
+  }, [engine, host, ownsEngine]);
+  const reportActionError = useCallback((message: string) => setMessage(message), []);
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const hasPackets = packets.length > 0;
+  const packetActions = useMemo(
+    () => [
+      keyboardAction(
+        'packets:toggle-console',
+        open ? 'Collapse packet console' : 'Open packet console',
+        'Packet Console',
+        () => useAppStore.getState().setPacketConsoleOpen(!open),
+      ),
+      keyboardAction(
+        'packets:toggle-pause',
+        paused ? 'Resume packet feed' : 'Pause packet feed',
+        'Packet Console',
+        togglePause,
+      ),
+      keyboardAction('packets:clear', 'Clear packet history', 'Packet Console', clear, {
+        enabled: hasPackets
+          ? { value: true }
+          : { value: false, reason: 'Packet history is already empty.' },
+        confirmation: {
+          kind: 'destructive',
+          title: 'Clear packet history?',
+          description: 'Captured packet records will be removed from the current engine.',
+        },
+        glyph: '⌫',
+      }),
+      keyboardAction(
+        'packets:export-pcapng',
+        'Export packet capture as PCAPNG',
+        'Packet Console',
+        exportCapture,
+        {
+          enabled: exporting
+            ? { value: false, reason: 'A packet export is already running.' }
+            : hasPackets
+              ? { value: true }
+              : { value: false, reason: 'Capture at least one packet before exporting.' },
+          glyph: '⇩',
+        },
+      ),
+    ],
+    [clear, exportCapture, exporting, hasPackets, open, paused, togglePause],
+  );
+  useRegisteredCatalogActions('packets', packetActions);
 
   const shellStyle = layout.overlay
     ? [styles.mobileShell, { height: open ? size : layout.collapsedSize }]
@@ -198,7 +249,7 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
           accessibilityRole="button"
           accessibilityLabel={open ? 'Collapse packet console' : 'Open packet console'}
           accessibilityState={{ expanded: open }}
-          onPress={() => useAppStore.getState().setPacketConsoleOpen(!open)}
+          onPress={() => void dispatchAction('packets:toggle-console')}
           style={styles.pullTab}
         >
           <View style={styles.grip} />
@@ -228,14 +279,19 @@ export function PacketConsole({ host }: { host?: AppHostAdapter }) {
                 title={paused ? 'Resume' : 'Pause'}
                 small
                 variant="ghost"
-                onPress={() => void togglePause()}
+                onPress={() => void dispatchAction('packets:toggle-pause')}
               />
-              <Button title="Clear" small variant="ghost" onPress={() => void clear()} />
+              <Button
+                title="Clear"
+                small
+                variant="ghost"
+                onPress={() => void dispatchAction('packets:clear')}
+              />
               <Button
                 title={exporting ? 'Exporting…' : 'PCAPNG'}
                 small
                 disabled={exporting || packets.length === 0}
-                onPress={() => void exportCapture()}
+                onPress={() => void dispatchAction('packets:export-pcapng')}
               />
             </View>
           </View>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { TextInput } from 'react-native';
 import {
   Button,
   Chip,
@@ -60,6 +61,11 @@ import { useFileImportAdapter } from '../file-import-context';
 import { bitIsSelected, mibRangeError, mibSizeError, toggleBitHex } from '../mib-set-editor';
 import { refreshAgentProfiles, saveAgentProfile } from '../actions';
 import { AgentProfileDialog } from '../components/AgentProfileDialog';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 import {
   agentDraftFromEditor,
   EMPTY_AGENT_EDITOR,
@@ -161,6 +167,7 @@ export function LiveMibsScreen({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [scope, setScope] = useState<MibNodeDetail | null>(null);
   const [treeSearch, setTreeSearch] = useState('');
+  const treeSearchInput = useRef<TextInput>(null);
   const [treeSearchHits, setTreeSearchHits] = useState<MibSearchHit[]>([]);
   const [treeSearchPhase, setTreeSearchPhase] = useState<
     'idle' | 'debouncing' | 'searching' | 'opening' | 'error'
@@ -543,6 +550,67 @@ export function LiveMibsScreen({
   const scanActive = scanStarting || busy;
   const resultsIncomplete =
     !!scan && ['done', 'partial'].includes(scan.state) && scan.count > dataRows.length;
+  const reportActionError = useCallback(
+    (message: string) => useAppStore.getState().pushToast({ tone: 'error', message }),
+    [],
+  );
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const liveMibActions = useMemo(
+    () => [
+      keyboardAction(
+        'live-mibs:create-profile',
+        'Create Live MIB agent',
+        'Live MIBs',
+        openProfileEditor,
+        {
+          enabled: agentCollectionsBlocked
+            ? { value: false, reason: 'Agent profile storage is not ready for changes.' }
+            : { value: true },
+          glyph: '+',
+        },
+      ),
+      keyboardAction('live-mibs:focus-search', 'Focus Live MIB catalog search', 'Live MIBs', () =>
+        treeSearchInput.current?.focus(),
+      ),
+      keyboardAction('live-mibs:refresh', 'Refresh Live MIB scope', 'Live MIBs', startScan, {
+        enabled: scanActive
+          ? { value: false, reason: 'A Live MIB scan is already running.' }
+          : autoRefreshPaused
+            ? { value: false, reason: 'Resume automatic refresh before starting a new scan.' }
+            : scope && settingsAgentId === selectedAgentId
+              ? { value: true }
+              : { value: false, reason: 'Choose a saved agent and MIB scope first.' },
+      }),
+      keyboardAction('live-mibs:stop-scan', 'Stop Live MIB scan', 'Live MIBs', stopScan, {
+        enabled: scanActive
+          ? { value: true }
+          : { value: false, reason: 'No Live MIB scan is running.' },
+      }),
+      keyboardAction(
+        'live-mibs:resume-auto-refresh',
+        'Resume Live MIB automatic refresh',
+        'Live MIBs',
+        () => setAutoRefreshPaused(false),
+        {
+          enabled: autoRefreshPaused
+            ? { value: true }
+            : { value: false, reason: 'Automatic refresh is not paused.' },
+        },
+      ),
+    ],
+    [
+      agentCollectionsBlocked,
+      autoRefreshPaused,
+      openProfileEditor,
+      scanActive,
+      scope,
+      selectedAgentId,
+      settingsAgentId,
+      startScan,
+      stopScan,
+    ],
+  );
+  useRegisteredCatalogActions('liveMibs', liveMibActions);
 
   const toggleTreeNode = async (node: MibNodeSummary) => {
     if (!ownsEngine()) return;
@@ -576,6 +644,7 @@ export function LiveMibsScreen({
       </View>
       <View style={styles.treeSearchField}>
         <Field
+          ref={treeSearchInput}
           label="Search MIB catalog"
           value={treeSearch}
           onChangeText={changeTreeSearch}
@@ -726,15 +795,15 @@ export function LiveMibsScreen({
             title={autoRefreshPaused ? 'Resume' : scanActive ? 'Stop' : 'Refresh'}
             small
             disabled={!scanActive && !autoRefreshPaused && settingsAgentId !== selectedAgentId}
-            onPress={() => {
-              if (scanActive) {
-                void stopScan();
-              } else if (autoRefreshPaused) {
-                setAutoRefreshPaused(false);
-              } else {
-                void startScan();
-              }
-            }}
+            onPress={() =>
+              void dispatchAction(
+                scanActive
+                  ? 'live-mibs:stop-scan'
+                  : autoRefreshPaused
+                    ? 'live-mibs:resume-auto-refresh'
+                    : 'live-mibs:refresh',
+              )
+            }
           />
         </Row>
       </View>
@@ -822,7 +891,12 @@ export function LiveMibsScreen({
             />
           ))}
         </ScrollView>
-        <Button title="New profile" small variant="ghost" onPress={openProfileEditor} />
+        <Button
+          title="New profile"
+          small
+          variant="ghost"
+          onPress={() => void dispatchAction('live-mibs:create-profile')}
+        />
       </View>
       <View style={[styles.workspace, mode === 'compact' ? styles.compactWorkspace : null]}>
         {treePane}

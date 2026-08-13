@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Button,
@@ -32,6 +32,11 @@ import {
   agentCollectionStatusText,
   agentPersistentCollectionsController,
 } from '../agent-persistent-collections';
+import {
+  useRegisteredActionDispatcher,
+  useRegisteredCatalogActions,
+} from '../action-registry-react';
+import { keyboardAction } from '../keyboard-action-catalog';
 
 type AgentManagementSection = 'profiles' | 'groups';
 
@@ -64,6 +69,12 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
     collections.snapshot,
     collections.snapshot,
   );
+  const reportActionError = useCallback((message: string) => setError(message), []);
+  const dispatchAction = useRegisteredActionDispatcher(reportActionError);
+  const canAcknowledgeRecovery =
+    collectionState.phase === 'error-reverted' ||
+    collectionState.phase === 'conflict' ||
+    (collectionState.phase === 'uncertain' && collectionState.canAcknowledgeUncertainty === true);
   const collectionBlocked = [
     'queued',
     'updating',
@@ -81,15 +92,84 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
     void refreshGroups().catch(() => undefined);
   }, [engine, ownsEngine, refreshGroups]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setEditingId(null);
     setEditor(EMPTY_AGENT_EDITOR);
     setError(null);
-  };
-  const openCreate = () => {
+  }, []);
+  const openCreate = useCallback(() => {
     reset();
     setEditorOpen(true);
-  };
+  }, [reset]);
+  const agentActions = useMemo(
+    () => [
+      keyboardAction('agents:refresh', 'Refresh agents and groups', 'Agents', () =>
+        Promise.all([refreshAgentProfiles(engine, ownsEngine), refreshGroups()]).then(
+          () => undefined,
+        ),
+      ),
+      keyboardAction('agents:new-profile', 'Create agent profile', 'Agents', openCreate, {
+        enabled: collectionBlocked
+          ? { value: false, reason: 'Agent profile storage is not ready for changes.' }
+          : { value: true },
+        glyph: '+',
+      }),
+      keyboardAction('agents:show-profiles', 'Show agent profiles', 'Agents', () =>
+        setManagementSection('profiles'),
+      ),
+      keyboardAction('agents:show-groups', 'Show agent groups', 'Agents', () =>
+        setManagementSection('groups'),
+      ),
+      keyboardAction(
+        'agents:reconcile',
+        'Reconcile agent state',
+        'Agents',
+        () => collections.reconcile(),
+        {
+          enabled: ['uncertain', 'conflict'].includes(collectionState.phase)
+            ? { value: true }
+            : { value: false, reason: 'Agent state does not require reconciliation.' },
+        },
+      ),
+      keyboardAction(
+        'agents:retry',
+        'Retry failed agent change',
+        'Agents',
+        () => collections.retryFailed(),
+        {
+          enabled:
+            collectionState.phase === 'error-reverted' && collectionState.retryable
+              ? { value: true }
+              : { value: false, reason: 'There is no retryable agent change.' },
+        },
+      ),
+      keyboardAction(
+        'agents:acknowledge',
+        'Acknowledge agent state error',
+        'Agents',
+        () => {
+          if (collectionState.phase === 'uncertain') collections.acknowledgeUncertainty();
+          else collections.acknowledge();
+        },
+        {
+          enabled: canAcknowledgeRecovery
+            ? { value: true }
+            : { value: false, reason: 'There is no acknowledgeable agent state error.' },
+        },
+      ),
+    ],
+    [
+      canAcknowledgeRecovery,
+      collectionBlocked,
+      collectionState,
+      collections,
+      engine,
+      openCreate,
+      ownsEngine,
+      refreshGroups,
+    ],
+  );
+  useRegisteredCatalogActions('agents', agentActions);
   const closeEditor = () => {
     setEditorOpen(false);
     reset();
@@ -248,28 +328,24 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
               title="Reconcile"
               small
               variant="ghost"
-              onPress={() => void collections.reconcile().catch(() => undefined)}
+              onPress={() => void dispatchAction('agents:reconcile')}
             />
             {collectionState.phase === 'error-reverted' && collectionState.retryable ? (
-              <Button
-                title="Retry"
-                small
-                onPress={() => void collections.retryFailed().catch(() => undefined)}
-              />
+              <Button title="Retry" small onPress={() => void dispatchAction('agents:retry')} />
             ) : null}
             {collectionState.phase === 'uncertain' && collectionState.canAcknowledgeUncertainty ? (
               <Button
                 title="Acknowledge uncertainty"
                 small
                 variant="ghost"
-                onPress={() => collections.acknowledgeUncertainty()}
+                onPress={() => void dispatchAction('agents:acknowledge')}
               />
             ) : collectionState.phase !== 'uncertain' ? (
               <Button
                 title="Acknowledge"
                 small
                 variant="ghost"
-                onPress={() => collections.acknowledge()}
+                onPress={() => void dispatchAction('agents:acknowledge')}
               />
             ) : null}
           </Row>
@@ -294,7 +370,11 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
                   accessibilityLabel={label}
                   accessibilityState={{ checked: selected }}
                   aria-checked={selected}
-                  onPress={() => setManagementSection(section)}
+                  onPress={() =>
+                    void dispatchAction(
+                      section === 'profiles' ? 'agents:show-profiles' : 'agents:show-groups',
+                    )
+                  }
                   style={({ pressed }) => [
                     styles.sectionTab,
                     {
@@ -315,13 +395,22 @@ export function AgentsScreen({ info }: { info: EngineInfo | null }) {
           <Card style={styles.card}>
             <View style={styles.heading}>
               <SectionTitle>Saved agents</SectionTitle>
-              <Button title="New profile" small variant="ghost" onPress={openCreate} />
+              <Button
+                title="New profile"
+                small
+                variant="ghost"
+                onPress={() => void dispatchAction('agents:new-profile')}
+              />
             </View>
             {profiles.length === 0 ? (
               <View style={styles.stack}>
                 <Label tone="dim">No saved profiles yet.</Label>
                 <Row>
-                  <Button title="Add profile" small onPress={openCreate} />
+                  <Button
+                    title="Add profile"
+                    small
+                    onPress={() => void dispatchAction('agents:new-profile')}
+                  />
                 </Row>
               </View>
             ) : (

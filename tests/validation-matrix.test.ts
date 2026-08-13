@@ -54,11 +54,21 @@ describe('versioned AGENTS validation matrix', () => {
   it('is enforced by CI and Android release jobs', () => {
     const ci = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
     const release = fs.readFileSync('.github/workflows/release.yml', 'utf8');
+    const browserAudit = fs.readFileSync('dev/audit/validation-matrix.py', 'utf8');
     expect(ci).toContain('python3 dev/audit/validation-matrix.py');
     expect(ci).toContain('MIB_BEACON_AUDIT_COMMIT: ${{ github.sha }}');
     expect(release).toContain('reactivecircus/android-emulator-runner@v2');
     expect(release).toContain(
-      `adb install -r "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"`,
+      `dev/audit/android-native-effects/run.sh "$(find apps/mobile/android/app/build/outputs/apk/release -name '*.apk' -print -quit)"`,
     );
+    expect(release).toContain('MIB_BEACON_AUDIT_COMMIT="${{ github.sha }}"');
+    expect(browserAudit).toContain('"status", "--porcelain=v1", "--untracked-files=all"');
+    expect(browserAudit).toContain('cannot attest MIB_BEACON_AUDIT_COMMIT from a dirty worktree');
+    const nativeAudit = fs.readFileSync('dev/audit/android-native-effects/run.sh', 'utf8');
+    expect(nativeAudit).toContain('dumpsys notification --noredact');
+    expect(nativeAudit).toContain('uiautomator dump');
+    expect(nativeAudit).toContain("grep -Fq 'PNG_RECEIVER_PASS'");
+    expect(nativeAudit).toContain("PNG_FILE='mib-beacon-native-adapter-audit.png'");
+    expect(nativeAudit).toContain('testedCommit');
   });
 });
