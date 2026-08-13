@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "startedAt": "2026-08-13T05:48:19.404530+00:00",
-  "testedCommit": "6c2b958cf29d94e2396a56b20a394582f47fe601",
+  "startedAt": "2026-08-13T06:06:58.856829+00:00",
+  "testedCommit": "c85ddc651d1056eca0865640b366b9ce5a5f848a",
   "testedWorktree": {
     "state": "clean",
     "statusFingerprint": null,
     "changedPathCount": 0
   },
-  "baseUrl": "http://127.0.0.1:8920",
+  "baseUrl": "http://127.0.0.1:8912",
   "stopPolicy": "first-reproducible-application-defect",
   "status": "pass",
   "scenarios": [
@@ -19,8 +19,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:19.998566+00:00",
-      "finishedAt": "2026-08-13T05:48:20.386886+00:00"
+      "startedAt": "2026-08-13T06:06:59.212917+00:00",
+      "finishedAt": "2026-08-13T06:06:59.495584+00:00"
     },
     {
       "id": "route-live-mibs-phone-light",
@@ -30,8 +30,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:20.414672+00:00",
-      "finishedAt": "2026-08-13T05:48:20.736895+00:00"
+      "startedAt": "2026-08-13T06:06:59.521200+00:00",
+      "finishedAt": "2026-08-13T06:06:59.812368+00:00"
     },
     {
       "id": "route-results-phone-light",
@@ -41,8 +41,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:20.768405+00:00",
-      "finishedAt": "2026-08-13T05:48:21.106520+00:00"
+      "startedAt": "2026-08-13T06:06:59.837167+00:00",
+      "finishedAt": "2026-08-13T06:07:00.117096+00:00"
     },
     {
       "id": "route-agents-phone-light",
@@ -52,8 +52,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:21.133226+00:00",
-      "finishedAt": "2026-08-13T05:48:21.441609+00:00"
+      "startedAt": "2026-08-13T06:07:00.142228+00:00",
+      "finishedAt": "2026-08-13T06:07:00.395191+00:00"
     },
     {
       "id": "route-traps-phone-light",
@@ -63,8 +63,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:21.469238+00:00",
-      "finishedAt": "2026-08-13T05:48:21.856316+00:00"
+      "startedAt": "2026-08-13T06:07:00.420032+00:00",
+      "finishedAt": "2026-08-13T06:07:00.717860+00:00"
     },
     {
       "id": "route-tools-phone-light",
@@ -74,8 +74,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:21.887951+00:00",
-      "finishedAt": "2026-08-13T05:48:22.198008+00:00"
+      "startedAt": "2026-08-13T06:07:00.743318+00:00",
+      "finishedAt": "2026-08-13T06:07:01.037122+00:00"
     },
     {
       "id": "route-settings-phone-light",
@@ -85,8 +85,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:22.224309+00:00",
-      "finishedAt": "2026-08-13T05:48:22.713223+00:00"
+      "startedAt": "2026-08-13T06:07:01.060809+00:00",
+      "finishedAt": "2026-08-13T06:07:01.484545+00:00"
     },
     {
       "id": "route-browse-phone-dark",
@@ -96,8 +96,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:22.742672+00:00",
-      "finishedAt": "2026-08-13T05:48:23.013082+00:00"
+      "startedAt": "2026-08-13T06:07:01.509223+00:00",
+      "finishedAt": "2026-08-13T06:07:01.753817+00:00"
     },
     {
       "id": "route-live-mibs-phone-dark",
@@ -107,8 +107,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:23.042438+00:00",
-      "finishedAt": "2026-08-13T05:48:23.354402+00:00"
+      "startedAt": "2026-08-13T06:07:01.778617+00:00",
+      "finishedAt": "2026-08-13T06:07:02.052148+00:00"
     },
     {
       "id": "route-results-phone-dark",
@@ -118,8 +118,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:23.387927+00:00",
-      "finishedAt": "2026-08-13T05:48:23.718094+00:00"
+      "startedAt": "2026-08-13T06:07:02.077292+00:00",
+      "finishedAt": "2026-08-13T06:07:02.357500+00:00"
     },
     {
       "id": "route-agents-phone-dark",
@@ -129,8 +129,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:23.744522+00:00",
-      "finishedAt": "2026-08-13T05:48:24.032843+00:00"
+      "startedAt": "2026-08-13T06:07:02.384014+00:00",
+      "finishedAt": "2026-08-13T06:07:02.641675+00:00"
     },
     {
       "id": "route-traps-phone-dark",
@@ -140,8 +140,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:24.059374+00:00",
-      "finishedAt": "2026-08-13T05:48:24.445523+00:00"
+      "startedAt": "2026-08-13T06:07:02.666806+00:00",
+      "finishedAt": "2026-08-13T06:07:02.980203+00:00"
     },
     {
       "id": "route-tools-phone-dark",
@@ -151,8 +151,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:24.471466+00:00",
-      "finishedAt": "2026-08-13T05:48:24.782983+00:00"
+      "startedAt": "2026-08-13T06:07:03.006310+00:00",
+      "finishedAt": "2026-08-13T06:07:03.289102+00:00"
     },
     {
       "id": "route-settings-phone-dark",
@@ -162,8 +162,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:24.808650+00:00",
-      "finishedAt": "2026-08-13T05:48:25.305131+00:00"
+      "startedAt": "2026-08-13T06:07:03.313043+00:00",
+      "finishedAt": "2026-08-13T06:07:03.764114+00:00"
     },
     {
       "id": "route-browse-tablet-light",
@@ -173,8 +173,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:25.333791+00:00",
-      "finishedAt": "2026-08-13T05:48:25.729191+00:00"
+      "startedAt": "2026-08-13T06:07:03.787840+00:00",
+      "finishedAt": "2026-08-13T06:07:04.085018+00:00"
     },
     {
       "id": "route-live-mibs-tablet-light",
@@ -184,8 +184,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:25.755543+00:00",
-      "finishedAt": "2026-08-13T05:48:26.083173+00:00"
+      "startedAt": "2026-08-13T06:07:04.108957+00:00",
+      "finishedAt": "2026-08-13T06:07:04.388087+00:00"
     },
     {
       "id": "route-results-tablet-light",
@@ -195,8 +195,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:26.111259+00:00",
-      "finishedAt": "2026-08-13T05:48:26.444884+00:00"
+      "startedAt": "2026-08-13T06:07:04.411822+00:00",
+      "finishedAt": "2026-08-13T06:07:04.707731+00:00"
     },
     {
       "id": "route-agents-tablet-light",
@@ -206,8 +206,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:26.470892+00:00",
-      "finishedAt": "2026-08-13T05:48:26.779524+00:00"
+      "startedAt": "2026-08-13T06:07:04.733354+00:00",
+      "finishedAt": "2026-08-13T06:07:04.997878+00:00"
     },
     {
       "id": "route-traps-tablet-light",
@@ -217,8 +217,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:26.809411+00:00",
-      "finishedAt": "2026-08-13T05:48:27.213448+00:00"
+      "startedAt": "2026-08-13T06:07:05.023280+00:00",
+      "finishedAt": "2026-08-13T06:07:05.382095+00:00"
     },
     {
       "id": "route-tools-tablet-light",
@@ -228,8 +228,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:27.241971+00:00",
-      "finishedAt": "2026-08-13T05:48:27.562622+00:00"
+      "startedAt": "2026-08-13T06:07:05.411805+00:00",
+      "finishedAt": "2026-08-13T06:07:05.713150+00:00"
     },
     {
       "id": "route-settings-tablet-light",
@@ -239,8 +239,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:27.592392+00:00",
-      "finishedAt": "2026-08-13T05:48:28.123452+00:00"
+      "startedAt": "2026-08-13T06:07:05.740218+00:00",
+      "finishedAt": "2026-08-13T06:07:06.190870+00:00"
     },
     {
       "id": "route-browse-tablet-dark",
@@ -250,8 +250,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:28.154620+00:00",
-      "finishedAt": "2026-08-13T05:48:28.486126+00:00"
+      "startedAt": "2026-08-13T06:07:06.214776+00:00",
+      "finishedAt": "2026-08-13T06:07:06.500600+00:00"
     },
     {
       "id": "route-live-mibs-tablet-dark",
@@ -261,8 +261,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:28.513128+00:00",
-      "finishedAt": "2026-08-13T05:48:28.821084+00:00"
+      "startedAt": "2026-08-13T06:07:06.525070+00:00",
+      "finishedAt": "2026-08-13T06:07:06.804731+00:00"
     },
     {
       "id": "route-results-tablet-dark",
@@ -272,8 +272,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:28.848546+00:00",
-      "finishedAt": "2026-08-13T05:48:29.178586+00:00"
+      "startedAt": "2026-08-13T06:07:06.828771+00:00",
+      "finishedAt": "2026-08-13T06:07:07.115776+00:00"
     },
     {
       "id": "route-agents-tablet-dark",
@@ -283,8 +283,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:29.206178+00:00",
-      "finishedAt": "2026-08-13T05:48:29.497443+00:00"
+      "startedAt": "2026-08-13T06:07:07.139970+00:00",
+      "finishedAt": "2026-08-13T06:07:07.404873+00:00"
     },
     {
       "id": "route-traps-tablet-dark",
@@ -294,8 +294,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:29.525232+00:00",
-      "finishedAt": "2026-08-13T05:48:29.919564+00:00"
+      "startedAt": "2026-08-13T06:07:07.429205+00:00",
+      "finishedAt": "2026-08-13T06:07:07.749677+00:00"
     },
     {
       "id": "route-tools-tablet-dark",
@@ -305,8 +305,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:29.945267+00:00",
-      "finishedAt": "2026-08-13T05:48:30.277806+00:00"
+      "startedAt": "2026-08-13T06:07:07.774073+00:00",
+      "finishedAt": "2026-08-13T06:07:08.065634+00:00"
     },
     {
       "id": "route-settings-tablet-dark",
@@ -316,8 +316,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:30.308050+00:00",
-      "finishedAt": "2026-08-13T05:48:30.837431+00:00"
+      "startedAt": "2026-08-13T06:07:08.089694+00:00",
+      "finishedAt": "2026-08-13T06:07:08.570363+00:00"
     },
     {
       "id": "route-browse-desktop-light",
@@ -327,8 +327,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:30.863766+00:00",
-      "finishedAt": "2026-08-13T05:48:31.222717+00:00"
+      "startedAt": "2026-08-13T06:07:08.594199+00:00",
+      "finishedAt": "2026-08-13T06:07:08.911796+00:00"
     },
     {
       "id": "route-live-mibs-desktop-light",
@@ -338,8 +338,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:31.250491+00:00",
-      "finishedAt": "2026-08-13T05:48:31.566644+00:00"
+      "startedAt": "2026-08-13T06:07:08.935440+00:00",
+      "finishedAt": "2026-08-13T06:07:09.227484+00:00"
     },
     {
       "id": "route-results-desktop-light",
@@ -349,8 +349,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:31.595944+00:00",
-      "finishedAt": "2026-08-13T05:48:31.939261+00:00"
+      "startedAt": "2026-08-13T06:07:09.251337+00:00",
+      "finishedAt": "2026-08-13T06:07:09.547163+00:00"
     },
     {
       "id": "route-agents-desktop-light",
@@ -360,8 +360,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:31.965941+00:00",
-      "finishedAt": "2026-08-13T05:48:32.264514+00:00"
+      "startedAt": "2026-08-13T06:07:09.570990+00:00",
+      "finishedAt": "2026-08-13T06:07:09.838443+00:00"
     },
     {
       "id": "route-traps-desktop-light",
@@ -371,8 +371,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:32.294885+00:00",
-      "finishedAt": "2026-08-13T05:48:32.707315+00:00"
+      "startedAt": "2026-08-13T06:07:09.862729+00:00",
+      "finishedAt": "2026-08-13T06:07:10.190081+00:00"
     },
     {
       "id": "route-tools-desktop-light",
@@ -382,8 +382,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:32.735192+00:00",
-      "finishedAt": "2026-08-13T05:48:33.084889+00:00"
+      "startedAt": "2026-08-13T06:07:10.213392+00:00",
+      "finishedAt": "2026-08-13T06:07:10.506068+00:00"
     },
     {
       "id": "route-settings-desktop-light",
@@ -393,8 +393,8 @@
       "theme": "light",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:33.112197+00:00",
-      "finishedAt": "2026-08-13T05:48:33.649459+00:00"
+      "startedAt": "2026-08-13T06:07:10.530521+00:00",
+      "finishedAt": "2026-08-13T06:07:10.988183+00:00"
     },
     {
       "id": "route-browse-desktop-dark",
@@ -404,8 +404,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:33.677568+00:00",
-      "finishedAt": "2026-08-13T05:48:34.033564+00:00"
+      "startedAt": "2026-08-13T06:07:11.013480+00:00",
+      "finishedAt": "2026-08-13T06:07:11.313746+00:00"
     },
     {
       "id": "route-live-mibs-desktop-dark",
@@ -415,8 +415,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:34.061635+00:00",
-      "finishedAt": "2026-08-13T05:48:34.379776+00:00"
+      "startedAt": "2026-08-13T06:07:11.338610+00:00",
+      "finishedAt": "2026-08-13T06:07:11.634967+00:00"
     },
     {
       "id": "route-results-desktop-dark",
@@ -426,8 +426,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:34.407839+00:00",
-      "finishedAt": "2026-08-13T05:48:34.746996+00:00"
+      "startedAt": "2026-08-13T06:07:11.659950+00:00",
+      "finishedAt": "2026-08-13T06:07:11.988089+00:00"
     },
     {
       "id": "route-agents-desktop-dark",
@@ -437,8 +437,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:34.775563+00:00",
-      "finishedAt": "2026-08-13T05:48:35.083558+00:00"
+      "startedAt": "2026-08-13T06:07:12.012312+00:00",
+      "finishedAt": "2026-08-13T06:07:12.281431+00:00"
     },
     {
       "id": "route-traps-desktop-dark",
@@ -448,8 +448,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:35.109583+00:00",
-      "finishedAt": "2026-08-13T05:48:35.526462+00:00"
+      "startedAt": "2026-08-13T06:07:12.305821+00:00",
+      "finishedAt": "2026-08-13T06:07:12.627602+00:00"
     },
     {
       "id": "route-tools-desktop-dark",
@@ -459,8 +459,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:35.558104+00:00",
-      "finishedAt": "2026-08-13T05:48:35.897350+00:00"
+      "startedAt": "2026-08-13T06:07:12.652081+00:00",
+      "finishedAt": "2026-08-13T06:07:12.964813+00:00"
     },
     {
       "id": "route-settings-desktop-dark",
@@ -470,8 +470,8 @@
       "theme": "dark",
       "expected": "Route loads without errors, overflow, unnamed controls, or unreachable content.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:35.924542+00:00",
-      "finishedAt": "2026-08-13T05:48:36.462150+00:00"
+      "startedAt": "2026-08-13T06:07:12.989258+00:00",
+      "finishedAt": "2026-08-13T06:07:13.456315+00:00"
     },
     {
       "id": "legacy-mibs-phone-light",
@@ -481,8 +481,8 @@
       "theme": "light",
       "expected": "Legacy compact route opens loaded modules.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:36.493444+00:00",
-      "finishedAt": "2026-08-13T05:48:36.791098+00:00"
+      "startedAt": "2026-08-13T06:07:13.481161+00:00",
+      "finishedAt": "2026-08-13T06:07:13.750177+00:00"
     },
     {
       "id": "legacy-mibs-phone-dark",
@@ -492,8 +492,8 @@
       "theme": "dark",
       "expected": "Legacy compact route opens loaded modules.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:36.816185+00:00",
-      "finishedAt": "2026-08-13T05:48:37.110703+00:00"
+      "startedAt": "2026-08-13T06:07:13.773969+00:00",
+      "finishedAt": "2026-08-13T06:07:14.041845+00:00"
     },
     {
       "id": "legacy-mibs-tablet-light",
@@ -503,8 +503,8 @@
       "theme": "light",
       "expected": "Legacy non-compact route resolves to the unified Browse workspace.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:37.137252+00:00",
-      "finishedAt": "2026-08-13T05:48:37.460983+00:00"
+      "startedAt": "2026-08-13T06:07:14.065843+00:00",
+      "finishedAt": "2026-08-13T06:07:14.354864+00:00"
     },
     {
       "id": "legacy-mibs-tablet-dark",
@@ -514,8 +514,8 @@
       "theme": "dark",
       "expected": "Legacy non-compact route resolves to the unified Browse workspace.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:37.488744+00:00",
-      "finishedAt": "2026-08-13T05:48:37.808423+00:00"
+      "startedAt": "2026-08-13T06:07:14.380213+00:00",
+      "finishedAt": "2026-08-13T06:07:14.668708+00:00"
     },
     {
       "id": "legacy-mibs-desktop-light",
@@ -525,8 +525,8 @@
       "theme": "light",
       "expected": "Legacy non-compact route resolves to the unified Browse workspace.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:37.834001+00:00",
-      "finishedAt": "2026-08-13T05:48:38.182768+00:00"
+      "startedAt": "2026-08-13T06:07:14.693086+00:00",
+      "finishedAt": "2026-08-13T06:07:14.999511+00:00"
     },
     {
       "id": "legacy-mibs-desktop-dark",
@@ -536,8 +536,8 @@
       "theme": "dark",
       "expected": "Legacy non-compact route resolves to the unified Browse workspace.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:38.209038+00:00",
-      "finishedAt": "2026-08-13T05:48:38.567386+00:00"
+      "startedAt": "2026-08-13T06:07:15.034567+00:00",
+      "finishedAt": "2026-08-13T06:07:15.419963+00:00"
     },
     {
       "id": "phone-more-navigation",
@@ -547,8 +547,8 @@
       "theme": "light",
       "expected": "All overflow destinations are reachable.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:38.601419+00:00",
-      "finishedAt": "2026-08-13T05:48:38.929547+00:00"
+      "startedAt": "2026-08-13T06:07:15.443507+00:00",
+      "finishedAt": "2026-08-13T06:07:15.737975+00:00"
     },
     {
       "id": "command-palette-navigation",
@@ -558,8 +558,8 @@
       "theme": "light",
       "expected": "An off-route catalog fallback navigates safely, preserves the palette, and hands ownership to the route action.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:38.955721+00:00",
-      "finishedAt": "2026-08-13T05:48:39.503401+00:00"
+      "startedAt": "2026-08-13T06:07:15.761945+00:00",
+      "finishedAt": "2026-08-13T06:07:16.266946+00:00"
     },
     {
       "id": "browse-search-validation",
@@ -569,8 +569,8 @@
       "theme": "light",
       "expected": "Empty and successful searches render correctly.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:39.527931+00:00",
-      "finishedAt": "2026-08-13T05:48:40.441641+00:00"
+      "startedAt": "2026-08-13T06:07:16.290633+00:00",
+      "finishedAt": "2026-08-13T06:07:17.173900+00:00"
     },
     {
       "id": "live-mibs-prerequisite",
@@ -580,8 +580,8 @@
       "theme": "light",
       "expected": "Missing target state provides inline creation.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:40.470220+00:00",
-      "finishedAt": "2026-08-13T05:48:40.820075+00:00"
+      "startedAt": "2026-08-13T06:07:17.198629+00:00",
+      "finishedAt": "2026-08-13T06:07:17.525449+00:00"
     },
     {
       "id": "query-local-get",
@@ -591,8 +591,8 @@
       "theme": "light",
       "expected": "Fixture sysDescr returns one varbind.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:40.844708+00:00",
-      "finishedAt": "2026-08-13T05:48:41.294809+00:00"
+      "startedAt": "2026-08-13T06:07:17.549671+00:00",
+      "finishedAt": "2026-08-13T06:07:17.994580+00:00"
     },
     {
       "id": "agents-required-fields",
@@ -602,8 +602,8 @@
       "theme": "light",
       "expected": "Invalid profile shows actionable validation.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:41.322523+00:00",
-      "finishedAt": "2026-08-13T05:48:41.753294+00:00"
+      "startedAt": "2026-08-13T06:07:18.018928+00:00",
+      "finishedAt": "2026-08-13T06:07:18.410422+00:00"
     },
     {
       "id": "traps-required-fields",
@@ -613,8 +613,8 @@
       "theme": "light",
       "expected": "Invalid send shows actionable validation.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:41.785972+00:00",
-      "finishedAt": "2026-08-13T05:48:42.311597+00:00"
+      "startedAt": "2026-08-13T06:07:18.435644+00:00",
+      "finishedAt": "2026-08-13T06:07:18.880445+00:00"
     },
     {
       "id": "tools-local-discovery",
@@ -624,8 +624,8 @@
       "theme": "dark",
       "expected": "Discovery finds the local SNMP fixture.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:42.338768+00:00",
-      "finishedAt": "2026-08-13T05:48:42.791903+00:00"
+      "startedAt": "2026-08-13T06:07:18.904236+00:00",
+      "finishedAt": "2026-08-13T06:07:19.329401+00:00"
     },
     {
       "id": "mib-invalid-paste",
@@ -635,8 +635,8 @@
       "theme": "light",
       "expected": "Invalid input produces diagnostics without breaking layout.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:42.824005+00:00",
-      "finishedAt": "2026-08-13T05:48:43.306757+00:00"
+      "startedAt": "2026-08-13T06:07:19.354299+00:00",
+      "finishedAt": "2026-08-13T06:07:19.885766+00:00"
     },
     {
       "id": "settings-theme",
@@ -646,10 +646,10 @@
       "theme": "light",
       "expected": "Dark theme selection persists.",
       "status": "pass",
-      "startedAt": "2026-08-13T05:48:43.340907+00:00",
-      "finishedAt": "2026-08-13T05:48:43.926270+00:00"
+      "startedAt": "2026-08-13T06:07:19.910228+00:00",
+      "finishedAt": "2026-08-13T06:07:20.440329+00:00"
     }
   ],
   "firstDefect": null,
-  "finishedAt": "2026-08-13T05:48:43.959090+00:00"
+  "finishedAt": "2026-08-13T06:07:20.468058+00:00"
 }
